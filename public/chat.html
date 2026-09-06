@@ -75,6 +75,25 @@
   .traitBarFg { height: 100%; border-radius: 999px; background: linear-gradient(90deg, #a78bfa, #7c5cff); transition: width 0.4s ease; }
   .traitValue { width: 28px; text-align: right; flex-shrink: 0; color: #888; }
 
+  /* 「他の分身と出会う」機能のパネル */
+  #socialPanel { display: none; margin: 10px 16px 0; padding: 12px 14px; border-radius: 12px; background: #f0ecff; flex-direction: column; }
+  #socialPanel.show { display: flex; }
+  .socialExplain { font-size: 11px; color: #5b4b99; line-height: 1.6; margin-bottom: 10px; }
+  .socialRow { display: flex; align-items: center; gap: 8px; }
+  #socialOptInBtn, #meetBtn {
+    border: 1px solid #ddd; background: #fff; color: #7c5cff; font-size: 12px; font-weight: 600;
+    padding: 8px 14px; border-radius: 999px; cursor: pointer; white-space: nowrap;
+  }
+  #socialOptInBtn.on { background: #7c5cff; color: #fff; border-color: #7c5cff; }
+  #meetBtn { background: #7c5cff; color: #fff; border-color: #7c5cff; margin-top: 10px; align-self: flex-start; }
+  #meetBtn:disabled { opacity: 0.5; cursor: default; }
+  #meetStatus { font-size: 11px; color: #7a6bb0; margin-top: 8px; }
+  .meetingPartner { font-size: 11px; color: #7a6bb0; margin-top: 12px; margin-bottom: 6px; }
+  .meetingLog { display: flex; flex-direction: column; gap: 6px; }
+  .meetingLine { max-width: 85%; font-size: 12px; padding: 7px 11px; border-radius: 12px; background: #fff; border: 1px solid #e4defc; line-height: 1.5; }
+  .meetingLine.self { align-self: flex-end; background: #efe9ff; }
+  .meetingLine.other { align-self: flex-start; }
+
   #log { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
   .msg { max-width: 78%; padding: 10px 14px; border-radius: 16px; line-height: 1.5; font-size: 14px; white-space: pre-wrap; }
   .msg.user { align-self: flex-end; background: #7c5cff; color: #fff; border-bottom-right-radius: 4px; }
@@ -105,6 +124,7 @@
     <div class="headerActions">
       <button id="infoBtn" type="button" title="そだつかけとは？">?</button>
       <a id="historyLink" href="#">📈 成長</a>
+      <button id="toggleSocial" type="button">🤝 交流</button>
       <button id="toggleTraits" type="button">性格を見る ▾</button>
     </div>
   </div>
@@ -115,6 +135,19 @@
     <div class="traitRow" data-trait="caution"><span class="traitLabel">慎重さ</span><div class="traitBarBg"><div class="traitBarFg"></div></div><span class="traitValue">-</span></div>
     <div class="traitRow" data-trait="independence"><span class="traitLabel">自立心</span><div class="traitBarBg"><div class="traitBarFg"></div></div><span class="traitValue">-</span></div>
     <div class="traitRow" data-trait="humor"><span class="traitLabel">ユーモア</span><div class="traitBarBg"><div class="traitBarFg"></div></div><span class="traitValue">-</span></div>
+  </div>
+
+  <div id="socialPanel">
+    <div class="socialExplain">
+      オンにすると、この子の名前・種族・性格（会話の内容や記憶は含みません）が、他のユーザーの分身とのマッチングに使われます。
+      人間同士のメッセージのやり取りは一切行われません。分身同士が、その場限りの短い立ち話をするだけです。
+    </div>
+    <div class="socialRow">
+      <button id="socialOptInBtn" type="button">オフ</button>
+      <button id="meetBtn" type="button">🚶 お散歩に出す</button>
+    </div>
+    <div id="meetStatus"></div>
+    <div id="meetingResult"></div>
   </div>
 </header>
 
@@ -178,8 +211,96 @@
   const infoBtn = document.getElementById("infoBtn");
   const conceptModalClose = document.getElementById("conceptModalClose");
   const autoSpeakToggle = document.getElementById("autoSpeakToggle");
+  const toggleSocialBtn = document.getElementById("toggleSocial");
+  const socialPanel = document.getElementById("socialPanel");
+  const socialOptInBtn = document.getElementById("socialOptInBtn");
+  const meetBtn = document.getElementById("meetBtn");
+  const meetStatus = document.getElementById("meetStatus");
+  const meetingResult = document.getElementById("meetingResult");
 
   historyLink.href = `/history.html?cid=${encodeURIComponent(cid || "")}`;
+
+  // --- 「他の分身と出会う」機能（オプトイン制。人間同士のメッセージ交換は行わない） ---
+  let socialOptIn = false;
+
+  toggleSocialBtn.addEventListener("click", () => {
+    socialPanel.classList.toggle("show");
+  });
+
+  function renderSocial(data) {
+    socialOptIn = !!data.socialOptIn;
+    socialOptInBtn.textContent = socialOptIn ? "オン" : "オフ";
+    socialOptInBtn.classList.toggle("on", socialOptIn);
+    meetBtn.disabled = !socialOptIn;
+    if (data.lastMeeting) renderMeetingResult(data.lastMeeting.partner, data.lastMeeting.log);
+  }
+
+  socialOptInBtn.addEventListener("click", async () => {
+    if (!cid) return;
+    socialOptInBtn.disabled = true;
+    try {
+      const res = await fetch("/api/character/social", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ characterId: cid, optIn: !socialOptIn }),
+      });
+      const data = await res.json();
+      if (typeof data.optIn === "boolean") {
+        socialOptIn = data.optIn;
+        socialOptInBtn.textContent = socialOptIn ? "オン" : "オフ";
+        socialOptInBtn.classList.toggle("on", socialOptIn);
+        meetBtn.disabled = !socialOptIn;
+        meetStatus.textContent = socialOptIn ? "オンにしました" : "オフにしました";
+      }
+    } catch (err) {
+      meetStatus.textContent = "切り替えに失敗しました。もう一度試してね";
+    } finally {
+      socialOptInBtn.disabled = false;
+    }
+  });
+
+  function renderMeetingResult(partner, entries) {
+    meetingResult.innerHTML = "";
+    const partnerLine = document.createElement("div");
+    partnerLine.className = "meetingPartner";
+    partnerLine.textContent = `「${partner.name}」という分身と出会いました`;
+    meetingResult.appendChild(partnerLine);
+
+    const logDiv = document.createElement("div");
+    logDiv.className = "meetingLog";
+    for (const entry of entries) {
+      const line = document.createElement("div");
+      line.className = `meetingLine ${entry.role}`;
+      line.textContent = entry.text;
+      logDiv.appendChild(line);
+    }
+    meetingResult.appendChild(logDiv);
+  }
+
+  meetBtn.addEventListener("click", async () => {
+    if (!cid) return;
+    meetBtn.disabled = true;
+    meetStatus.textContent = "お散歩中……";
+    meetingResult.innerHTML = "";
+    try {
+      const res = await fetch("/api/character/meet", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ characterId: cid }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        meetStatus.textContent = data.error;
+      } else {
+        meetStatus.textContent = "";
+        renderMeetingResult(data.partner, data.log);
+      }
+    } catch (err) {
+      meetStatus.textContent = "うまく通信できなかったみたい。もう一度試してね";
+    } finally {
+      meetBtn.disabled = !socialOptIn;
+    }
+  });
 
   // --- 読み上げ機能（Web Speech API） ---
   // Cloudflare Workers AI側のTTSモデル（melotts/aura）は現時点で日本語が未対応・不安定なため、
@@ -321,6 +442,7 @@
       currentPersonality = data.personality; // 読み上げの速さ・高さに反映する
     }
     applyCharacterVisuals(data);
+    renderSocial(data);
   }
 
   function renderPersonality(personality) {

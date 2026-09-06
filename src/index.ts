@@ -1,5 +1,6 @@
-import { CharacterState } from "./durable-objects/characterState";
+import { CharacterState, SPECIES_LABELS, MEETING_COOLDOWN_MS, MeetingLogEntry, SpeciesKey, ColorKey } from "./durable-objects/characterState";
 import { deriveSpeechStyle } from "./ai/speechStyle";
+import { PersonalityTraits, TRAIT_KEYS } from "./ai/personality";
 
 export { CharacterState };
 
@@ -97,6 +98,92 @@ export default {
       return json(history);
     }
 
+    // --- 「他の分身と出会う」機能へのオプトイン/オプトアウトAPI ---
+    if (url.pathname === "/api/character/social" && request.method === "POST") {
+      const body = await request.json<{ characterId?: string; optIn?: boolean }>();
+      if (!body.characterId || typeof body.optIn !== "boolean") {
+        return json({ error: "characterId and optIn are required" }, { status: 400 });
+      }
+      const stub = env.CHARACTER.getByName(body.characterId);
+      const result = await stub.setSocialOptIn(body.optIn);
+      return json(result);
+    }
+
+    // --- 「お散歩」機能: 性格の近い、他ユーザーの分身とのAI同士の短い交流を生成する ---
+    // 安全上の配慮: 人間同士のメッセージ交換は一切行わない。オプトイン制。
+    // 相手に渡るのは名前・種族・成長段階のみで、ユーザー本人との会話内容・記憶は渡さない。
+    if (url.pathname === "/api/character/meet" && request.method === "POST") {
+      const body = await request.json<{ characterId?: string }>();
+      if (!body.characterId) {
+        return json({ error: "characterId is required" }, { status: 400 });
+      }
+      const selfStub = env.CHARACTER.getByName(body.characterId);
+      const selfState = await selfStub.getState();
+      if (!selfState) return json({ error: "not found" }, { status: 404 });
+      if (!selfState.socialOptIn) {
+        return json({ error: "「他の分身と出会う」がオフになっています。まずオンにしてください" }, { status: 400 });
+      }
+      const now = Date.now();
+      if (selfState.lastMeetingAt && now - selfState.lastMeetingAt < MEETING_COOLDOWN_MS) {
+        const remainingHours = Math.ceil((MEETING_COOLDOWN_MS - (now - selfState.lastMeetingAt)) / (60 * 60 * 1000));
+        return json({ error: `また今度お散歩に行こうね（あと${remainingHours}時間くらい待ってね）` }, { status: 429 });
+      }
+
+      const candidates = await env.DB.prepare(
+        `SELECT character_id, name, species, color, warmth, curiosity, cheerfulness, caution, independence, humor
+         FROM character_directory WHERE character_id != ?1 ORDER BY RANDOM() LIMIT 30`
+      )
+        .bind(body.characterId)
+        .all<{
+          character_id: string;
+          name: string;
+          species: SpeciesKey;
+          color: ColorKey;
+          warmth: number;
+          curiosity: number;
+          cheerfulness: number;
+          caution: number;
+          independence: number;
+          humor: number;
+        }>();
+
+      const rows = candidates.results ?? [];
+      if (rows.length === 0) {
+        return json({ error: "まだお散歩できる相手がいないみたい。また今度試してね" }, { status: 404 });
+      }
+
+      const partnerRow = pickMostSimilar(selfState.personality, rows);
+      const partnerId = partnerRow.character_id;
+      const partnerStub = env.CHARACTER.getByName(partnerId);
+
+      const selfSpeciesLabel = SPECIES_LABELS[selfState.species];
+      const partnerSpeciesLabel = SPECIES_LABELS[partnerRow.species];
+
+      // 3ターンのその場限りの立ち話を生成する（AI呼び出しはこの3回のみ。クールダウンで頻度も抑えている）
+      const lineA1 = await selfStub.speakInMeeting(partnerRow.name, partnerSpeciesLabel);
+      const lineB1 = await partnerStub.speakInMeeting(selfState.name, selfSpeciesLabel, lineA1);
+      const lineA2 = await selfStub.speakInMeeting(partnerRow.name, partnerSpeciesLabel, lineB1);
+
+      const selfLog: MeetingLogEntry[] = [
+        { role: "self", text: lineA1 },
+        { role: "other", text: lineB1 },
+        { role: "self", text: lineA2 },
+      ];
+      const partnerLog: MeetingLogEntry[] = [
+        { role: "other", text: lineA1 },
+        { role: "self", text: lineB1 },
+        { role: "other", text: lineA2 },
+      ];
+
+      await selfStub.recordMeeting(selfLog, { name: partnerRow.name, species: partnerRow.species, color: partnerRow.color });
+      await partnerStub.recordMeeting(partnerLog, { name: selfState.name, species: selfState.species, color: selfState.color });
+
+      return json({
+        partner: { name: partnerRow.name, species: partnerRow.species, color: partnerRow.color },
+        log: selfLog,
+      });
+    }
+
     // --- キャラクター名前設定API（初回サモン時に使う想定） ---
     if (url.pathname === "/api/character/rename" && request.method === "POST") {
       const body = await request.json<{ characterId?: string; name?: string }>();
@@ -112,3 +199,24 @@ export default {
     return env.ASSETS.fetch(request);
   },
 } satisfies ExportedHandler<Env>;
+
+/** 性格パラメータ（6軸）のユークリッド距離が最も近い候補を選ぶ（＝いちばん性格が近い分身とマッチングする）。 */
+function pickMostSimilar<T extends Pick<PersonalityTraits, (typeof TRAIT_KEYS)[number]>>(
+  self: PersonalityTraits,
+  candidates: T[]
+): T {
+  let best = candidates[0];
+  let bestDist = Infinity;
+  for (const candidate of candidates) {
+    let distSq = 0;
+    for (const key of TRAIT_KEYS) {
+      const diff = self[key] - candidate[key];
+      distSq += diff * diff;
+    }
+    if (distSq < bestDist) {
+      bestDist = distSq;
+      best = candidate;
+    }
+  }
+  return best;
+}

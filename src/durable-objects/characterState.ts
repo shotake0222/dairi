@@ -8,10 +8,12 @@ import { analyzeMessage } from "../ai/signalExtractor";
 import { buildSystemPrompt } from "../ai/promptBuilder";
 import { deriveSpeechStyle } from "../ai/speechStyle";
 import { retrieveRelevantMemories, storeMemory } from "../ai/memory";
+import { buildMeetingPrompt } from "../ai/promptBuilder";
 
 export interface Env {
   AI: Ai;
   MEMORY_INDEX: VectorizeIndex;
+  DB: D1Database;
 }
 
 // 5種族×6色=30種類。実ファイルは public/characters/{species}_{color}.png / .glb
@@ -19,6 +21,30 @@ export const SPECIES_KEYS = ["punikoro", "mofukuru", "tsunomaru", "howahowa", "k
 export const COLOR_KEYS = ["coral", "sky", "leaf", "sun", "lavender", "peach"] as const;
 export type SpeciesKey = (typeof SPECIES_KEYS)[number];
 export type ColorKey = (typeof COLOR_KEYS)[number];
+
+// 「分身同士の交流」機能で、他ユーザーの分身に種族を自然な日本語で紹介するための表示名。
+export const SPECIES_LABELS: Record<SpeciesKey, string> = {
+  punikoro: "ぷにころ",
+  mofukuru: "もふくる",
+  tsunomaru: "つのまる",
+  howahowa: "ほわほわ",
+  kiratsubu: "きらつぶ",
+};
+
+/** 分身同士の交流ログの1発言。roleはこのキャラクター視点での自分/相手。 */
+export interface MeetingLogEntry {
+  role: "self" | "other";
+  text: string;
+}
+
+export interface MeetingRecord {
+  at: number; // epoch ms
+  partner: { name: string; species: SpeciesKey; color: ColorKey };
+  log: MeetingLogEntry[];
+}
+
+// 「お散歩」機能のクールダウン（AIコスト対策・1日1回程度の特別感を出すため）
+export const MEETING_COOLDOWN_MS = 20 * 60 * 60 * 1000; // 20時間
 
 /** 性格変遷の可視化（成長グラフ）用の1スナップショット。 */
 export interface PersonalityHistoryEntry {
@@ -39,6 +65,9 @@ export interface CharacterData {
   lastMessageAt?: number; // epoch ms（連投防止の簡易レート制限に使用。既存データには無いのでoptional）
   createdAt: number;
   personalityHistory?: PersonalityHistoryEntry[]; // 既存データには無いのでoptional。無ければ誕生時点として扱う
+  socialOptIn?: boolean; // 「他の分身と出会う」機能への同意（デフォルトfalse＝非公開）
+  lastMeetingAt?: number; // epoch ms（お散歩機能のクールダウン判定用）
+  lastMeeting?: MeetingRecord; // 直近の交流ログ
 }
 
 // 悪用・コスト対策の簡易ガード。厳密なセキュリティ機構ではなく、
@@ -132,6 +161,8 @@ export class CharacterState extends DurableObject<Env> {
     speechStyleLabel: string;
     species: SpeciesKey;
     color: ColorKey;
+    socialOptIn: boolean;
+    lastMeeting?: MeetingRecord;
     error?: string;
   }> {
     let data = await this.ctx.storage.get<CharacterData>("data");
@@ -154,6 +185,11 @@ export class CharacterState extends DurableObject<Env> {
     }
     data.lastMessageAt = now;
 
+    // characterId: このDOインスタンス自身の識別子（env.CHARACTER.getByName(characterId)で
+    // 生成されたDOは this.ctx.id.name が常にそのcharacterIdと一致する）。
+    // Vectorizeのメタデータフィルタ・D1ディレクトリのキーとして使う。
+    const characterId = this.ctx.id.name ?? "unknown";
+
     const daysSinceLastVisit = (now - data.lastVisit) / (1000 * 60 * 60 * 24);
     const signal = analyzeMessage(trimmed, daysSinceLastVisit);
 
@@ -172,10 +208,11 @@ export class CharacterState extends DurableObject<Env> {
     });
     data.personalityHistory = decimateHistory(data.personalityHistory);
 
-    // characterId: このDOインスタンス自身の識別子（env.CHARACTER.getByName(characterId)で
-    // 生成されたDOは this.ctx.id.name が常にそのcharacterIdと一致する）。
-    // Vectorizeのメタデータフィルタに使い、キャラクターごとに記憶を分離する。
-    const characterId = this.ctx.id.name ?? "unknown";
+    // 「他の分身と出会う」機能にオプトイン済みなら、マッチング用ディレクトリ（D1）も最新の性格に同期しておく。
+    if (data.socialOptIn) {
+      await this.syncDirectory(characterId, data);
+    }
+
     const relevantMemories = await retrieveRelevantMemories(this.env, characterId, trimmed);
 
     const systemPrompt = buildSystemPrompt({
@@ -219,7 +256,105 @@ export class CharacterState extends DurableObject<Env> {
       speechStyleLabel: deriveSpeechStyle(data.personality).label,
       species: data.species,
       color: data.color,
+      socialOptIn: data.socialOptIn ?? false,
+      lastMeeting: data.lastMeeting,
     };
+  }
+
+  /**
+   * 「他の分身と出会う」機能への同意を切り替える。
+   * オプトインするとD1の公開ディレクトリに公開してよい情報（名前・種族・色・性格・成長段階）だけが載り、
+   * オプトアウトすると即座にディレクトリから削除される（同意していないキャラクターの情報は一切残らない）。
+   */
+  async setSocialOptIn(optIn: boolean): Promise<{ optIn: boolean }> {
+    let data = await this.ctx.storage.get<CharacterData>("data");
+    if (!data) data = await this.init("名もなきキャラクター");
+    data.socialOptIn = optIn;
+    await this.ctx.storage.put("data", data);
+
+    const characterId = this.ctx.id.name ?? "unknown";
+    if (optIn) {
+      await this.syncDirectory(characterId, data);
+    } else {
+      try {
+        await this.env.DB.prepare("DELETE FROM character_directory WHERE character_id = ?").bind(characterId).run();
+      } catch (err) {
+        // 削除に失敗しても致命的ではない（次回オプトアウト操作や運用側のクリーンアップで解消可能）
+      }
+    }
+    return { optIn };
+  }
+
+  private async syncDirectory(characterId: string, data: CharacterData): Promise<void> {
+    try {
+      await this.env.DB.prepare(
+        `INSERT INTO character_directory
+           (character_id, name, species, color, growth_stage, warmth, curiosity, cheerfulness, caution, independence, humor, updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+         ON CONFLICT(character_id) DO UPDATE SET
+           name=excluded.name, species=excluded.species, color=excluded.color, growth_stage=excluded.growth_stage,
+           warmth=excluded.warmth, curiosity=excluded.curiosity, cheerfulness=excluded.cheerfulness,
+           caution=excluded.caution, independence=excluded.independence, humor=excluded.humor, updated_at=excluded.updated_at`
+      )
+        .bind(
+          characterId,
+          data.name,
+          data.species,
+          data.color,
+          data.growthStage,
+          data.personality.warmth,
+          data.personality.curiosity,
+          data.personality.cheerfulness,
+          data.personality.caution,
+          data.personality.independence,
+          data.personality.humor,
+          Date.now()
+        )
+        .run();
+    } catch (err) {
+      // ディレクトリ同期の失敗は致命的ではない（次回のchat()呼び出し時に再同期される）
+    }
+  }
+
+  /**
+   * 「お散歩」機能の1発言を生成する。相手には名前・種族の表示名だけを渡し、
+   * ユーザー本人との会話内容・記憶は一切渡さない（buildMeetingPromptもその前提で書かれている）。
+   */
+  async speakInMeeting(otherName: string, otherSpeciesLabel: string, lastLine?: string): Promise<string> {
+    const data = await this.ctx.storage.get<CharacterData>("data");
+    if (!data) return "……（誰かの気配がしたけれど、うまく声が出なかった）";
+
+    const prompt = buildMeetingPrompt({
+      name: data.name,
+      species: data.species,
+      personality: data.personality,
+      growthStage: data.growthStage,
+    });
+    const userMessage = lastLine
+      ? `「${otherName}」（${otherSpeciesLabel}の姿をした別の分身）がこう言いました:「${lastLine}」。それに短く返事をしてください。`
+      : `「${otherName}」（${otherSpeciesLabel}の姿をした別の分身）に、今ちょうど出会いました。ひとこと挨拶してみてください。`;
+
+    try {
+      const aiResponse = (await this.env.AI.run(CHAT_MODEL, {
+        messages: [
+          { role: "system", content: prompt },
+          { role: "user", content: userMessage },
+        ],
+      })) as { response?: string };
+      return aiResponse.response?.trim() || "……（うまく言葉が出てこなかったみたい）";
+    } catch (err) {
+      return "（今はうまく話せないみたい）";
+    }
+  }
+
+  /** 交流ログを保存する（自分視点のlog配列とパートナー情報を受け取る）。 */
+  async recordMeeting(log: MeetingLogEntry[], partner: { name: string; species: SpeciesKey; color: ColorKey }): Promise<void> {
+    const data = await this.ctx.storage.get<CharacterData>("data");
+    if (!data) return;
+    const now = Date.now();
+    data.lastMeetingAt = now;
+    data.lastMeeting = { at: now, partner, log };
+    await this.ctx.storage.put("data", data);
   }
 }
 
