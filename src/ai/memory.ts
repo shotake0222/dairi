@@ -99,3 +99,64 @@ export async function retrieveRelevantMemories(
     return [];
   }
 }
+
+export interface ExportedMemory {
+  text: string;
+  createdAt: number;
+}
+
+/**
+ * そのキャラクターの長期記憶を、埋め込みベクトルではなく平文テキストのまま全件取り出す（エクスポート用）。
+ *
+ * 設計上重要な点: エクスポートするのは「テキスト」であって「ベクトル」ではない。
+ * ベクトルをそのまま書き出すと、そだつかけが使っているembeddingモデル（bge-m3）に
+ * フォーマットが縛られてしまい、将来別のハードウェア/プラットフォームに持ち出す際の
+ * 障害になる。テキストであれば、移行先がどんな埋め込みモデルを使っていても再埋め込みするだけで済み、
+ * 「モデルが変わっても人格・記憶は持ち越せる」というこのプロジェクトの一貫した設計方針に合致する。
+ *
+ * Vectorizeには「全件列挙」専用のAPIが無いため、characterIdによるメタデータフィルタと
+ * 十分に大きなtopKを組み合わせて代用している（MVP規模の記憶件数であれば実用上問題ない）。
+ */
+export async function exportAllMemories(env: MemoryEnv, characterId: string, limit = 100): Promise<ExportedMemory[]> {
+  // クエリベクトル自体の中身はフィルタ後の結果に影響しない（類似度ランキングは問わないため）。
+  // characterIdをシードにすることで、呼ぶたびに同じベクトルになり挙動が安定する。
+  const vector = await embedText(env, `sodatsukake-memory-export:${characterId}`);
+  if (!vector) return [];
+
+  try {
+    const result = await env.MEMORY_INDEX.query(vector, {
+      topK: limit,
+      filter: { characterId },
+      returnMetadata: "all",
+    });
+    return result.matches
+      .map((m) => ({
+        text: (m.metadata?.text as string) || "",
+        createdAt: (m.metadata?.createdAt as number) || 0,
+      }))
+      .filter((m) => m.text.length > 0)
+      .sort((a, b) => a.createdAt - b.createdAt);
+  } catch (err) {
+    return [];
+  }
+}
+
+/** インポート時、書き出された長期記憶を（新しいcharacterIdかもしれない）宛先に再埋め込みし直して復元する。 */
+export async function importMemories(env: MemoryEnv, characterId: string, memories: ExportedMemory[]): Promise<void> {
+  for (const m of memories) {
+    if (!m.text) continue;
+    const vector = await embedText(env, m.text);
+    if (!vector) continue;
+    try {
+      await env.MEMORY_INDEX.upsert([
+        {
+          id: crypto.randomUUID(),
+          values: vector,
+          metadata: { characterId, text: m.text, createdAt: m.createdAt || Date.now() },
+        },
+      ]);
+    } catch (err) {
+      // 1件の復元失敗で全体を止めない（他の記憶の復元は続ける）
+    }
+  }
+}

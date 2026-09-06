@@ -7,7 +7,7 @@ import {
 import { analyzeMessage } from "../ai/signalExtractor";
 import { buildSystemPrompt } from "../ai/promptBuilder";
 import { deriveSpeechStyle } from "../ai/speechStyle";
-import { retrieveRelevantMemories, storeMemory } from "../ai/memory";
+import { retrieveRelevantMemories, storeMemory, exportAllMemories, importMemories, ExportedMemory } from "../ai/memory";
 import { buildMeetingPrompt } from "../ai/promptBuilder";
 
 export interface Env {
@@ -45,6 +45,44 @@ export interface MeetingRecord {
 
 // 「お散歩」機能のクールダウン（AIコスト対策・1日1回程度の特別感を出すため）
 export const MEETING_COOLDOWN_MS = 20 * 60 * 60 * 1000; // 20時間
+
+/**
+ * 「人格パッケージ」フォーマット。育った性格・記憶を、モデルや実行環境に依存しない形で
+ * 出し入れできるようにするための、そだつかけの可搬フォーマット。
+ *
+ * 設計の要点:
+ * - personality/personalityHistoryは単なる数値なので、どんなAIモデル・どんなハードウェアでも解釈できる
+ * - memory.longTermは埋め込みベクトルではなく平文テキストで持つ（embeddingモデルへの依存を避けるため）
+ * - formatVersionを持たせることで、将来フィールドを追加・変更してもv1のパッケージを読み続けられるようにする
+ *
+ * これは将来的な「フィジカルAI/メタバースへの人格の持ち出し」や、この形式自体をBtoBでライセンスする
+ * 事業（人格ポータビリティAPI）の基礎データ契約として設計している。
+ */
+export const EXPORT_FORMAT_VERSION = "1.0";
+
+export interface PersonalityPackageV1 {
+  formatVersion: "1.0";
+  exportedAt: number; // epoch ms
+  character: {
+    id: string;
+    name: string;
+    species: SpeciesKey;
+    color: ColorKey;
+    createdAt: number;
+    growthStage: string;
+    interactionCount: number;
+  };
+  personality: PersonalityTraits;
+  personalityHistory: PersonalityHistoryEntry[];
+  memory: {
+    shortTerm: string;
+    longTerm: ExportedMemory[];
+  };
+  meta: {
+    generator: "sodatsukake";
+    note: string;
+  };
+}
 
 /** 性格変遷の可視化（成長グラフ）用の1スナップショット。 */
 export interface PersonalityHistoryEntry {
@@ -355,6 +393,95 @@ export class CharacterState extends DurableObject<Env> {
     data.lastMeetingAt = now;
     data.lastMeeting = { at: now, partner, log };
     await this.ctx.storage.put("data", data);
+  }
+
+  /**
+   * 育った性格・記憶を「人格パッケージ」として書き出す。
+   * フィジカルAIへの移植・バックアップ・別プラットフォームへの持ち出しなど、
+   * 「この分身を別の身体/システムに連れて行く」ためのすべての出発点になる。
+   */
+  async exportPackage(): Promise<PersonalityPackageV1 | null> {
+    const data = await this.ctx.storage.get<CharacterData>("data");
+    if (!data) return null;
+
+    const characterId = this.ctx.id.name ?? "unknown";
+    const longTerm = await exportAllMemories(this.env, characterId);
+
+    return {
+      formatVersion: EXPORT_FORMAT_VERSION,
+      exportedAt: Date.now(),
+      character: {
+        id: characterId,
+        name: data.name,
+        species: data.species,
+        color: data.color,
+        createdAt: data.createdAt,
+        growthStage: data.growthStage,
+        interactionCount: data.interactionCount,
+      },
+      personality: data.personality,
+      personalityHistory: data.personalityHistory ?? [],
+      memory: {
+        shortTerm: data.memorySummary,
+        longTerm,
+      },
+      meta: {
+        generator: "sodatsukake",
+        note:
+          "この人格パッケージは、そだつかけで育った性格・記憶をモデル/実行環境に依存しない形で保存したものです。" +
+          "personality・personalityHistoryは単純な数値なのでそのまま利用できます。" +
+          "memory.longTermは埋め込みベクトルではなく平文テキストのため、移植先のAIモデルで再埋め込みするか、" +
+          "そのままシステムプロンプトの一部として渡すことで記憶を再現できます。",
+      },
+    };
+  }
+
+  /**
+   * 人格パッケージから復元する（このDOインスタンスの現在のデータを上書きする）。
+   * 「他の分身と出会う」機能へのオプトイン状態は引き継がない＝復元後は必ずオフからのスタートにする
+   * （プライバシー上、環境が変わったら同意も取り直すのが安全なため）。
+   */
+  async importPackage(pkg: PersonalityPackageV1): Promise<{ ok: true; name: string } | { ok: false; error: string }> {
+    if (!pkg || pkg.formatVersion !== EXPORT_FORMAT_VERSION) {
+      return { ok: false, error: `対応していない形式です（formatVersion: ${pkg?.formatVersion ?? "不明"}）` };
+    }
+    if (!pkg.character || !SPECIES_KEYS.includes(pkg.character.species) || !COLOR_KEYS.includes(pkg.character.color)) {
+      return { ok: false, error: "パッケージの内容が壊れているようです（種族・色が不正）" };
+    }
+    const requiredTraits: (keyof PersonalityTraits)[] = [
+      "warmth",
+      "curiosity",
+      "cheerfulness",
+      "caution",
+      "independence",
+      "humor",
+    ];
+    if (!pkg.personality || requiredTraits.some((k) => typeof pkg.personality[k] !== "number")) {
+      return { ok: false, error: "パッケージの内容が壊れているようです（性格パラメータが不正）" };
+    }
+
+    const now = Date.now();
+    const data: CharacterData = {
+      name: pkg.character.name || "名もなきキャラクター",
+      species: pkg.character.species,
+      color: pkg.character.color,
+      personality: pkg.personality,
+      memorySummary: pkg.memory?.shortTerm ?? "",
+      growthStage: pkg.character.growthStage || "誕生したばかり",
+      interactionCount: pkg.character.interactionCount ?? 0,
+      lastVisit: now,
+      createdAt: pkg.character.createdAt ?? now,
+      personalityHistory: pkg.personalityHistory ?? [],
+      socialOptIn: false,
+    };
+    await this.ctx.storage.put("data", data);
+
+    const characterId = this.ctx.id.name ?? "unknown";
+    if (pkg.memory?.longTerm && pkg.memory.longTerm.length > 0) {
+      await importMemories(this.env, characterId, pkg.memory.longTerm);
+    }
+
+    return { ok: true, name: data.name };
   }
 }
 

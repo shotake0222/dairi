@@ -1,4 +1,4 @@
-import { CharacterState, SPECIES_LABELS, MEETING_COOLDOWN_MS, MeetingLogEntry, SpeciesKey, ColorKey } from "./durable-objects/characterState";
+import { CharacterState, SPECIES_LABELS, MEETING_COOLDOWN_MS, MeetingLogEntry, SpeciesKey, ColorKey, PersonalityPackageV1 } from "./durable-objects/characterState";
 import { deriveSpeechStyle } from "./ai/speechStyle";
 import { PersonalityTraits, TRAIT_KEYS } from "./ai/personality";
 
@@ -182,6 +182,40 @@ export default {
         partner: { name: partnerRow.name, species: partnerRow.species, color: partnerRow.color },
         log: selfLog,
       });
+    }
+
+    // --- 人格パッケージのエクスポート（ダウンロード） ---
+    // 育った性格・記憶を、モデル/実行環境に依存しない形の1ファイルとして書き出す。
+    // フィジカルAI移植・バックアップ・他プラットフォームへの持ち出しの共通の出発点になるAPI。
+    if (url.pathname === "/api/character/export" && request.method === "GET") {
+      const characterId = url.searchParams.get("cid");
+      if (!characterId) {
+        return json({ error: "cid is required" }, { status: 400 });
+      }
+      const stub = env.CHARACTER.getByName(characterId);
+      const pkg = await stub.exportPackage();
+      if (!pkg) return json({ error: "not found" }, { status: 404 });
+      const fileName = `sodatsukake_${pkg.character.name || characterId}.json`.replace(/[^\w.\-ぁ-んァ-ヶー一-龠]/g, "_");
+      return new Response(JSON.stringify(pkg, null, 2), {
+        headers: {
+          "content-type": "application/json; charset=utf-8",
+          "content-disposition": `attachment; filename="${encodeURIComponent(fileName)}"`,
+        },
+      });
+    }
+
+    // --- 人格パッケージのインポート（復元） ---
+    // 指定したcharacterId（＝復元先のDOインスタンス）の現在のデータを上書きする破壊的操作。
+    // 「他の分身と出会う」機能へのオプトイン状態は引き継がない（復元後は必ずオフから）。
+    if (url.pathname === "/api/character/import" && request.method === "POST") {
+      const body = await request.json<{ characterId?: string; package?: PersonalityPackageV1 }>();
+      if (!body.characterId || !body.package) {
+        return json({ error: "characterId and package are required" }, { status: 400 });
+      }
+      const stub = env.CHARACTER.getByName(body.characterId);
+      const result = await stub.importPackage(body.package);
+      if (!result.ok) return json({ error: result.error }, { status: 400 });
+      return json(result);
     }
 
     // --- キャラクター名前設定API（初回サモン時に使う想定） ---

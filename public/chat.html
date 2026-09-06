@@ -19,12 +19,23 @@
   .brand { font-size: 10px; letter-spacing: 0.08em; color: #a78bfa; font-weight: 700; margin-bottom: 2px; }
   #status { font-size: 12px; color: #666; margin-top: 4px; }
   .nameCol { flex: 1; min-width: 0; }
-  .headerActions { display: flex; gap: 6px; align-self: flex-start; flex-shrink: 0; }
-  #toggleTraits, #historyLink, #infoBtn {
+  .headerActions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; align-self: flex-start; flex-shrink: 0; }
+  #toggleTraits, #historyLink, #infoBtn, #toggleExport {
     border: 1px solid #ddd; background: #fff; color: #7c5cff; font-size: 12px;
     padding: 6px 10px; border-radius: 999px; white-space: nowrap; text-decoration: none;
   }
   #infoBtn { padding: 6px 10px; font-weight: 700; }
+
+  /* 人格パッケージの書き出し/復元パネル */
+  #exportPanel { display: none; margin: 10px 16px 0; padding: 12px 14px; border-radius: 12px; background: #f0ecff; flex-direction: column; }
+  #exportPanel.show { display: flex; }
+  .exportExplain { font-size: 11px; color: #5b4b99; line-height: 1.6; margin-bottom: 10px; }
+  .exportRow { display: flex; gap: 8px; flex-wrap: wrap; }
+  #exportBtn, #importBtn {
+    border: 1px solid #ddd; background: #fff; color: #7c5cff; font-size: 12px; font-weight: 600;
+    padding: 8px 14px; border-radius: 999px; cursor: pointer; white-space: nowrap;
+  }
+  #exportStatus { font-size: 11px; color: #7a6bb0; margin-top: 8px; }
 
   /* コンセプトを最初に伝えるバナー（初回のみ表示・閉じたら二度と出さない） */
   #conceptBanner {
@@ -125,6 +136,7 @@
       <button id="infoBtn" type="button" title="そだつかけとは？">?</button>
       <a id="historyLink" href="#">📈 成長</a>
       <button id="toggleSocial" type="button">🤝 交流</button>
+      <button id="toggleExport" type="button">📦 保存/復元</button>
       <button id="toggleTraits" type="button">性格を見る ▾</button>
     </div>
   </div>
@@ -148,6 +160,19 @@
     </div>
     <div id="meetStatus"></div>
     <div id="meetingResult"></div>
+  </div>
+
+  <div id="exportPanel">
+    <div class="exportExplain">
+      育った性格・記憶を1つのファイルとして保存できます。バックアップはもちろん、将来メタバースのアバターや
+      フィジカルAI（ロボット等）にこの子を連れて行くときの土台にもなる形式です。
+    </div>
+    <div class="exportRow">
+      <button id="exportBtn" type="button">⬇️ 書き出す</button>
+      <button id="importBtn" type="button">⬆️ ファイルから復元</button>
+      <input id="importFile" type="file" accept="application/json" hidden />
+    </div>
+    <div id="exportStatus"></div>
   </div>
 </header>
 
@@ -217,8 +242,79 @@
   const meetBtn = document.getElementById("meetBtn");
   const meetStatus = document.getElementById("meetStatus");
   const meetingResult = document.getElementById("meetingResult");
+  const toggleExportBtn = document.getElementById("toggleExport");
+  const exportPanel = document.getElementById("exportPanel");
+  const exportBtn = document.getElementById("exportBtn");
+  const importBtn = document.getElementById("importBtn");
+  const importFile = document.getElementById("importFile");
+  const exportStatus = document.getElementById("exportStatus");
 
   historyLink.href = `/history.html?cid=${encodeURIComponent(cid || "")}`;
+
+  // --- 人格パッケージの書き出し/復元（フィジカルAI・メタバース移植やバックアップの土台） ---
+  toggleExportBtn.addEventListener("click", () => {
+    exportPanel.classList.toggle("show");
+  });
+
+  exportBtn.addEventListener("click", async () => {
+    if (!cid) return;
+    exportBtn.disabled = true;
+    exportStatus.textContent = "書き出し中……";
+    try {
+      const res = await fetch(`/api/character/export?cid=${encodeURIComponent(cid)}`);
+      if (!res.ok) throw new Error("export failed");
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = `sodatsukake_${nameEl.textContent || "character"}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(blobUrl);
+      exportStatus.textContent = "保存しました";
+    } catch (err) {
+      exportStatus.textContent = "書き出しに失敗しました。もう一度試してね";
+    } finally {
+      exportBtn.disabled = false;
+    }
+  });
+
+  importBtn.addEventListener("click", () => importFile.click());
+
+  importFile.addEventListener("change", async () => {
+    const file = importFile.files && importFile.files[0];
+    importFile.value = "";
+    if (!file || !cid) return;
+
+    const confirmed = confirm(
+      `「${nameEl.textContent}」の今のデータを、このファイルの内容で上書きします。元には戻せません。よろしいですか？`
+    );
+    if (!confirmed) return;
+
+    importBtn.disabled = true;
+    exportStatus.textContent = "復元中……";
+    try {
+      const text = await file.text();
+      const pkg = JSON.parse(text);
+      const res = await fetch("/api/character/import", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ characterId: cid, package: pkg }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        exportStatus.textContent = data.error;
+      } else {
+        exportStatus.textContent = `「${data.name}」として復元しました。画面を更新します……`;
+        setTimeout(() => location.reload(), 900);
+      }
+    } catch (err) {
+      exportStatus.textContent = "ファイルを読み込めませんでした。正しいJSONファイルか確認してね";
+    } finally {
+      importBtn.disabled = false;
+    }
+  });
 
   // --- 「他の分身と出会う」機能（オプトイン制。人間同士のメッセージ交換は行わない） ---
   let socialOptIn = false;
