@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>キャラクターと会話</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: #f5f3ff; color: #1a1a1a;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    display: flex; flex-direction: column;
+  }
+  header { padding: 16px; background: #fff; border-bottom: 1px solid #eee; }
+  header h1 { margin: 0; font-size: 16px; }
+  #status { font-size: 12px; color: #666; margin-top: 4px; }
+  #log { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .msg { max-width: 78%; padding: 10px 14px; border-radius: 16px; line-height: 1.5; font-size: 14px; white-space: pre-wrap; }
+  .msg.user { align-self: flex-end; background: #7c5cff; color: #fff; border-bottom-right-radius: 4px; }
+  .msg.char { align-self: flex-start; background: #fff; border: 1px solid #eee; border-bottom-left-radius: 4px; }
+  form { display: flex; gap: 8px; padding: 12px; background: #fff; border-top: 1px solid #eee; }
+  input { flex: 1; padding: 12px 14px; border-radius: 999px; border: 1px solid #ddd; font-size: 14px; }
+  button { padding: 12px 20px; border-radius: 999px; border: none; background: #7c5cff; color: #fff; font-weight: 600; }
+  button:disabled { opacity: 0.5; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="charName">キャラクター</h1>
+  <div id="status">読み込み中…</div>
+</header>
+<div id="log"></div>
+<form id="form">
+  <input id="input" type="text" placeholder="話しかけてみよう" autocomplete="off" />
+  <button type="submit">送信</button>
+</form>
+
+<script>
+  const params = new URLSearchParams(location.search);
+  const cid = params.get("cid");
+  const log = document.getElementById("log");
+  const form = document.getElementById("form");
+  const input = document.getElementById("input");
+  const statusEl = document.getElementById("status");
+  const nameEl = document.getElementById("charName");
+
+  function addMessage(text, who) {
+    const div = document.createElement("div");
+    div.className = `msg ${who}`;
+    div.textContent = text;
+    log.appendChild(div);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function renderStatus(data) {
+    nameEl.textContent = data.name || "キャラクター";
+    statusEl.textContent = `成長段階: ${data.growthStage} / やり取り回数: ${data.interactionCount ?? 0}`;
+  }
+
+  async function loadInitial() {
+    if (!cid) {
+      statusEl.textContent = "キャラクターIDが指定されていません";
+      return;
+    }
+    const res = await fetch(`/api/character?cid=${encodeURIComponent(cid)}`);
+    if (res.ok) {
+      const data = await res.json();
+      renderStatus(data);
+      if (!data.interactionCount) {
+        addMessage("……はじめまして。よろしくね。", "char");
+      }
+    }
+  }
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const message = input.value.trim();
+    if (!message || !cid) return;
+    addMessage(message, "user");
+    input.value = "";
+    input.disabled = true;
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ characterId: cid, message }),
+      });
+      const data = await res.json();
+      addMessage(data.reply, "char");
+      renderStatus(data);
+    } catch (err) {
+      addMessage("（うまく通信できなかったみたい……もう一度送ってみて）", "char");
+    } finally {
+      input.disabled = false;
+      input.focus();
+    }
+  });
+
+  loadInitial();
+</script>
+</body>
+</html>

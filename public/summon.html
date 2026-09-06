@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>キャラクター召喚</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: #0b0b12; color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .stage { position: relative; width: 100%; max-width: 480px; aspect-ratio: 3/4; overflow: hidden; border-radius: 16px; background: #000; }
+  video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .overlay {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: flex-end; padding: 24px; gap: 16px;
+    background: linear-gradient(to top, rgba(0,0,0,0.75), rgba(0,0,0,0) 40%);
+    text-align: center;
+  }
+  .appear {
+    font-size: 22px; font-weight: 700; opacity: 0; transform: translateY(12px);
+    transition: opacity 0.8s ease, transform 0.8s ease;
+  }
+  .appear.show { opacity: 1; transform: translateY(0); }
+  .hint { font-size: 13px; opacity: 0.7; }
+  button {
+    padding: 12px 28px; border-radius: 999px; border: none; font-size: 16px; font-weight: 600;
+    background: #fff; color: #111; opacity: 0; transition: opacity 0.6s ease; cursor: pointer;
+  }
+  button.show { opacity: 1; }
+  .fallback { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #aaa; font-size: 14px; padding: 24px; text-align: center; }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <video id="cam" autoplay playsinline muted></video>
+    <div class="fallback" id="fallback" hidden>
+      カメラを起動できませんでした。<br />このままキャラクターに会うこともできます。
+    </div>
+    <div class="overlay">
+      <div class="appear" id="appearText">…</div>
+      <div class="hint">キーホルダーを画面に映すと、キャラクターが姿を見せてくれます</div>
+      <button id="goChat">会話をはじめる</button>
+    </div>
+  </div>
+
+<script>
+  // NOTE: 特許ファミリー（撮像画像の表示中にサーバー主導の処理結果を出力する、という共通要件）を
+  // 踏まえ、召喚シーンでは「カメラ映像を表示している最中に」キャラクターの登場テキスト/演出を
+  // 重畳表示する構成にしてあります。実際のAR表現（3Dモデル重畳等）は今後この上に拡張してください。
+
+  const params = new URLSearchParams(location.search);
+  const cid = params.get("cid");
+  const isFirst = params.get("first") === "1";
+
+  if (!cid) {
+    document.getElementById("appearText").textContent = "キャラクターが見つかりませんでした";
+  }
+
+  async function startCamera() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+      document.getElementById("cam").srcObject = stream;
+    } catch (e) {
+      document.getElementById("fallback").hidden = false;
+    }
+  }
+
+  async function loadCharacter() {
+    if (!cid) return null;
+    const res = await fetch(`/api/character?cid=${encodeURIComponent(cid)}`);
+    if (!res.ok) return null;
+    return res.json();
+  }
+
+  (async () => {
+    startCamera();
+    const data = await loadCharacter();
+    const name = data?.name || "きみの相棒";
+    const appearText = document.getElementById("appearText");
+    const goChatBtn = document.getElementById("goChat");
+
+    setTimeout(() => {
+      appearText.textContent = isFirst
+        ? `「${name}」が生まれた……！`
+        : `「${name}」がきみを見つけたよ`;
+      appearText.classList.add("show");
+    }, 500);
+
+    setTimeout(() => goChatBtn.classList.add("show"), 1200);
+
+    goChatBtn.addEventListener("click", () => {
+      location.href = `/chat.html?cid=${encodeURIComponent(cid || "")}`;
+    });
+  })();
+</script>
+</body>
+</html>

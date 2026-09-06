@@ -1,0 +1,29 @@
+name = "nfc-companion"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+# --- 静的ファイル（AR召喚ページ・チャットページ） ---
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+# --- Workers AI（序盤はSLMで運用） ---
+[ai]
+binding = "AI"
+
+# --- D1（NFCタグ⇔キャラクターの紐付けなど） ---
+# database_id は `wrangler d1 create nfc-companion-db` 実行後に発行されるIDに書き換えてください
+[[d1_databases]]
+binding = "DB"
+database_name = "nfc-companion-db"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+
+# --- Durable Objects（キャラクター1体＝1インスタンスで性格・記憶を保持） ---
+[[durable_objects.bindings]]
+name = "CHARACTER"
+class_name = "CharacterState"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["CharacterState"]
