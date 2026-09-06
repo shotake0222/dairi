@@ -4,6 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>そだつかけ｜キャラクター召喚</title>
+<script type="module" src="https://cdn.jsdelivr.net/npm/@google/model-viewer@3.5.0/dist/model-viewer.min.js"></script>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
@@ -14,12 +15,20 @@
   }
   .stage { position: relative; width: 100%; max-width: 480px; aspect-ratio: 3/4; overflow: hidden; border-radius: 16px; background: #000; }
   video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  model-viewer {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    --poster-color: transparent; background-color: transparent;
+    opacity: 0; transform: scale(0.8) translateY(10px);
+    transition: opacity 0.9s ease, transform 0.9s ease;
+  }
+  model-viewer.show { opacity: 1; transform: scale(1) translateY(0); }
   .overlay {
     position: absolute; inset: 0; display: flex; flex-direction: column;
     align-items: center; justify-content: flex-end; padding: 24px; gap: 16px;
     background: linear-gradient(to top, rgba(0,0,0,0.75), rgba(0,0,0,0) 40%);
-    text-align: center;
+    text-align: center; pointer-events: none;
   }
+  .overlay > * { pointer-events: auto; }
   .appear {
     font-size: 22px; font-weight: 700; opacity: 0; transform: translateY(12px);
     transition: opacity 0.8s ease, transform 0.8s ease;
@@ -33,7 +42,7 @@
   button.show { opacity: 1; }
   button:disabled { opacity: 0.4 !important; cursor: default; }
   .fallback { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #aaa; font-size: 14px; padding: 24px; text-align: center; }
-  .brand { position: absolute; top: 16px; left: 16px; font-size: 11px; letter-spacing: 0.1em; color: rgba(255,255,255,0.6); font-weight: 700; }
+  .brand { position: absolute; top: 16px; left: 16px; font-size: 11px; letter-spacing: 0.1em; color: rgba(255,255,255,0.6); font-weight: 700; z-index: 2; }
 
   .nameForm {
     display: flex; flex-direction: column; align-items: center; gap: 12px;
@@ -55,6 +64,12 @@
     <div class="fallback" id="fallback" hidden>
       カメラを起動できませんでした。<br />このままキャラクターに会うこともできます。
     </div>
+    <!-- 3Dモデル表示。カメラ映像の上に浮かべることで簡易的なAR風の登場演出にしている。
+         ar-modes を有効にしているため、対応端末では「ARで見る」から実カメラ越しのAR表示にも遷移できる。 -->
+    <model-viewer id="model" camera-controls disable-zoom auto-rotate auto-rotate-delay="0"
+      rotation-per-second="18deg" interaction-prompt="none"
+      shadow-intensity="0" exposure="1.1" ar ar-modes="webxr scene-viewer quick-look">
+    </model-viewer>
     <div class="overlay">
       <div class="appear" id="appearText">…</div>
       <div class="hint" id="hint">キーホルダーを画面に映すと、キャラクターが姿を見せてくれます</div>
@@ -72,8 +87,9 @@
 
 <script>
   // NOTE: 特許ファミリー（撮像画像の表示中にサーバー主導の処理結果を出力する、という共通要件）を
-  // 踏まえ、召喚シーンでは「カメラ映像を表示している最中に」キャラクターの登場テキスト/演出を
-  // 重畳表示する構成にしてあります。実際のAR表現（3Dモデル重畳等）は今後この上に拡張してください。
+  // 踏まえ、召喚シーンでは「カメラ映像を表示している最中に」キャラクターの登場演出を重畳表示する
+  // 構成を維持。演出そのものは、テキストのみ→3Dモデル（model-viewer）表示に強化した。
+  // model-viewer の ar 属性により、対応端末では「ARで見る」から実カメラ越しのAR表示にも遷移できる。
 
   const params = new URLSearchParams(location.search);
   const cid = params.get("cid");
@@ -84,6 +100,7 @@
   const goChatBtn = document.getElementById("goChat");
   const nameForm = document.getElementById("nameForm");
   const nameInput = document.getElementById("nameInput");
+  const modelEl = document.getElementById("model");
 
   if (!cid) {
     appearText.textContent = "キャラクターが見つかりませんでした";
@@ -105,6 +122,12 @@
     return res.json();
   }
 
+  function applyModel(data) {
+    if (!data || !data.species || !data.color) return;
+    modelEl.src = `/characters/${data.species}_${data.color}.glb`;
+    modelEl.setAttribute("alt", data.name || "キャラクター");
+  }
+
   function goToChat() {
     location.href = `/chat.html?cid=${encodeURIComponent(cid || "")}`;
   }
@@ -112,19 +135,24 @@
   (async () => {
     startCamera();
     const data = await loadCharacter();
+    applyModel(data);
 
     if (isFirst) {
-      // 初回: たまごが光るような演出→名前を決めてもらう
+      // 初回: たまごが光るような演出→3Dモデル登場→名前を決めてもらう
       setTimeout(() => {
         appearText.textContent = "……なにかが生まれる気配がする";
         appearText.classList.add("show");
       }, 500);
 
       setTimeout(() => {
+        modelEl.classList.add("show");
+      }, 900);
+
+      setTimeout(() => {
         hint.textContent = "この子に、名前をつけてあげよう";
         nameForm.classList.add("show");
         nameInput.focus();
-      }, 1400);
+      }, 1600);
 
       nameForm.addEventListener("submit", async (e) => {
         e.preventDefault();
@@ -151,13 +179,14 @@
         setTimeout(goToChat, 900);
       });
     } else {
-      // 2回目以降: 既存の名前でお出迎え
+      // 2回目以降: 既存の名前・姿でお出迎え
       const name = data?.name || "きみの相棒";
+      modelEl.classList.add("show");
       setTimeout(() => {
         appearText.textContent = `「${name}」がきみを見つけたよ`;
         appearText.classList.add("show");
-      }, 500);
-      setTimeout(() => goChatBtn.classList.add("show"), 1200);
+      }, 400);
+      setTimeout(() => goChatBtn.classList.add("show"), 1100);
       goChatBtn.addEventListener("click", goToChat);
     }
   })();

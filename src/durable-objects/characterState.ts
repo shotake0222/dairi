@@ -12,14 +12,30 @@ export interface Env {
   AI: Ai;
 }
 
+// 5種族×6色=30種類。実ファイルは public/characters/{species}_{color}.png / .glb
+export const SPECIES_KEYS = ["punikoro", "mofukuru", "tsunomaru", "howahowa", "kiratsubu"] as const;
+export const COLOR_KEYS = ["coral", "sky", "leaf", "sun", "lavender", "peach"] as const;
+export type SpeciesKey = (typeof SPECIES_KEYS)[number];
+export type ColorKey = (typeof COLOR_KEYS)[number];
+
 export interface CharacterData {
   name: string;
+  species: SpeciesKey;
+  color: ColorKey;
   personality: PersonalityTraits;
   memorySummary: string;
   growthStage: string;
   interactionCount: number;
   lastVisit: number; // epoch ms
   createdAt: number;
+}
+
+function randomSpecies(): SpeciesKey {
+  return SPECIES_KEYS[Math.floor(Math.random() * SPECIES_KEYS.length)];
+}
+
+function randomColor(): ColorKey {
+  return COLOR_KEYS[Math.floor(Math.random() * COLOR_KEYS.length)];
 }
 
 const CHAT_MODEL = "@cf/meta/llama-3.2-3b-instruct"; // 序盤運用の軽量モデル。品質次第で差し替え可能
@@ -36,6 +52,8 @@ export class CharacterState extends DurableObject<Env> {
 
     const data: CharacterData = {
       name,
+      species: randomSpecies(),
+      color: randomColor(),
       personality: { ...DEFAULT_PERSONALITY },
       memorySummary: "",
       growthStage: "誕生したばかり",
@@ -64,6 +82,8 @@ export class CharacterState extends DurableObject<Env> {
     growthStage: string;
     interactionCount: number;
     speechStyleLabel: string;
+    species: SpeciesKey;
+    color: ColorKey;
   }> {
     let data = await this.ctx.storage.get<CharacterData>("data");
     if (!data) {
@@ -110,6 +130,8 @@ export class CharacterState extends DurableObject<Env> {
       growthStage: data.growthStage,
       interactionCount: data.interactionCount,
       speechStyleLabel: deriveSpeechStyle(data.personality).label,
+      species: data.species,
+      color: data.color,
     };
   }
 }

@@ -4,6 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>そだつかけ｜キャラクターと会話</title>
+<script type="module" src="https://cdn.jsdelivr.net/npm/@google/model-viewer@3.5.0/dist/model-viewer.min.js"></script>
 <style>
   :root { color-scheme: light; }
   * { box-sizing: border-box; }
@@ -12,17 +13,38 @@
     font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
     display: flex; flex-direction: column;
   }
-  header { padding: 16px; background: #fff; border-bottom: 1px solid #eee; }
-  header .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  header { padding: 12px 16px; background: #fff; border-bottom: 1px solid #eee; }
+  header .row { display: flex; align-items: center; gap: 10px; }
   header h1 { margin: 0; font-size: 16px; }
   .brand { font-size: 10px; letter-spacing: 0.08em; color: #a78bfa; font-weight: 700; margin-bottom: 2px; }
   #status { font-size: 12px; color: #666; margin-top: 4px; }
+  .nameCol { flex: 1; min-width: 0; }
   #toggleTraits {
     border: 1px solid #ddd; background: #fff; color: #7c5cff; font-size: 12px;
-    padding: 6px 10px; border-radius: 999px; white-space: nowrap;
+    padding: 6px 10px; border-radius: 999px; white-space: nowrap; align-self: flex-start;
   }
 
-  #traits { display: none; margin-top: 12px; display: none; flex-direction: column; gap: 6px; }
+  /* いつでも見れる2Dアバター（常時表示のアイコン） */
+  #avatarIcon {
+    width: 44px; height: 44px; border-radius: 999px; background: #f0ecff;
+    border: 2px solid #e4defc; object-fit: cover; flex-shrink: 0;
+  }
+
+  /* チャットしながら見られる3Dモデルパネル */
+  #modelStage {
+    position: relative; width: 100%; height: 190px;
+    background: linear-gradient(180deg, #efeaff, #f5f3ff);
+    border-bottom: 1px solid #eee; overflow: hidden; flex-shrink: 0;
+  }
+  #modelStage model-viewer { width: 100%; height: 100%; --poster-color: transparent; }
+  #modelToggle {
+    position: absolute; top: 8px; right: 8px; border: 1px solid #ddd; background: rgba(255,255,255,0.9);
+    color: #7c5cff; font-size: 11px; padding: 4px 10px; border-radius: 999px;
+  }
+  #modelStage.collapsed { height: 0; border-bottom: none; }
+  #modelStage.collapsed model-viewer { visibility: hidden; }
+
+  #traits { display: none; margin: 10px 16px 0; flex-direction: column; gap: 6px; }
   #traits.show { display: flex; }
   .traitRow { display: flex; align-items: center; gap: 8px; font-size: 11px; color: #444; }
   .traitLabel { width: 60px; flex-shrink: 0; }
@@ -43,7 +65,8 @@
 <body>
 <header>
   <div class="row">
-    <div>
+    <img id="avatarIcon" src="" alt="" hidden />
+    <div class="nameCol">
       <div class="brand">そだつかけ</div>
       <h1 id="charName">キャラクター</h1>
       <div id="status">読み込み中…</div>
@@ -59,6 +82,16 @@
     <div class="traitRow" data-trait="humor"><span class="traitLabel">ユーモア</span><div class="traitBarBg"><div class="traitBarFg"></div></div><span class="traitValue">-</span></div>
   </div>
 </header>
+
+<!-- 会話しながら見られる3Dモデル表示エリア -->
+<div id="modelStage">
+  <button id="modelToggle" type="button">たたむ ▴</button>
+  <model-viewer id="model" camera-controls disable-zoom auto-rotate auto-rotate-delay="1500"
+    rotation-per-second="12deg" interaction-prompt="none" shadow-intensity="0" exposure="1.1"
+    ar ar-modes="webxr scene-viewer quick-look">
+  </model-viewer>
+</div>
+
 <div id="log"></div>
 <form id="form">
   <input id="input" type="text" placeholder="話しかけてみよう" autocomplete="off" />
@@ -75,10 +108,19 @@
   const nameEl = document.getElementById("charName");
   const traitsEl = document.getElementById("traits");
   const toggleTraitsBtn = document.getElementById("toggleTraits");
+  const avatarIcon = document.getElementById("avatarIcon");
+  const modelEl = document.getElementById("model");
+  const modelStage = document.getElementById("modelStage");
+  const modelToggle = document.getElementById("modelToggle");
 
   toggleTraitsBtn.addEventListener("click", () => {
     const nowShown = traitsEl.classList.toggle("show");
     toggleTraitsBtn.textContent = nowShown ? "性格を見る ▴" : "性格を見る ▾";
+  });
+
+  modelToggle.addEventListener("click", () => {
+    const collapsed = modelStage.classList.toggle("collapsed");
+    modelToggle.textContent = collapsed ? "3Dを見る ▾" : "たたむ ▴";
   });
 
   function addMessage(text, who) {
@@ -89,11 +131,23 @@
     log.scrollTop = log.scrollHeight;
   }
 
+  // いつでも見れる2Dアイコン＋3Dモデルの両方を、種族・色に応じて設定する
+  function applyCharacterVisuals(data) {
+    if (!data || !data.species || !data.color) return;
+    const base = `/characters/${data.species}_${data.color}`;
+    avatarIcon.src = `${base}.png`;
+    avatarIcon.alt = data.name || "キャラクター";
+    avatarIcon.hidden = false;
+    modelEl.src = `${base}.glb`;
+    modelEl.setAttribute("alt", data.name || "キャラクター");
+  }
+
   function renderStatus(data) {
     nameEl.textContent = data.name || "キャラクター";
     const styleLabel = data.speechStyleLabel ? ` / 口調: ${data.speechStyleLabel}` : "";
     statusEl.textContent = `成長段階: ${data.growthStage} / やり取り回数: ${data.interactionCount ?? 0}${styleLabel}`;
     if (data.personality) renderPersonality(data.personality);
+    applyCharacterVisuals(data);
   }
 
   function renderPersonality(personality) {
