@@ -89,7 +89,8 @@
 
   function renderStatus(data) {
     nameEl.textContent = data.name || "キャラクター";
-    statusEl.textContent = `成長段階: ${data.growthStage} / やり取り回数: ${data.interactionCount ?? 0}`;
+    const styleLabel = data.speechStyleLabel ? ` / 口調: ${data.speechStyleLabel}` : "";
+    statusEl.textContent = `成長段階: ${data.growthStage} / やり取り回数: ${data.interactionCount ?? 0}${styleLabel}`;
     if (data.personality) renderPersonality(data.personality);
   }
 

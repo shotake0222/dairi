@@ -1,4 +1,5 @@
 import { CharacterState } from "./durable-objects/characterState";
+import { deriveSpeechStyle } from "./ai/speechStyle";
 
 export { CharacterState };
 
@@ -80,7 +81,7 @@ export default {
       const stub = env.CHARACTER.getByName(characterId);
       const state = await stub.getState();
       if (!state) return json({ error: "not found" }, { status: 404 });
-      return json(state);
+      return json({ ...state, speechStyleLabel: deriveSpeechStyle(state.personality).label });
     }
 
     // --- キャラクター名前設定API（初回サモン時に使う想定） ---

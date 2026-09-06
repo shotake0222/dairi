@@ -6,6 +6,7 @@ import {
 } from "../ai/personality";
 import { analyzeMessage } from "../ai/signalExtractor";
 import { buildSystemPrompt } from "../ai/promptBuilder";
+import { deriveSpeechStyle } from "../ai/speechStyle";
 
 export interface Env {
   AI: Ai;
@@ -62,6 +63,7 @@ export class CharacterState extends DurableObject<Env> {
     personality: PersonalityTraits;
     growthStage: string;
     interactionCount: number;
+    speechStyleLabel: string;
   }> {
     let data = await this.ctx.storage.get<CharacterData>("data");
     if (!data) {
@@ -107,6 +109,7 @@ export class CharacterState extends DurableObject<Env> {
       personality: data.personality,
       growthStage: data.growthStage,
       interactionCount: data.interactionCount,
+      speechStyleLabel: deriveSpeechStyle(data.personality).label,
     };
   }
 }
