@@ -78,8 +78,15 @@
   #log { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
   .msg { max-width: 78%; padding: 10px 14px; border-radius: 16px; line-height: 1.5; font-size: 14px; white-space: pre-wrap; }
   .msg.user { align-self: flex-end; background: #7c5cff; color: #fff; border-bottom-right-radius: 4px; }
-  .msg.char { align-self: flex-start; background: #fff; border: 1px solid #eee; border-bottom-left-radius: 4px; }
+  .msg.char { align-self: flex-start; background: #fff; border: 1px solid #eee; border-bottom-left-radius: 4px; display: flex; align-items: flex-end; gap: 8px; }
+  .msg.char .msgText { flex: 1; }
+  .speakBtn { border: none; background: transparent; font-size: 15px; line-height: 1; padding: 2px; cursor: pointer; color: #7c5cff; flex-shrink: 0; opacity: 0.75; }
+  .speakBtn:active { opacity: 1; }
   .msg.system { align-self: center; background: transparent; color: #999; font-size: 12px; border: none; padding: 4px 10px; }
+  #autoSpeakToggle {
+    border: 1px solid #ddd; background: #fff; color: #7c5cff; font-size: 11px;
+    padding: 4px 10px; border-radius: 999px; white-space: nowrap; margin: 8px 16px 0; align-self: flex-start;
+  }
   form { display: flex; gap: 8px; padding: 12px; background: #fff; border-top: 1px solid #eee; }
   input { flex: 1; padding: 12px 14px; border-radius: 999px; border: 1px solid #ddd; font-size: 14px; }
   button.send { padding: 12px 20px; border-radius: 999px; border: none; background: #7c5cff; color: #fff; font-weight: 600; }
@@ -119,6 +126,8 @@
     ar ar-modes="webxr scene-viewer quick-look">
   </model-viewer>
 </div>
+
+<button id="autoSpeakToggle" type="button" hidden>🔇 自動読み上げ：オフ</button>
 
 <div id="conceptBanner" hidden>
   <div class="text">
@@ -168,8 +177,70 @@
   const conceptModal = document.getElementById("conceptModal");
   const infoBtn = document.getElementById("infoBtn");
   const conceptModalClose = document.getElementById("conceptModalClose");
+  const autoSpeakToggle = document.getElementById("autoSpeakToggle");
 
   historyLink.href = `/history.html?cid=${encodeURIComponent(cid || "")}`;
+
+  // --- 読み上げ機能（Web Speech API） ---
+  // Cloudflare Workers AI側のTTSモデル（melotts/aura）は現時点で日本語が未対応・不安定なため、
+  // サーバーを経由せずブラウザ標準の音声合成エンジンを使う方針にしている。
+  // OS/ブラウザ側の日本語音声が使われるため、追加コスト・追加インフラなしで動く。
+  const speechSupported = typeof window !== "undefined" && "speechSynthesis" in window;
+  let currentPersonality = null;
+  let japaneseVoices = [];
+
+  function refreshVoices() {
+    if (!speechSupported) return;
+    japaneseVoices = speechSynthesis.getVoices().filter((v) => v.lang && v.lang.toLowerCase().startsWith("ja"));
+  }
+  if (speechSupported) {
+    refreshVoices();
+    speechSynthesis.onvoiceschanged = refreshVoices;
+  }
+
+  function clamp(v, min, max) {
+    return Math.max(min, Math.min(max, v));
+  }
+
+  // 性格パラメータで声の表情に少しだけ差をつける（陽気さ→速さ、温かさ→高さ）。
+  // 「育て方でこの子らしさが声にも表れる」という体験を、追加のTTSコストなしで実現するための工夫。
+  function speak(text) {
+    if (!speechSupported || !text) return;
+    try {
+      speechSynthesis.cancel(); // 連打時に前の発話が重ならないようにする
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.lang = "ja-JP";
+      if (japaneseVoices.length > 0) utter.voice = japaneseVoices[0];
+      const p = currentPersonality || {};
+      const cheer = p.cheerfulness ?? 50;
+      const warmth = p.warmth ?? 50;
+      utter.rate = clamp(0.85 + (cheer / 100) * 0.35, 0.8, 1.3);
+      utter.pitch = clamp(0.85 + (warmth / 100) * 0.35, 0.8, 1.3);
+      speechSynthesis.speak(utter);
+    } catch (e) {
+      // 音声合成に対応していない/失敗する環境でも、テキストでの会話自体は問題なく続けられるようにする
+    }
+  }
+
+  const AUTO_SPEAK_KEY = "sodatsukake_autoSpeak";
+  let autoSpeak = false;
+  if (speechSupported) {
+    try {
+      autoSpeak = localStorage.getItem(AUTO_SPEAK_KEY) === "1";
+    } catch (e) {}
+    autoSpeakToggle.hidden = false;
+    updateAutoSpeakToggleLabel();
+    autoSpeakToggle.addEventListener("click", () => {
+      autoSpeak = !autoSpeak;
+      try {
+        localStorage.setItem(AUTO_SPEAK_KEY, autoSpeak ? "1" : "0");
+      } catch (e) {}
+      updateAutoSpeakToggleLabel();
+    });
+  }
+  function updateAutoSpeakToggleLabel() {
+    autoSpeakToggle.textContent = autoSpeak ? "🔊 自動読み上げ：オン" : "🔇 自動読み上げ：オフ";
+  }
 
   // コンセプト（=あなたの分身を育てるサービスである、ということ）を、
   // 初めてこのページを開いたときにだけさりげなく伝えるバナー。閉じたら二度と出さない。
@@ -210,7 +281,22 @@
   function addMessage(text, who) {
     const div = document.createElement("div");
     div.className = `msg ${who}`;
-    div.textContent = text;
+
+    const textEl = document.createElement("span");
+    textEl.className = "msgText";
+    textEl.textContent = text;
+    div.appendChild(textEl);
+
+    if (who === "char" && speechSupported) {
+      const speakBtn = document.createElement("button");
+      speakBtn.type = "button";
+      speakBtn.className = "speakBtn";
+      speakBtn.textContent = "🔊";
+      speakBtn.setAttribute("aria-label", "読み上げる");
+      speakBtn.addEventListener("click", () => speak(text));
+      div.appendChild(speakBtn);
+    }
+
     log.appendChild(div);
     log.scrollTop = log.scrollHeight;
   }
@@ -230,7 +316,10 @@
     nameEl.textContent = data.name || "キャラクター";
     const styleLabel = data.speechStyleLabel ? ` / 口調: ${data.speechStyleLabel}` : "";
     statusEl.textContent = `成長段階: ${data.growthStage} / やり取り回数: ${data.interactionCount ?? 0}${styleLabel}`;
-    if (data.personality) renderPersonality(data.personality);
+    if (data.personality) {
+      renderPersonality(data.personality);
+      currentPersonality = data.personality; // 読み上げの速さ・高さに反映する
+    }
     applyCharacterVisuals(data);
   }
 
@@ -277,6 +366,7 @@
         addMessage(data.error, "system");
       } else if (data.reply) {
         addMessage(data.reply, "char");
+        if (autoSpeak) speak(data.reply);
       }
       renderStatus(data);
     } catch (err) {
