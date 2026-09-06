@@ -17,7 +17,7 @@ binding = "AI"
 [[d1_databases]]
 binding = "DB"
 database_name = "nfc-companion-db"
-database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+database_id = "3bdc078a-650a-4755-a37f-174957038ab8"
 
 # --- Durable Objects（キャラクター1体＝1インスタンスで性格・記憶を保持） ---
 [[durable_objects.bindings]]
