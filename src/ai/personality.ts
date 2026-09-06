@@ -37,6 +37,7 @@ export const DEFAULT_PERSONALITY: PersonalityTraits = {
 export type InteractionSignal = {
   messageLength: number;
   sentiment: "positive" | "neutral" | "negative";
+  sentimentIntensity: number; // 0-1: 感情表現の強さ（強調語・語数から推定。旧データ互換のためoptional扱いでも読める）
   topicNovelty: number; // 0-1: 話題の目新しさ（簡易推定）
   daysSinceLastVisit: number;
   askedQuestion: boolean;
@@ -56,13 +57,17 @@ export function updatePersonality(
 ): PersonalityTraits {
   const next: PersonalityTraits = { ...current };
 
+  // 強調語や語数から推定した「感情の強さ」で変化量をスケールする（0.6倍〜1.4倍程度の範囲）。
+  // 弱い相槌と「大好き！」のような強い表現とで、育ち方に差が出るようにするための重み。
+  const intensity = 0.6 + 0.8 * (signal.sentimentIntensity ?? 0.5);
+
   if (signal.sentiment === "positive") {
-    next.warmth = clamp(next.warmth + 1.5);
-    next.cheerfulness = clamp(next.cheerfulness + 1.2);
-    next.caution = clamp(next.caution - 0.5);
+    next.warmth = clamp(next.warmth + 1.5 * intensity);
+    next.cheerfulness = clamp(next.cheerfulness + 1.2 * intensity);
+    next.caution = clamp(next.caution - 0.5 * intensity);
   } else if (signal.sentiment === "negative") {
-    next.caution = clamp(next.caution + 1.5);
-    next.cheerfulness = clamp(next.cheerfulness - 1);
+    next.caution = clamp(next.caution + 1.5 * intensity);
+    next.cheerfulness = clamp(next.cheerfulness - 1 * intensity);
   }
 
   if (signal.topicNovelty > 0.6 || signal.askedQuestion) {

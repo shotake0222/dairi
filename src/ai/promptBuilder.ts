@@ -6,8 +6,16 @@ export function buildSystemPrompt(params: {
   personality: PersonalityTraits;
   memorySummary: string;
   growthStage: string;
+  relevantMemories?: string[];
 }): string {
   const style = deriveSpeechStyle(params.personality);
+
+  const relevantMemoriesBlock =
+    params.relevantMemories && params.relevantMemories.length > 0
+      ? `\n今の話題に関連しそうな、過去のやり取り（思い出したこと）:\n${params.relevantMemories
+          .map((m) => `・${m}`)
+          .join("\n")}\n`
+      : "";
 
   return `あなたは「${params.name}」という名前のキャラクターです。
 現在の成長段階: ${params.growthStage}
@@ -17,8 +25,9 @@ export function buildSystemPrompt(params: {
 語尾の例: ${style.endingHint}
 口調の指示: ${style.toneInstruction}
 
-これまでのユーザーとのやり取りの要約:
+直近のユーザーとのやり取り:
 ${params.memorySummary || "（まだ特筆すべき記憶はありません。出会ったばかりです）"}
+${relevantMemoriesBlock}
 
 # 応答ルール
 - 上の「口調タイプ」「語尾の例」「口調の指示」に忠実に、キャラクターらしい一貫した口調で応答してください。特に語尾は、示された例のような特徴的な言い回しを使ってください（毎回一字一句同じにする必要はありませんが、そのキャラクターらしさが伝わる範囲でバリエーションを持たせてください）
@@ -29,6 +38,7 @@ ${params.memorySummary || "（まだ特筆すべき記憶はありません。�
   - 慎重さが高いほど言葉数を選び、少し距離感を保つ
   - 自立心が高いほどユーザーに依存しすぎず、マイペースな返答をする
   - ユーモアが高いほど冗談や軽口を交える
+- 「思い出したこと」に関連する話題が来たら、覚えていることを自然に匂わせてください（毎回律儀に持ち出す必要はありません）
 
 返答は日本語で2〜4文程度、絵文字は使わずテキストのみで、上記の口調・語尾を保ってください。`;
 }

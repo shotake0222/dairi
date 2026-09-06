@@ -19,6 +19,14 @@ binding = "DB"
 database_name = "nfc-companion-db"
 database_id = "3bdc078a-650a-4755-a37f-174957038ab8"
 
+# --- Vectorize（長期記憶：会話の埋め込みベクトルを保存し、類似検索でRAG的に思い出す） ---
+# 事前に以下を一度だけ実行してインデックスを作成してください（bge-m3は1024次元）:
+#   npx wrangler vectorize create nfc-companion-memory --dimensions=1024 --metric=cosine
+#   npx wrangler vectorize create-metadata-index nfc-companion-memory --property-name=characterId --type=string
+[[vectorize]]
+binding = "MEMORY_INDEX"
+index_name = "nfc-companion-memory"
+
 # --- Durable Objects（キャラクター1体＝1インスタンスで性格・記憶を保持） ---
 [[durable_objects.bindings]]
 name = "CHARACTER"

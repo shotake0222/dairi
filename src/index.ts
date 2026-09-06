@@ -6,6 +6,7 @@ export { CharacterState };
 export interface Env {
   AI: Ai;
   DB: D1Database;
+  MEMORY_INDEX: VectorizeIndex;
   CHARACTER: DurableObjectNamespace<CharacterState>;
   ASSETS: Fetcher;
 }
