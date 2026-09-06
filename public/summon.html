@@ -31,7 +31,20 @@
     background: #fff; color: #111; opacity: 0; transition: opacity 0.6s ease; cursor: pointer;
   }
   button.show { opacity: 1; }
+  button:disabled { opacity: 0.4 !important; cursor: default; }
   .fallback { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #aaa; font-size: 14px; padding: 24px; text-align: center; }
+
+  .nameForm {
+    display: flex; flex-direction: column; align-items: center; gap: 12px;
+    width: 100%; max-width: 320px; opacity: 0; transform: translateY(8px);
+    transition: opacity 0.6s ease, transform 0.6s ease; pointer-events: none;
+  }
+  .nameForm.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
+  .nameForm input {
+    width: 100%; padding: 12px 16px; border-radius: 999px; border: none;
+    font-size: 16px; text-align: center; background: rgba(255,255,255,0.92); color: #111;
+  }
+  .nameForm button { opacity: 1; }
 </style>
 </head>
 <body>
@@ -42,7 +55,15 @@
     </div>
     <div class="overlay">
       <div class="appear" id="appearText">…</div>
-      <div class="hint">キーホルダーを画面に映すと、キャラクターが姿を見せてくれます</div>
+      <div class="hint" id="hint">キーホルダーを画面に映すと、キャラクターが姿を見せてくれます</div>
+
+      <!-- 初回タップ時だけ表示する命名フォーム -->
+      <form class="nameForm" id="nameForm">
+        <input id="nameInput" type="text" maxlength="12" placeholder="名前をつけてあげよう" autocomplete="off" />
+        <button type="submit">この名前で出会う</button>
+      </form>
+
+      <!-- 2回目以降はこちらのボタンだけ表示 -->
       <button id="goChat">会話をはじめる</button>
     </div>
   </div>
@@ -56,8 +77,14 @@
   const cid = params.get("cid");
   const isFirst = params.get("first") === "1";
 
+  const appearText = document.getElementById("appearText");
+  const hint = document.getElementById("hint");
+  const goChatBtn = document.getElementById("goChat");
+  const nameForm = document.getElementById("nameForm");
+  const nameInput = document.getElementById("nameInput");
+
   if (!cid) {
-    document.getElementById("appearText").textContent = "キャラクターが見つかりませんでした";
+    appearText.textContent = "キャラクターが見つかりませんでした";
   }
 
   async function startCamera() {
@@ -76,25 +103,61 @@
     return res.json();
   }
 
+  function goToChat() {
+    location.href = `/chat.html?cid=${encodeURIComponent(cid || "")}`;
+  }
+
   (async () => {
     startCamera();
     const data = await loadCharacter();
-    const name = data?.name || "きみの相棒";
-    const appearText = document.getElementById("appearText");
-    const goChatBtn = document.getElementById("goChat");
 
-    setTimeout(() => {
-      appearText.textContent = isFirst
-        ? `「${name}」が生まれた……！`
-        : `「${name}」がきみを見つけたよ`;
-      appearText.classList.add("show");
-    }, 500);
+    if (isFirst) {
+      // 初回: たまごが光るような演出→名前を決めてもらう
+      setTimeout(() => {
+        appearText.textContent = "……なにかが生まれる気配がする";
+        appearText.classList.add("show");
+      }, 500);
 
-    setTimeout(() => goChatBtn.classList.add("show"), 1200);
+      setTimeout(() => {
+        hint.textContent = "この子に、名前をつけてあげよう";
+        nameForm.classList.add("show");
+        nameInput.focus();
+      }, 1400);
 
-    goChatBtn.addEventListener("click", () => {
-      location.href = `/chat.html?cid=${encodeURIComponent(cid || "")}`;
-    });
+      nameForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const name = nameInput.value.trim();
+        if (!name || !cid) return;
+
+        const submitBtn = nameForm.querySelector("button");
+        submitBtn.disabled = true;
+        nameInput.disabled = true;
+
+        try {
+          await fetch("/api/character/rename", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ characterId: cid, name }),
+          });
+        } catch (err) {
+          // 命名APIが失敗しても会話自体は続けられるようにする
+        }
+
+        appearText.textContent = `「${name}」が生まれた……！`;
+        nameForm.classList.remove("show");
+        hint.textContent = "";
+        setTimeout(goToChat, 900);
+      });
+    } else {
+      // 2回目以降: 既存の名前でお出迎え
+      const name = data?.name || "きみの相棒";
+      setTimeout(() => {
+        appearText.textContent = `「${name}」がきみを見つけたよ`;
+        appearText.classList.add("show");
+      }, 500);
+      setTimeout(() => goChatBtn.classList.add("show"), 1200);
+      goChatBtn.addEventListener("click", goToChat);
+    }
   })();
 </script>
 </body>
