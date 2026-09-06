@@ -85,6 +85,18 @@ export default {
       return json({ ...state, speechStyleLabel: deriveSpeechStyle(state.personality).label });
     }
 
+    // --- 性格変遷（成長グラフ）取得API ---
+    if (url.pathname === "/api/character/history" && request.method === "GET") {
+      const characterId = url.searchParams.get("cid");
+      if (!characterId) {
+        return json({ error: "cid is required" }, { status: 400 });
+      }
+      const stub = env.CHARACTER.getByName(characterId);
+      const history = await stub.getHistory();
+      if (!history) return json({ error: "not found" }, { status: 404 });
+      return json(history);
+    }
+
     // --- キャラクター名前設定API（初回サモン時に使う想定） ---
     if (url.pathname === "/api/character/rename" && request.method === "POST") {
       const body = await request.json<{ characterId?: string; name?: string }>();

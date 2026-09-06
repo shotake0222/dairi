@@ -19,10 +19,33 @@
   .brand { font-size: 10px; letter-spacing: 0.08em; color: #a78bfa; font-weight: 700; margin-bottom: 2px; }
   #status { font-size: 12px; color: #666; margin-top: 4px; }
   .nameCol { flex: 1; min-width: 0; }
-  #toggleTraits {
+  .headerActions { display: flex; gap: 6px; align-self: flex-start; flex-shrink: 0; }
+  #toggleTraits, #historyLink, #infoBtn {
     border: 1px solid #ddd; background: #fff; color: #7c5cff; font-size: 12px;
-    padding: 6px 10px; border-radius: 999px; white-space: nowrap; align-self: flex-start;
+    padding: 6px 10px; border-radius: 999px; white-space: nowrap; text-decoration: none;
   }
+  #infoBtn { padding: 6px 10px; font-weight: 700; }
+
+  /* コンセプトを最初に伝えるバナー（初回のみ表示・閉じたら二度と出さない） */
+  #conceptBanner {
+    margin: 10px 16px 0; padding: 12px 14px; border-radius: 12px;
+    background: #f0ecff; color: #4c3a99; font-size: 12px; line-height: 1.7;
+    display: flex; gap: 10px; align-items: flex-start;
+  }
+  #conceptBanner .text { flex: 1; }
+  #conceptBanner .link { color: #7c5cff; font-weight: 700; text-decoration: underline; cursor: pointer; }
+  #conceptBanner .close { border: none; background: none; color: #9a8fcf; font-size: 16px; cursor: pointer; line-height: 1; padding: 0; }
+
+  /* コンセプト説明モーダル */
+  #conceptModal {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 10;
+    display: flex; align-items: center; justify-content: center; padding: 20px;
+  }
+  #conceptModal[hidden] { display: none; }
+  #conceptModal .box { background: #fff; border-radius: 16px; padding: 20px; max-width: 360px; }
+  #conceptModal h3 { margin: 0 0 10px; font-size: 15px; color: #4c3a99; }
+  #conceptModal p { margin: 0 0 14px; font-size: 13px; line-height: 1.8; color: #444; }
+  #conceptModal button { width: 100%; padding: 10px; border-radius: 999px; border: none; background: #7c5cff; color: #fff; font-weight: 600; }
 
   /* いつでも見れる2Dアバター（常時表示のアイコン） */
   #avatarIcon {
@@ -56,6 +79,7 @@
   .msg { max-width: 78%; padding: 10px 14px; border-radius: 16px; line-height: 1.5; font-size: 14px; white-space: pre-wrap; }
   .msg.user { align-self: flex-end; background: #7c5cff; color: #fff; border-bottom-right-radius: 4px; }
   .msg.char { align-self: flex-start; background: #fff; border: 1px solid #eee; border-bottom-left-radius: 4px; }
+  .msg.system { align-self: center; background: transparent; color: #999; font-size: 12px; border: none; padding: 4px 10px; }
   form { display: flex; gap: 8px; padding: 12px; background: #fff; border-top: 1px solid #eee; }
   input { flex: 1; padding: 12px 14px; border-radius: 999px; border: 1px solid #ddd; font-size: 14px; }
   button.send { padding: 12px 20px; border-radius: 999px; border: none; background: #7c5cff; color: #fff; font-weight: 600; }
@@ -71,7 +95,11 @@
       <h1 id="charName">キャラクター</h1>
       <div id="status">読み込み中…</div>
     </div>
-    <button id="toggleTraits" type="button">性格を見る ▾</button>
+    <div class="headerActions">
+      <button id="infoBtn" type="button" title="そだつかけとは？">?</button>
+      <a id="historyLink" href="#">📈 成長</a>
+      <button id="toggleTraits" type="button">性格を見る ▾</button>
+    </div>
   </div>
   <div id="traits">
     <div class="traitRow" data-trait="warmth"><span class="traitLabel">温かさ</span><div class="traitBarBg"><div class="traitBarFg"></div></div><span class="traitValue">-</span></div>
@@ -92,11 +120,32 @@
   </model-viewer>
 </div>
 
+<div id="conceptBanner" hidden>
+  <div class="text">
+    🌱 ここはあなたの<strong>分身</strong>を育てる場所。会話が、そのままこの子の個性になっていきます。
+    <span class="link" id="conceptMoreLink">くわしく見る</span>
+  </div>
+  <button class="close" id="conceptBannerClose" aria-label="閉じる">×</button>
+</div>
+
 <div id="log"></div>
 <form id="form">
-  <input id="input" type="text" placeholder="話しかけてみよう" autocomplete="off" />
+  <input id="input" type="text" placeholder="話しかけてみよう" autocomplete="off" maxlength="400" />
   <button class="send" type="submit">送信</button>
 </form>
+
+<div id="conceptModal" hidden>
+  <div class="box">
+    <h3>そだつかけって？</h3>
+    <p>
+      「そだつかけ」は、会話を通じてあなただけの分身を育てるサービスです。<br /><br />
+      性格はあなたとの会話によって、少しずつ変わっていきます。今はまだ画面の中だけの存在ですが、
+      将来はメタバースのアバターや、ロボットのようなフィジカルAIの姿になって、あなたの代わりに動き出す日を目指しています。<br /><br />
+      これまでの性格の変化は「📈 成長」から、いつでも振り返れます。
+    </p>
+    <button id="conceptModalClose" type="button">とじる</button>
+  </div>
+</div>
 
 <script>
   const params = new URLSearchParams(location.search);
@@ -112,6 +161,41 @@
   const modelEl = document.getElementById("model");
   const modelStage = document.getElementById("modelStage");
   const modelToggle = document.getElementById("modelToggle");
+  const historyLink = document.getElementById("historyLink");
+  const conceptBanner = document.getElementById("conceptBanner");
+  const conceptBannerClose = document.getElementById("conceptBannerClose");
+  const conceptMoreLink = document.getElementById("conceptMoreLink");
+  const conceptModal = document.getElementById("conceptModal");
+  const infoBtn = document.getElementById("infoBtn");
+  const conceptModalClose = document.getElementById("conceptModalClose");
+
+  historyLink.href = `/history.html?cid=${encodeURIComponent(cid || "")}`;
+
+  // コンセプト（=あなたの分身を育てるサービスである、ということ）を、
+  // 初めてこのページを開いたときにだけさりげなく伝えるバナー。閉じたら二度と出さない。
+  const CONCEPT_SEEN_KEY = "sodatsukake_conceptSeen";
+  try {
+    if (!localStorage.getItem(CONCEPT_SEEN_KEY)) {
+      conceptBanner.hidden = false;
+    }
+  } catch (e) {
+    // localStorageが使えない環境でもチャット自体は問題なく動くようにする
+  }
+
+  function dismissConceptBanner() {
+    conceptBanner.hidden = true;
+    try {
+      localStorage.setItem(CONCEPT_SEEN_KEY, "1");
+    } catch (e) {}
+  }
+
+  conceptBannerClose.addEventListener("click", dismissConceptBanner);
+  conceptMoreLink.addEventListener("click", () => {
+    conceptModal.hidden = false;
+    dismissConceptBanner();
+  });
+  infoBtn.addEventListener("click", () => (conceptModal.hidden = false));
+  conceptModalClose.addEventListener("click", () => (conceptModal.hidden = true));
 
   toggleTraitsBtn.addEventListener("click", () => {
     const nowShown = traitsEl.classList.toggle("show");
@@ -189,7 +273,11 @@
         body: JSON.stringify({ characterId: cid, message }),
       });
       const data = await res.json();
-      addMessage(data.reply, "char");
+      if (data.error) {
+        addMessage(data.error, "system");
+      } else if (data.reply) {
+        addMessage(data.reply, "char");
+      }
       renderStatus(data);
     } catch (err) {
       addMessage("（うまく通信できなかったみたい……もう一度送ってみて）", "char");

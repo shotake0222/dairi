@@ -20,6 +20,13 @@ export const COLOR_KEYS = ["coral", "sky", "leaf", "sun", "lavender", "peach"] a
 export type SpeciesKey = (typeof SPECIES_KEYS)[number];
 export type ColorKey = (typeof COLOR_KEYS)[number];
 
+/** 性格変遷の可視化（成長グラフ）用の1スナップショット。 */
+export interface PersonalityHistoryEntry {
+  t: number; // epoch ms
+  interactionCount: number;
+  personality: PersonalityTraits;
+}
+
 export interface CharacterData {
   name: string;
   species: SpeciesKey;
@@ -31,12 +38,17 @@ export interface CharacterData {
   lastVisit: number; // epoch ms（日単位の「放置」判定に使用）
   lastMessageAt?: number; // epoch ms（連投防止の簡易レート制限に使用。既存データには無いのでoptional）
   createdAt: number;
+  personalityHistory?: PersonalityHistoryEntry[]; // 既存データには無いのでoptional。無ければ誕生時点として扱う
 }
 
 // 悪用・コスト対策の簡易ガード。厳密なセキュリティ機構ではなく、
 // あくまでMVP段階での過度な連投・長文投稿を抑える最小限の防御。
 const MAX_MESSAGE_LENGTH = 400;
 const MIN_MESSAGE_INTERVAL_MS = 1200;
+
+// 性格変遷グラフ用の履歴は無制限に貯めるとストレージを圧迫するため上限を設け、
+// 上限を超えたら間引く（＝古いほど記録の密度が粗くなっていく、成長アルバムのような扱い）。
+const MAX_HISTORY_ENTRIES = 120;
 
 function randomSpecies(): SpeciesKey {
   return SPECIES_KEYS[Math.floor(Math.random() * SPECIES_KEYS.length)];
@@ -58,6 +70,7 @@ export class CharacterState extends DurableObject<Env> {
     const existing = await this.ctx.storage.get<CharacterData>("data");
     if (existing) return existing;
 
+    const now = Date.now();
     const data: CharacterData = {
       name,
       species: randomSpecies(),
@@ -66,11 +79,38 @@ export class CharacterState extends DurableObject<Env> {
       memorySummary: "",
       growthStage: "誕生したばかり",
       interactionCount: 0,
-      lastVisit: Date.now(),
-      createdAt: Date.now(),
+      lastVisit: now,
+      createdAt: now,
+      // 誕生時点（全パラメータ50）を最初の1点として記録しておく。これが成長グラフの起点になる。
+      personalityHistory: [{ t: now, interactionCount: 0, personality: { ...DEFAULT_PERSONALITY } }],
     };
     await this.ctx.storage.put("data", data);
     return data;
+  }
+
+  /** 成長グラフ（性格変遷の可視化）用に、履歴データだけを取得する。 */
+  async getHistory(): Promise<{
+    name: string;
+    species: SpeciesKey;
+    color: ColorKey;
+    growthStage: string;
+    interactionCount: number;
+    history: PersonalityHistoryEntry[];
+  } | null> {
+    const data = await this.ctx.storage.get<CharacterData>("data");
+    if (!data) return null;
+    const history =
+      data.personalityHistory && data.personalityHistory.length > 0
+        ? data.personalityHistory
+        : [{ t: data.createdAt, interactionCount: 0, personality: { ...DEFAULT_PERSONALITY } }];
+    return {
+      name: data.name,
+      species: data.species,
+      color: data.color,
+      growthStage: data.growthStage,
+      interactionCount: data.interactionCount,
+      history,
+    };
   }
 
   async getState(): Promise<CharacterData | null> {
@@ -123,6 +163,15 @@ export class CharacterState extends DurableObject<Env> {
     data.lastVisit = now;
     data.growthStage = computeGrowthStage(data.interactionCount);
 
+    // 性格変遷グラフ用に、この瞬間のスナップショットを履歴へ積む。
+    if (!data.personalityHistory) data.personalityHistory = [];
+    data.personalityHistory.push({
+      t: now,
+      interactionCount: data.interactionCount,
+      personality: { ...data.personality },
+    });
+    data.personalityHistory = decimateHistory(data.personalityHistory);
+
     // characterId: このDOインスタンス自身の識別子（env.CHARACTER.getByName(characterId)で
     // 生成されたDOは this.ctx.id.name が常にそのcharacterIdと一致する）。
     // Vectorizeのメタデータフィルタに使い、キャラクターごとに記憶を分離する。
@@ -172,6 +221,19 @@ export class CharacterState extends DurableObject<Env> {
       color: data.color,
     };
   }
+}
+
+/**
+ * 履歴が上限を超えたら間引く。最初と最後の点は必ず残しつつ、
+ * それ以外を1つ飛ばしで削ることで「古いほど記録が粗くなる」形にし、
+ * 長く使うほどストレージが際限なく増えるのを防ぐ。
+ */
+function decimateHistory(history: PersonalityHistoryEntry[]): PersonalityHistoryEntry[] {
+  if (history.length <= MAX_HISTORY_ENTRIES) return history;
+  const first = history[0];
+  const last = history[history.length - 1];
+  const middle = history.slice(1, -1).filter((_, i) => i % 2 === 0);
+  return [first, ...middle, last];
 }
 
 function computeGrowthStage(interactionCount: number): string {

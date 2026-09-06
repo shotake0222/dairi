@@ -43,6 +43,28 @@
   button:disabled { opacity: 0.4 !important; cursor: default; }
   .fallback { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #aaa; font-size: 14px; padding: 24px; text-align: center; }
   .brand { position: absolute; top: 16px; left: 16px; font-size: 11px; letter-spacing: 0.1em; color: rgba(255,255,255,0.6); font-weight: 700; z-index: 2; }
+  #infoBtn {
+    position: absolute; top: 12px; right: 12px; z-index: 2; width: 26px; height: 26px; border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.3); background: rgba(0,0,0,0.3); color: #fff; font-weight: 700;
+    font-size: 13px; cursor: pointer; line-height: 1;
+  }
+
+  /* コンセプトを最初に伝える2行のテキスト（初回タップ時のみ表示） */
+  .conceptText { opacity: 0; transform: translateY(10px); transition: opacity 0.9s ease, transform 0.9s ease; }
+  .conceptText.show { opacity: 1; transform: translateY(0); }
+  .conceptText .line1 { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+  .conceptText .line1 b { color: #c9b8ff; }
+  .conceptText .line2 { font-size: 12px; opacity: 0.75; }
+
+  #conceptModal {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 5;
+    display: flex; align-items: center; justify-content: center; padding: 20px;
+  }
+  #conceptModal[hidden] { display: none; }
+  #conceptModal .box { background: #17131f; border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 20px; max-width: 340px; color: #fff; }
+  #conceptModal h3 { margin: 0 0 10px; font-size: 15px; color: #c9b8ff; }
+  #conceptModal p { margin: 0 0 14px; font-size: 13px; line-height: 1.8; color: rgba(255,255,255,0.85); }
+  #conceptModal button { width: 100%; padding: 10px; border-radius: 999px; border: none; background: #7c5cff; color: #fff; font-weight: 600; }
 
   .nameForm {
     display: flex; flex-direction: column; align-items: center; gap: 12px;
@@ -60,6 +82,7 @@
 <body>
   <div class="stage">
     <div class="brand">そだつかけ</div>
+    <button id="infoBtn" type="button" title="そだつかけとは？">?</button>
     <video id="cam" autoplay playsinline muted></video>
     <div class="fallback" id="fallback" hidden>
       カメラを起動できませんでした。<br />このままキャラクターに会うこともできます。
@@ -72,6 +95,13 @@
     </model-viewer>
     <div class="overlay">
       <div class="appear" id="appearText">…</div>
+
+      <!-- 初回タップ時だけ表示する、サービスの本質を1秒で伝えるための2行テキスト -->
+      <div class="conceptText" id="conceptText">
+        <div class="line1">この子は、<b>あなたの分身</b>になる存在</div>
+        <div class="line2">会話を重ねるほど、いつかメタバースやロボットの姿にもなっていく</div>
+      </div>
+
       <div class="hint" id="hint">キーホルダーを画面に映すと、キャラクターが姿を見せてくれます</div>
 
       <!-- 初回タップ時だけ表示する命名フォーム -->
@@ -82,6 +112,18 @@
 
       <!-- 2回目以降はこちらのボタンだけ表示 -->
       <button id="goChat">会話をはじめる</button>
+    </div>
+  </div>
+
+  <div id="conceptModal" hidden>
+    <div class="box">
+      <h3>そだつかけって？</h3>
+      <p>
+        「そだつかけ」は、会話を通じてあなただけの分身を育てるサービスです。<br /><br />
+        性格はあなたとの会話によって、少しずつ変わっていきます。今はまだ画面の中だけの存在ですが、
+        将来はメタバースのアバターや、ロボットのようなフィジカルAIの姿になって、あなたの代わりに動き出す日を目指しています。
+      </p>
+      <button id="conceptModalClose" type="button">とじる</button>
     </div>
   </div>
 
@@ -96,11 +138,18 @@
   const isFirst = params.get("first") === "1";
 
   const appearText = document.getElementById("appearText");
+  const conceptText = document.getElementById("conceptText");
   const hint = document.getElementById("hint");
   const goChatBtn = document.getElementById("goChat");
   const nameForm = document.getElementById("nameForm");
   const nameInput = document.getElementById("nameInput");
   const modelEl = document.getElementById("model");
+  const infoBtn = document.getElementById("infoBtn");
+  const conceptModal = document.getElementById("conceptModal");
+  const conceptModalClose = document.getElementById("conceptModalClose");
+
+  infoBtn.addEventListener("click", () => (conceptModal.hidden = false));
+  conceptModalClose.addEventListener("click", () => (conceptModal.hidden = true));
 
   if (!cid) {
     appearText.textContent = "キャラクターが見つかりませんでした";
@@ -148,11 +197,17 @@
         modelEl.classList.add("show");
       }, 900);
 
+      // サービスの本質（=自分の分身であること、将来複数の身体に宿ること）を、
+      // 名前を付ける前のこのタイミングで一度だけ、短い言葉で伝える。
+      setTimeout(() => {
+        conceptText.classList.add("show");
+      }, 1700);
+
       setTimeout(() => {
         hint.textContent = "この子に、名前をつけてあげよう";
         nameForm.classList.add("show");
         nameInput.focus();
-      }, 1600);
+      }, 3400);
 
       nameForm.addEventListener("submit", async (e) => {
         e.preventDefault();
