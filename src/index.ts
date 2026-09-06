@@ -112,76 +112,15 @@ export default {
     // --- 「お散歩」機能: 性格の近い、他ユーザーの分身とのAI同士の短い交流を生成する ---
     // 安全上の配慮: 人間同士のメッセージ交換は一切行わない。オプトイン制。
     // 相手に渡るのは名前・種族・成長段階のみで、ユーザー本人との会話内容・記憶は渡さない。
+    // 実処理は runMeeting() に切り出してあり、手動実行（このAPI）と自動実行（scheduled）の両方から呼ばれる。
     if (url.pathname === "/api/character/meet" && request.method === "POST") {
       const body = await request.json<{ characterId?: string }>();
       if (!body.characterId) {
         return json({ error: "characterId is required" }, { status: 400 });
       }
-      const selfStub = env.CHARACTER.getByName(body.characterId);
-      const selfState = await selfStub.getState();
-      if (!selfState) return json({ error: "not found" }, { status: 404 });
-      if (!selfState.socialOptIn) {
-        return json({ error: "「他の分身と出会う」がオフになっています。まずオンにしてください" }, { status: 400 });
-      }
-      const now = Date.now();
-      if (selfState.lastMeetingAt && now - selfState.lastMeetingAt < MEETING_COOLDOWN_MS) {
-        const remainingHours = Math.ceil((MEETING_COOLDOWN_MS - (now - selfState.lastMeetingAt)) / (60 * 60 * 1000));
-        return json({ error: `また今度お散歩に行こうね（あと${remainingHours}時間くらい待ってね）` }, { status: 429 });
-      }
-
-      const candidates = await env.DB.prepare(
-        `SELECT character_id, name, species, color, warmth, curiosity, cheerfulness, caution, independence, humor
-         FROM character_directory WHERE character_id != ?1 ORDER BY RANDOM() LIMIT 30`
-      )
-        .bind(body.characterId)
-        .all<{
-          character_id: string;
-          name: string;
-          species: SpeciesKey;
-          color: ColorKey;
-          warmth: number;
-          curiosity: number;
-          cheerfulness: number;
-          caution: number;
-          independence: number;
-          humor: number;
-        }>();
-
-      const rows = candidates.results ?? [];
-      if (rows.length === 0) {
-        return json({ error: "まだお散歩できる相手がいないみたい。また今度試してね" }, { status: 404 });
-      }
-
-      const partnerRow = pickMostSimilar(selfState.personality, rows);
-      const partnerId = partnerRow.character_id;
-      const partnerStub = env.CHARACTER.getByName(partnerId);
-
-      const selfSpeciesLabel = SPECIES_LABELS[selfState.species];
-      const partnerSpeciesLabel = SPECIES_LABELS[partnerRow.species];
-
-      // 3ターンのその場限りの立ち話を生成する（AI呼び出しはこの3回のみ。クールダウンで頻度も抑えている）
-      const lineA1 = await selfStub.speakInMeeting(partnerRow.name, partnerSpeciesLabel);
-      const lineB1 = await partnerStub.speakInMeeting(selfState.name, selfSpeciesLabel, lineA1);
-      const lineA2 = await selfStub.speakInMeeting(partnerRow.name, partnerSpeciesLabel, lineB1);
-
-      const selfLog: MeetingLogEntry[] = [
-        { role: "self", text: lineA1 },
-        { role: "other", text: lineB1 },
-        { role: "self", text: lineA2 },
-      ];
-      const partnerLog: MeetingLogEntry[] = [
-        { role: "other", text: lineA1 },
-        { role: "self", text: lineB1 },
-        { role: "other", text: lineA2 },
-      ];
-
-      await selfStub.recordMeeting(selfLog, { name: partnerRow.name, species: partnerRow.species, color: partnerRow.color });
-      await partnerStub.recordMeeting(partnerLog, { name: selfState.name, species: selfState.species, color: selfState.color });
-
-      return json({
-        partner: { name: partnerRow.name, species: partnerRow.species, color: partnerRow.color },
-        log: selfLog,
-      });
+      const result = await runMeeting(env, body.characterId);
+      if (!result.ok) return json({ error: result.error }, { status: result.status });
+      return json({ partner: result.partner, log: result.log });
     }
 
     // --- 人格パッケージのエクスポート（ダウンロード） ---
@@ -232,7 +171,114 @@ export default {
     // --- それ以外は静的ファイル（public/ 配下）を配信 ---
     return env.ASSETS.fetch(request);
   },
+
+  /**
+   * 留守番エージェント（自動お散歩）: Cronトリガーから定期的に呼ばれる。
+   * オプトイン済み・クールダウン明けのキャラクターを一定件数だけ選び、
+   * ユーザーの操作なしに「お散歩」を自動実行しておく。
+   * ユーザーが次にチャットを開いたときに「今日の出会い」として結果を見られるようにするのが狙い
+   * （サービスコンセプトの「自分の代わりに動いてくれる分身」を体現する機能）。
+   *
+   * AIコスト・D1負荷を抑えるため、1回の実行で処理する件数には上限を設けている。
+   */
+  async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    const BATCH_LIMIT = 50;
+    const rows = await env.DB.prepare(
+      `SELECT character_id FROM character_directory ORDER BY updated_at ASC LIMIT ?1`
+    )
+      .bind(BATCH_LIMIT)
+      .all<{ character_id: string }>();
+
+    const candidateIds = (rows.results ?? []).map((r) => r.character_id);
+
+    for (const characterId of candidateIds) {
+      // 1件ずつ順に処理する（Durable Object/AI呼び出しの同時実行数を抑えるため）。
+      // 個々の失敗（オプトイン済みだがクールダウン中、相手なし等）は他の処理を止めない。
+      ctx.waitUntil(
+        runMeeting(env, characterId).catch(() => {
+          /* 自動実行なのでエラーは静かに無視する（次回のCronでまた試される） */
+        })
+      );
+    }
+  },
 } satisfies ExportedHandler<Env>;
+
+type MeetingResult =
+  | { ok: true; partner: { name: string; species: SpeciesKey; color: ColorKey }; log: MeetingLogEntry[] }
+  | { ok: false; error: string; status: number };
+
+/**
+ * 「お散歩」の実処理本体。手動API（/api/character/meet）と自動実行（scheduled）の両方から呼ばれる共通関数。
+ * オプトイン確認・クールダウン確認・相手探し・AI同士の立ち話生成・双方への記録保存までをここで行う。
+ */
+async function runMeeting(env: Env, characterId: string): Promise<MeetingResult> {
+  const selfStub = env.CHARACTER.getByName(characterId);
+  const selfState = await selfStub.getState();
+  if (!selfState) return { ok: false, error: "not found", status: 404 };
+  if (!selfState.socialOptIn) {
+    return { ok: false, error: "「他の分身と出会う」がオフになっています。まずオンにしてください", status: 400 };
+  }
+  const now = Date.now();
+  if (selfState.lastMeetingAt && now - selfState.lastMeetingAt < MEETING_COOLDOWN_MS) {
+    const remainingHours = Math.ceil((MEETING_COOLDOWN_MS - (now - selfState.lastMeetingAt)) / (60 * 60 * 1000));
+    return { ok: false, error: `また今度お散歩に行こうね（あと${remainingHours}時間くらい待ってね）`, status: 429 };
+  }
+
+  const candidates = await env.DB.prepare(
+    `SELECT character_id, name, species, color, warmth, curiosity, cheerfulness, caution, independence, humor
+     FROM character_directory WHERE character_id != ?1 ORDER BY RANDOM() LIMIT 30`
+  )
+    .bind(characterId)
+    .all<{
+      character_id: string;
+      name: string;
+      species: SpeciesKey;
+      color: ColorKey;
+      warmth: number;
+      curiosity: number;
+      cheerfulness: number;
+      caution: number;
+      independence: number;
+      humor: number;
+    }>();
+
+  const rows = candidates.results ?? [];
+  if (rows.length === 0) {
+    return { ok: false, error: "まだお散歩できる相手がいないみたい。また今度試してね", status: 404 };
+  }
+
+  const partnerRow = pickMostSimilar(selfState.personality, rows);
+  const partnerId = partnerRow.character_id;
+  const partnerStub = env.CHARACTER.getByName(partnerId);
+
+  const selfSpeciesLabel = SPECIES_LABELS[selfState.species];
+  const partnerSpeciesLabel = SPECIES_LABELS[partnerRow.species];
+
+  // 3ターンのその場限りの立ち話を生成する（AI呼び出しはこの3回のみ。クールダウンで頻度も抑えている）
+  const lineA1 = await selfStub.speakInMeeting(partnerRow.name, partnerSpeciesLabel);
+  const lineB1 = await partnerStub.speakInMeeting(selfState.name, selfSpeciesLabel, lineA1);
+  const lineA2 = await selfStub.speakInMeeting(partnerRow.name, partnerSpeciesLabel, lineB1);
+
+  const selfLog: MeetingLogEntry[] = [
+    { role: "self", text: lineA1 },
+    { role: "other", text: lineB1 },
+    { role: "self", text: lineA2 },
+  ];
+  const partnerLog: MeetingLogEntry[] = [
+    { role: "other", text: lineA1 },
+    { role: "self", text: lineB1 },
+    { role: "other", text: lineA2 },
+  ];
+
+  await selfStub.recordMeeting(selfLog, { name: partnerRow.name, species: partnerRow.species, color: partnerRow.color });
+  await partnerStub.recordMeeting(partnerLog, { name: selfState.name, species: selfState.species, color: selfState.color });
+
+  return {
+    ok: true,
+    partner: { name: partnerRow.name, species: partnerRow.species, color: partnerRow.color },
+    log: selfLog,
+  };
+}
 
 /** 性格パラメータ（6軸）のユークリッド距離が最も近い候補を選ぶ（＝いちばん性格が近い分身とマッチングする）。 */
 function pickMostSimilar<T extends Pick<PersonalityTraits, (typeof TRAIT_KEYS)[number]>>(

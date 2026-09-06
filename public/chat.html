@@ -20,11 +20,17 @@
   #status { font-size: 12px; color: #666; margin-top: 4px; }
   .nameCol { flex: 1; min-width: 0; }
   .headerActions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; align-self: flex-start; flex-shrink: 0; }
-  #toggleTraits, #historyLink, #infoBtn, #toggleExport {
+  #toggleTraits, #historyLink, #infoBtn, #toggleExport, #toggleSocial {
     border: 1px solid #ddd; background: #fff; color: #7c5cff; font-size: 12px;
     padding: 6px 10px; border-radius: 999px; white-space: nowrap; text-decoration: none;
   }
   #infoBtn { padding: 6px 10px; font-weight: 700; }
+  #toggleSocial { position: relative; }
+  /* 留守番エージェントが自動で見つけてきた「新しい出会い」があることを知らせるバッジ */
+  #toggleSocial.hasNew::after {
+    content: ""; position: absolute; top: 1px; right: 3px; width: 9px; height: 9px;
+    border-radius: 50%; background: #ff5470; border: 1.5px solid #fff;
+  }
 
   /* 人格パッケージの書き出し/復元パネル */
   #exportPanel { display: none; margin: 10px 16px 0; padding: 12px 14px; border-radius: 12px; background: #f0ecff; flex-direction: column; }
@@ -318,9 +324,34 @@
 
   // --- 「他の分身と出会う」機能（オプトイン制。人間同士のメッセージ交換は行わない） ---
   let socialOptIn = false;
+  let lastMeetingAt = 0;
+  const meetSeenKey = `sodatsukake_meetSeen_${cid || ""}`;
+
+  // 留守番エージェント（自動お散歩）が見つけてきた「新しい出会い」があれば、交流ボタンにバッジを出す。
+  // 前回見た出会いの時刻をlocalStorageに覚えておき、それより新しいlastMeetingがあれば「未読」とみなす。
+  function updateMeetBadge() {
+    let seenAt = 0;
+    try {
+      seenAt = Number(localStorage.getItem(meetSeenKey) || "0");
+    } catch (err) {
+      /* localStorageが使えない環境ではバッジ機能自体を諦める（本体機能には影響しない） */
+    }
+    toggleSocialBtn.classList.toggle("hasNew", lastMeetingAt > 0 && lastMeetingAt > seenAt);
+  }
+
+  function markMeetingSeen() {
+    if (!lastMeetingAt) return;
+    try {
+      localStorage.setItem(meetSeenKey, String(lastMeetingAt));
+    } catch (err) {
+      /* 保存できなくてもクラッシュはさせない */
+    }
+    toggleSocialBtn.classList.remove("hasNew");
+  }
 
   toggleSocialBtn.addEventListener("click", () => {
     socialPanel.classList.toggle("show");
+    if (socialPanel.classList.contains("show")) markMeetingSeen();
   });
 
   function renderSocial(data) {
@@ -328,7 +359,11 @@
     socialOptInBtn.textContent = socialOptIn ? "オン" : "オフ";
     socialOptInBtn.classList.toggle("on", socialOptIn);
     meetBtn.disabled = !socialOptIn;
-    if (data.lastMeeting) renderMeetingResult(data.lastMeeting.partner, data.lastMeeting.log);
+    if (data.lastMeeting) {
+      renderMeetingResult(data.lastMeeting.partner, data.lastMeeting.log);
+      lastMeetingAt = data.lastMeeting.at || 0;
+      updateMeetBadge();
+    }
   }
 
   socialOptInBtn.addEventListener("click", async () => {
@@ -390,6 +425,9 @@
       } else {
         meetStatus.textContent = "";
         renderMeetingResult(data.partner, data.log);
+        // 自分で今クリックして見ている出会いなので、未読バッジは立てない
+        lastMeetingAt = Date.now();
+        markMeetingSeen();
       }
     } catch (err) {
       meetStatus.textContent = "うまく通信できなかったみたい。もう一度試してね";
