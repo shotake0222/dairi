@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>キャラクター召喚</title>
+<title>そだつかけ｜キャラクター召喚</title>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
@@ -33,6 +33,7 @@
   button.show { opacity: 1; }
   button:disabled { opacity: 0.4 !important; cursor: default; }
   .fallback { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #aaa; font-size: 14px; padding: 24px; text-align: center; }
+  .brand { position: absolute; top: 16px; left: 16px; font-size: 11px; letter-spacing: 0.1em; color: rgba(255,255,255,0.6); font-weight: 700; }
 
   .nameForm {
     display: flex; flex-direction: column; align-items: center; gap: 12px;
@@ -49,6 +50,7 @@
 </head>
 <body>
   <div class="stage">
+    <div class="brand">そだつかけ</div>
     <video id="cam" autoplay playsinline muted></video>
     <div class="fallback" id="fallback" hidden>
       カメラを起動できませんでした。<br />このままキャラクターに会うこともできます。

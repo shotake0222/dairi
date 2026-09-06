@@ -1,8 +1,8 @@
 {
-  "name": "nfc-companion",
+  "name": "sodatsukake",
   "version": "0.1.0",
   "private": true,
-  "description": "NFCタグ起点・会話育成型キャラクターサービス（Cloudflare Workers / Durable Objects / D1 / Workers AI）",
+  "description": "そだつかけ（Sodatsukake） - NFCタグ起点・会話育成型キャラクターサービス（Cloudflare Workers / Durable Objects / D1 / Workers AI）",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",

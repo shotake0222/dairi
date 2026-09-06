@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>キャラクターと会話</title>
+<title>そだつかけ｜キャラクターと会話</title>
 <style>
   :root { color-scheme: light; }
   * { box-sizing: border-box; }
@@ -15,6 +15,7 @@
   header { padding: 16px; background: #fff; border-bottom: 1px solid #eee; }
   header .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   header h1 { margin: 0; font-size: 16px; }
+  .brand { font-size: 10px; letter-spacing: 0.08em; color: #a78bfa; font-weight: 700; margin-bottom: 2px; }
   #status { font-size: 12px; color: #666; margin-top: 4px; }
   #toggleTraits {
     border: 1px solid #ddd; background: #fff; color: #7c5cff; font-size: 12px;
@@ -43,6 +44,7 @@
 <header>
   <div class="row">
     <div>
+      <div class="brand">そだつかけ</div>
       <h1 id="charName">キャラクター</h1>
       <div id="status">読み込み中…</div>
     </div>

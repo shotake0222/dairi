@@ -1,6 +1,7 @@
-# nfc-companion（仮称）
+# そだつかけ（Sodatsukake）
 
 NFCタグ付きグッズをきっかけに、テキスト会話で「育つ」キャラクターと出会うサービスのMVP実装です。
+（開発用のリポジトリ名・フォルダ名は `nfc-companion` のままにしていますが、サービス名は「そだつかけ」です）
 Cloudflare Workers / Durable Objects / D1 / Workers AI（SLM）のみで構成されており、外部サーバーは不要です。
 
 ## 全体の仕組み
