@@ -53,6 +53,17 @@
   #conceptBanner .link { color: #7c5cff; font-weight: 700; text-decoration: underline; cursor: pointer; }
   #conceptBanner .close { border: none; background: none; color: #9a8fcf; font-size: 16px; cursor: pointer; line-height: 1; padding: 0; }
 
+  /* 「今日の分身レポート」: 留守中に分身が何をしていたかを、開いた瞬間に伝えるカード */
+  #dailyReport {
+    margin: 10px 16px 0; padding: 12px 14px; border-radius: 12px;
+    background: #fff6e0; color: #7a5c17; font-size: 12px; line-height: 1.7;
+    display: flex; gap: 10px; align-items: flex-start;
+  }
+  #dailyReport[hidden] { display: none; }
+  #dailyReport .reportHead { font-weight: 700; white-space: nowrap; }
+  #dailyReport .reportBody { flex: 1; }
+  #dailyReport .reportClose { border: none; background: none; color: #b99a4a; font-size: 16px; cursor: pointer; line-height: 1; padding: 0; }
+
   /* コンセプト説明モーダル */
   #conceptModal {
     position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 10;
@@ -201,6 +212,12 @@
   <button class="close" id="conceptBannerClose" aria-label="閉じる">×</button>
 </div>
 
+<div id="dailyReport" hidden>
+  <div class="reportHead">📔 今日の分身レポート</div>
+  <div class="reportBody" id="reportBody"></div>
+  <button class="reportClose" id="reportClose" aria-label="閉じる">×</button>
+</div>
+
 <div id="log"></div>
 <form id="form">
   <input id="input" type="text" placeholder="話しかけてみよう" autocomplete="off" maxlength="400" />
@@ -259,6 +276,9 @@
   const conceptBanner = document.getElementById("conceptBanner");
   const conceptBannerClose = document.getElementById("conceptBannerClose");
   const conceptMoreLink = document.getElementById("conceptMoreLink");
+  const dailyReport = document.getElementById("dailyReport");
+  const reportBody = document.getElementById("reportBody");
+  const reportClose = document.getElementById("reportClose");
   const conceptModal = document.getElementById("conceptModal");
   const infoBtn = document.getElementById("infoBtn");
   const conceptModalClose = document.getElementById("conceptModalClose");
@@ -554,6 +574,90 @@
   infoBtn.addEventListener("click", () => (conceptModal.hidden = false));
   conceptModalClose.addEventListener("click", () => (conceptModal.hidden = true));
 
+  // --- 「今日の分身レポート」: 留守中に分身が何をしていたかを、開いた瞬間に日記的に伝える ---
+  // 「自分の代わりに動いてくれる分身」というコンセプトを、ボタンを探さなくても体感できるようにするための導線。
+  // 材料は既存データだけ: 前回訪問時刻(lastVisit)・性格の推移(personalityHistory)・自動お散歩の記録(lastMeeting)。
+  const TRAIT_LABELS = { warmth: "温かさ", curiosity: "好奇心", cheerfulness: "陽気さ", caution: "慎重さ", independence: "自立心", humor: "ユーモア" };
+
+  function buildDailyReport(data) {
+    if (!cid || !data || !data.personality) return null;
+    const lastVisit = data.lastVisit || data.createdAt;
+    if (!lastVisit) return null;
+
+    // 前回この時点までの内容はもう見せた、という印がついていればスキップ（毎回開くたびに出さないため）
+    let seenLastVisit = 0;
+    try {
+      seenLastVisit = Number(localStorage.getItem(`sodatsukake_reportSeen_${cid}`) || "0");
+    } catch (e) {
+      /* localStorageが無くても致命的ではない（多少余計に出るだけ） */
+    }
+    if (lastVisit === seenLastVisit) return null;
+
+    const hoursSince = (Date.now() - lastVisit) / (1000 * 60 * 60);
+    const metDuringAbsence = !!(data.lastMeeting && data.lastMeeting.at > lastVisit);
+
+    // 材料が薄い（少し前に開いただけ・特に何もない）ときは、レポートを出さずに静かにしておく
+    if (hoursSince < 3 && !metDuringAbsence) return null;
+
+    const parts = [];
+    if (hoursSince >= 20) {
+      parts.push(`${Math.max(1, Math.round(hoursSince / 24))}日ぶりだね。`);
+    } else if (hoursSince >= 3) {
+      parts.push(`${Math.round(hoursSince)}時間ぶりだね。`);
+    }
+
+    if (metDuringAbsence) {
+      parts.push(`その間に「${data.lastMeeting.partner.name}」という分身と出会って、少し立ち話をしていたみたい。`);
+    }
+
+    // 前回訪問時点のスナップショットと現在の性格を比べて、いちばん動いた軸を一言添える
+    const history = Array.isArray(data.personalityHistory) ? data.personalityHistory : [];
+    const snapshot = [...history].reverse().find((h) => h.t <= lastVisit) || history[0];
+    if (snapshot && snapshot.personality) {
+      let biggestKey = null;
+      let biggestDelta = 0;
+      for (const key of Object.keys(TRAIT_LABELS)) {
+        const delta = (data.personality[key] ?? 0) - (snapshot.personality[key] ?? 0);
+        if (Math.abs(delta) > Math.abs(biggestDelta)) {
+          biggestDelta = delta;
+          biggestKey = key;
+        }
+      }
+      if (biggestKey && Math.abs(biggestDelta) >= 3) {
+        parts.push(`${TRAIT_LABELS[biggestKey]}が${biggestDelta > 0 ? "少し育った" : "少し落ち着いた"}気がする。`);
+      }
+    }
+
+    if (parts.length === 0) {
+      parts.push("今日もいつも通り、あなたが来るのを待っていたみたい。");
+    }
+
+    return { text: parts.join(" "), lastVisit };
+  }
+
+  function showDailyReportIfNeeded(data) {
+    const report = buildDailyReport(data);
+    if (!report) {
+      dailyReport.hidden = true;
+      return;
+    }
+    reportBody.textContent = report.text;
+    dailyReport.dataset.lastVisit = String(report.lastVisit);
+    dailyReport.hidden = false;
+  }
+
+  function dismissDailyReport() {
+    const seenLastVisit = dailyReport.dataset.lastVisit;
+    if (seenLastVisit && cid) {
+      try {
+        localStorage.setItem(`sodatsukake_reportSeen_${cid}`, seenLastVisit);
+      } catch (e) {}
+    }
+    dailyReport.hidden = true;
+  }
+
+  reportClose.addEventListener("click", dismissDailyReport);
+
   toggleTraitsBtn.addEventListener("click", () => {
     const nowShown = traitsEl.classList.toggle("show");
     toggleTraitsBtn.textContent = nowShown ? "性格を見る ▴" : "性格を見る ▾";
@@ -628,6 +732,7 @@
     if (res.ok) {
       const data = await res.json();
       renderStatus(data);
+      showDailyReportIfNeeded(data);
       if (!data.interactionCount) {
         addMessage("……はじめまして。よろしくね。", "char");
       }
