@@ -90,7 +90,11 @@ export default {
       const stub = env.CHARACTER.getByName(characterId);
       const state = await stub.getState();
       if (!state) return json({ error: "not found" }, { status: 404 });
-      return json({ ...state, speechStyleLabel: deriveSpeechStyle(state.personality).label });
+      // ownerToken は「持ち主だけが知っている秘密」が前提の値。cid自体はチャットページのURLに
+      // 乗って共有されうるため、この公開GET APIのレスポンスに含めてしまうと持ち主保護の意味が無くなる。
+      // よって明示的に除外してから返す。
+      const { ownerToken: _ownerToken, ...publicState } = state;
+      return json({ ...publicState, speechStyleLabel: deriveSpeechStyle(state.personality).label });
     }
 
     // --- 性格変遷（成長グラフ）取得API ---
@@ -220,7 +224,7 @@ export default {
   },
 } satisfies ExportedHandler<Env>;
 
-type MeetingResult =
+export type MeetingResult =
   | { ok: true; partner: { name: string; species: SpeciesKey; color: ColorKey }; log: MeetingLogEntry[] }
   | { ok: false; error: string; status: number };
 
@@ -228,7 +232,7 @@ type MeetingResult =
  * 「お散歩」の実処理本体。手動API（/api/character/meet）と自動実行（scheduled）の両方から呼ばれる共通関数。
  * オプトイン確認・クールダウン確認・相手探し・AI同士の立ち話生成・双方への記録保存までをここで行う。
  */
-async function runMeeting(env: Env, characterId: string): Promise<MeetingResult> {
+export async function runMeeting(env: Env, characterId: string): Promise<MeetingResult> {
   const selfStub = env.CHARACTER.getByName(characterId);
   const selfState = await selfStub.getState();
   if (!selfState) return { ok: false, error: "not found", status: 404 };
@@ -298,7 +302,7 @@ async function runMeeting(env: Env, characterId: string): Promise<MeetingResult>
 }
 
 /** 性格パラメータ（6軸）のユークリッド距離が最も近い候補を選ぶ（＝いちばん性格が近い分身とマッチングする）。 */
-function pickMostSimilar<T extends Pick<PersonalityTraits, (typeof TRAIT_KEYS)[number]>>(
+export function pickMostSimilar<T extends Pick<PersonalityTraits, (typeof TRAIT_KEYS)[number]>>(
   self: PersonalityTraits,
   candidates: T[]
 ): T {
