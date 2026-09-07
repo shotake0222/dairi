@@ -141,6 +141,7 @@
   #socialOptInBtn.on { background: #7c5cff; color: #fff; border-color: #7c5cff; }
   #meetBtn { background: #7c5cff; color: #fff; border-color: #7c5cff; margin-top: 10px; align-self: flex-start; }
   #meetBtn:disabled { opacity: 0.5; cursor: default; }
+  #friendsLink { font-size: 12px; color: #7c5cff; font-weight: 600; text-decoration: underline; white-space: nowrap; }
   #meetStatus { font-size: 11px; color: #7a6bb0; margin-top: 8px; }
   .meetingPartner { font-size: 11px; color: #7a6bb0; margin-top: 12px; margin-bottom: 6px; }
   .meetingLog { display: flex; flex-direction: column; gap: 6px; }
@@ -200,6 +201,7 @@
     <div class="socialRow">
       <button id="socialOptInBtn" type="button">オフ</button>
       <button id="meetBtn" type="button">🚶 お散歩に出す</button>
+      <a id="friendsLink" href="#">📖 出会いの図鑑</a>
     </div>
     <div id="meetStatus"></div>
     <div id="meetingResult"></div>
@@ -325,6 +327,7 @@
   const exportStatus = document.getElementById("exportStatus");
 
   historyLink.href = `/history.html?cid=${encodeURIComponent(cid || "")}`;
+  document.getElementById("friendsLink").href = `/friends.html?cid=${encodeURIComponent(cid || "")}`;
 
   // --- 人格パッケージの書き出し/復元（フィジカルAI・メタバース移植やバックアップの土台） ---
   toggleExportBtn.addEventListener("click", () => {

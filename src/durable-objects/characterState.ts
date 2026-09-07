@@ -105,9 +105,14 @@ export interface CharacterData {
   personalityHistory?: PersonalityHistoryEntry[]; // 既存データには無いのでoptional。無ければ誕生時点として扱う
   socialOptIn?: boolean; // 「他の分身と出会う」機能への同意（デフォルトfalse＝非公開）
   lastMeetingAt?: number; // epoch ms（お散歩機能のクールダウン判定用）
-  lastMeeting?: MeetingRecord; // 直近の交流ログ
+  lastMeeting?: MeetingRecord; // 直近の交流ログ（UI表示の後方互換のため引き続き保持）
+  meetingHistory?: MeetingRecord[]; // これまで出会った分身の記録（「図鑑」機能用）。既存データには無いのでoptional
   ownerToken?: string; // 「持ち主」判定用の簡易トークン（下記参照）。既存データには無いのでoptional
 }
+
+// 「図鑑」機能用の出会いの記録は、無制限に貯めるとストレージを圧迫するため、
+// 直近の一定件数だけ残す（古いものから捨てる。性格変遷グラフと違い、間引かず単純に打ち切る）。
+const MAX_MEETING_HISTORY = 60;
 
 /**
  * 所有権トークンについて（アカウント登録なしでの、最小限の「持ち主」保護）。
@@ -418,13 +423,20 @@ export class CharacterState extends DurableObject<Env> {
     }
   }
 
-  /** 交流ログを保存する（自分視点のlog配列とパートナー情報を受け取る）。 */
+  /**
+   * 交流ログを保存する（自分視点のlog配列とパートナー情報を受け取る）。
+   * 直近1件（lastMeeting）だけでなく、「図鑑」機能用に出会いの履歴（meetingHistory）も積んでいく。
+   */
   async recordMeeting(log: MeetingLogEntry[], partner: { name: string; species: SpeciesKey; color: ColorKey }): Promise<void> {
     const data = await this.ctx.storage.get<CharacterData>("data");
     if (!data) return;
     const now = Date.now();
+    const record: MeetingRecord = { at: now, partner, log };
     data.lastMeetingAt = now;
-    data.lastMeeting = { at: now, partner, log };
+    data.lastMeeting = record;
+    const history = Array.isArray(data.meetingHistory) ? data.meetingHistory : [];
+    history.push(record);
+    data.meetingHistory = history.length > MAX_MEETING_HISTORY ? history.slice(-MAX_MEETING_HISTORY) : history;
     await this.ctx.storage.put("data", data);
   }
 

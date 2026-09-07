@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>そだつかけ｜出会いの図鑑</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: #f5f3ff; color: #1a1a1a;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+  }
+  header { padding: 14px 16px; background: #fff; border-bottom: 1px solid #eee; position: sticky; top: 0; z-index: 2; }
+  header .row { display: flex; align-items: center; gap: 10px; }
+  .brand { font-size: 10px; letter-spacing: 0.08em; color: #a78bfa; font-weight: 700; margin-bottom: 2px; }
+  header h1 { margin: 0; font-size: 16px; }
+  #backBtn {
+    border: 1px solid #ddd; background: #fff; color: #7c5cff; font-size: 13px;
+    padding: 8px 12px; border-radius: 999px; white-space: nowrap; text-decoration: none;
+  }
+  main { padding: 16px; max-width: 560px; margin: 0 auto; }
+  .card { background: #fff; border-radius: 16px; padding: 16px; margin-bottom: 16px; border: 1px solid #eee; }
+  .card h2 { margin: 0 0 4px; font-size: 14px; color: #444; }
+  .card .sub { font-size: 12px; color: #999; margin-bottom: 4px; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+  .entry {
+    background: #faf9ff; border: 1px solid #ece7fb; border-radius: 14px; padding: 10px;
+    cursor: pointer; transition: background 0.15s ease;
+  }
+  .entry:hover { background: #f0ecff; }
+  .entry .icon {
+    width: 100%; aspect-ratio: 1; border-radius: 12px; background: #fff;
+    display: flex; align-items: center; justify-content: center; overflow: hidden; margin-bottom: 8px;
+  }
+  .entry .icon img { width: 78%; height: 78%; object-fit: contain; }
+  .entry .pname { font-size: 13px; font-weight: 700; color: #333; }
+  .entry .pspecies { font-size: 11px; color: #a78bfa; margin-top: 1px; }
+  .entry .pdate { font-size: 10px; color: #aaa; margin-top: 2px; }
+
+  .entry .log { display: none; margin-top: 8px; padding-top: 8px; border-top: 1px dashed #ddd; font-size: 11px; line-height: 1.6; }
+  .entry.expanded .log { display: block; }
+  .log .line { margin-bottom: 3px; }
+  .log .line.self { color: #4c3a99; }
+  .log .line.other { color: #7c6a3f; }
+
+  .empty { text-align: center; color: #888; font-size: 13px; padding: 40px 16px; line-height: 1.8; }
+  .loading { text-align: center; color: #aaa; font-size: 13px; padding: 40px 16px; }
+
+  .concept {
+    font-size: 12px; color: #7c5cff; background: #f0ecff; border-radius: 12px;
+    padding: 12px 14px; line-height: 1.7; margin-top: 4px;
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="row">
+    <a id="backBtn" href="#">← チャットに戻る</a>
+    <div>
+      <div class="brand">そだつかけ</div>
+      <h1 id="pageTitle">出会いの図鑑</h1>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div id="loading" class="loading">読み込み中…</div>
+
+  <div id="content" hidden>
+    <div class="card">
+      <h2 id="summaryHeadline"></h2>
+      <div class="sub" id="summarySub">タップすると、その時の立ち話を振り返れます</div>
+      <div class="grid" id="grid"></div>
+    </div>
+
+    <div class="card">
+      <div class="concept">
+        「お散歩」機能でこれまでに出会った、他のユーザーが育てている分身たちの記録です。人間同士のメッセージのやり取りは行われず、
+        分身同士がその場限りの短い立ち話をするだけですが、この図鑑には「あなたの分身がどんな出会いを重ねてきたか」が積み重なっていきます。
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+  const params = new URLSearchParams(location.search);
+  const cid = params.get("cid");
+  document.getElementById("backBtn").href = `/chat.html?cid=${encodeURIComponent(cid || "")}`;
+
+  const SPECIES_LABELS = {
+    punikoro: "ぷにころ",
+    mofukuru: "もふくる",
+    tsunomaru: "つのまる",
+    howahowa: "ほわほわ",
+    kiratsubu: "きらつぶ",
+  };
+
+  function el(id) { return document.getElementById(id); }
+
+  async function loadCharacter() {
+    if (!cid) return null;
+    const res = await fetch(`/api/character?cid=${encodeURIComponent(cid)}`);
+    if (!res.ok) return null;
+    return res.json();
+  }
+
+  function formatDate(ms) {
+    const d = new Date(ms);
+    return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  }
+
+  function renderGrid(container, history) {
+    container.innerHTML = "";
+    // 新しい出会いを先頭に
+    const ordered = [...history].reverse();
+    for (const record of ordered) {
+      const entry = document.createElement("div");
+      entry.className = "entry";
+
+      const partner = record.partner || {};
+      const speciesLabel = SPECIES_LABELS[partner.species] || partner.species || "";
+      const iconSrc = partner.species && partner.color ? `/characters/${partner.species}_${partner.color}.png` : "";
+
+      const logHtml = (record.log || [])
+        .map((l) => `<div class="line ${l.role === "self" ? "self" : "other"}">${l.role === "self" ? "🟣 " : "⚪ "}${escapeHtml(l.text)}</div>`)
+        .join("");
+
+      entry.innerHTML = `
+        <div class="icon">${iconSrc ? `<img src="${iconSrc}" alt="${escapeHtml(partner.name || "")}" />` : ""}</div>
+        <div class="pname">${escapeHtml(partner.name || "名もなき分身")}</div>
+        <div class="pspecies">${escapeHtml(speciesLabel)}</div>
+        <div class="pdate">${formatDate(record.at)}</div>
+        <div class="log">${logHtml}</div>
+      `;
+      entry.addEventListener("click", () => entry.classList.toggle("expanded"));
+      container.appendChild(entry);
+    }
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  (async () => {
+    const data = await loadCharacter();
+    el("loading").hidden = true;
+
+    if (!data) {
+      const empty = document.createElement("div");
+      empty.className = "empty";
+      empty.textContent = "記録が見つかりませんでした。";
+      document.querySelector("main").appendChild(empty);
+      return;
+    }
+
+    document.title = `そだつかけ｜${data.name}の図鑑`;
+    el("pageTitle").textContent = `${data.name}の図鑑`;
+
+    const history = Array.isArray(data.meetingHistory) ? data.meetingHistory : [];
+
+    if (history.length === 0) {
+      el("content").hidden = false;
+      document.querySelector(".grid").parentElement.querySelector("h2").textContent = "まだ誰とも出会っていません";
+      el("summarySub").textContent = "";
+      const empty = document.createElement("div");
+      empty.className = "empty";
+      empty.textContent =
+        "チャット画面の「🤝 交流」から「他の分身と出会う」をオンにすると、留守中や「お散歩」機能を通じて、他のユーザーが育てている分身と出会えるようになります。";
+      el("grid").replaceWith(empty);
+      return;
+    }
+
+    el("summaryHeadline").textContent = `これまでに ${history.length} 体の分身と出会いました`;
+    renderGrid(el("grid"), history);
+    el("content").hidden = false;
+  })();
+</script>
+</body>
+</html>
