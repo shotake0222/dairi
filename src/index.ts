@@ -39,6 +39,7 @@ export default {
 
       let characterId: string;
       let isFirstTime = false;
+      let ownerToken: string | undefined;
 
       if (row) {
         characterId = row.character_id;
@@ -53,12 +54,18 @@ export default {
           .run();
 
         const stub = env.CHARACTER.getByName(characterId);
-        await stub.init("名もなきキャラクター");
+        const initData = await stub.init("名もなきキャラクター");
+        ownerToken = initData.ownerToken;
       }
 
       const redirectUrl = new URL("/summon.html", url.origin);
       redirectUrl.searchParams.set("cid", characterId);
-      if (isFirstTime) redirectUrl.searchParams.set("first", "1");
+      if (isFirstTime) {
+        redirectUrl.searchParams.set("first", "1");
+        // 「持ち主トークン」は初回タップの瞬間だけURLに乗せてクライアントへ渡す。
+        // summon.html側ですぐlocalStorageへ保存し、URLからは消す想定（人格エクスポート仕様書5章参照）。
+        if (ownerToken) redirectUrl.searchParams.set("token", ownerToken);
+      }
 
       return Response.redirect(redirectUrl.toString(), 302);
     }
@@ -99,13 +106,15 @@ export default {
     }
 
     // --- 「他の分身と出会う」機能へのオプトイン/オプトアウトAPI ---
+    // 公開ディレクトリへの掲載可否に関わるため、持ち主トークンによる保護対象。
     if (url.pathname === "/api/character/social" && request.method === "POST") {
-      const body = await request.json<{ characterId?: string; optIn?: boolean }>();
+      const body = await request.json<{ characterId?: string; optIn?: boolean; token?: string }>();
       if (!body.characterId || typeof body.optIn !== "boolean") {
         return json({ error: "characterId and optIn are required" }, { status: 400 });
       }
       const stub = env.CHARACTER.getByName(body.characterId);
-      const result = await stub.setSocialOptIn(body.optIn);
+      const result = await stub.setSocialOptIn(body.optIn, body.token);
+      if ("error" in result) return json(result, { status: 403 });
       return json(result);
     }
 
@@ -126,14 +135,17 @@ export default {
     // --- 人格パッケージのエクスポート（ダウンロード） ---
     // 育った性格・記憶を、モデル/実行環境に依存しない形の1ファイルとして書き出す。
     // フィジカルAI移植・バックアップ・他プラットフォームへの持ち出しの共通の出発点になるAPI。
+    // 記憶の持ち出しという性質上、持ち主トークンによる保護対象。
     if (url.pathname === "/api/character/export" && request.method === "GET") {
       const characterId = url.searchParams.get("cid");
+      const token = url.searchParams.get("token") || undefined;
       if (!characterId) {
         return json({ error: "cid is required" }, { status: 400 });
       }
       const stub = env.CHARACTER.getByName(characterId);
-      const pkg = await stub.exportPackage();
-      if (!pkg) return json({ error: "not found" }, { status: 404 });
+      const result = await stub.exportPackage(token);
+      if (!result.ok) return json({ error: result.error }, { status: result.error === "not found" ? 404 : 403 });
+      const pkg = result.package;
       const fileName = `sodatsukake_${pkg.character.name || characterId}.json`.replace(/[^\w.\-ぁ-んァ-ヶー一-龠]/g, "_");
       return new Response(JSON.stringify(pkg, null, 2), {
         headers: {
@@ -146,25 +158,30 @@ export default {
     // --- 人格パッケージのインポート（復元） ---
     // 指定したcharacterId（＝復元先のDOインスタンス）の現在のデータを上書きする破壊的操作。
     // 「他の分身と出会う」機能へのオプトイン状態は引き継がない（復元後は必ずオフから）。
+    // 上書き操作のため、既にデータがある場合は持ち主トークンによる保護対象。
     if (url.pathname === "/api/character/import" && request.method === "POST") {
-      const body = await request.json<{ characterId?: string; package?: PersonalityPackageV1 }>();
+      const body = await request.json<{ characterId?: string; package?: PersonalityPackageV1; token?: string }>();
       if (!body.characterId || !body.package) {
         return json({ error: "characterId and package are required" }, { status: 400 });
       }
       const stub = env.CHARACTER.getByName(body.characterId);
-      const result = await stub.importPackage(body.package);
-      if (!result.ok) return json({ error: result.error }, { status: 400 });
+      const result = await stub.importPackage(body.package, body.token);
+      if (!result.ok) {
+        const status = result.error === "この操作は分身の持ち主だけが行えます" ? 403 : 400;
+        return json({ error: result.error }, { status });
+      }
       return json(result);
     }
 
     // --- キャラクター名前設定API（初回サモン時に使う想定） ---
     if (url.pathname === "/api/character/rename" && request.method === "POST") {
-      const body = await request.json<{ characterId?: string; name?: string }>();
+      const body = await request.json<{ characterId?: string; name?: string; token?: string }>();
       if (!body.characterId || !body.name) {
         return json({ error: "characterId and name are required" }, { status: 400 });
       }
       const stub = env.CHARACTER.getByName(body.characterId);
-      const state = await stub.rename(body.name);
+      const state = await stub.rename(body.name, body.token);
+      if ("error" in state) return json(state, { status: 403 });
       return json(state);
     }
 

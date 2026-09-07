@@ -223,6 +223,27 @@
 <script>
   const params = new URLSearchParams(location.search);
   const cid = params.get("cid");
+
+  // 「持ち主トークン」: 誕生時にsummon.htmlがlocalStorageへ保存したもの。
+  // エクスポート/インポート/オプトイン/名前変更など、持ち主専用の操作にだけ添えて送る。
+  // 無くても閲覧・会話はできる（そだつかけはアカウント登録なしで使える設計のため）。
+  function getOwnerToken() {
+    if (!cid) return "";
+    try {
+      return localStorage.getItem(`sodatsukake_token_${cid}`) || "";
+    } catch (err) {
+      return "";
+    }
+  }
+  function setOwnerToken(token) {
+    if (!cid || !token) return;
+    try {
+      localStorage.setItem(`sodatsukake_token_${cid}`, token);
+    } catch (err) {
+      /* 保存できなくてもクラッシュはさせない */
+    }
+  }
+
   const log = document.getElementById("log");
   const form = document.getElementById("form");
   const input = document.getElementById("input");
@@ -267,7 +288,14 @@
     exportBtn.disabled = true;
     exportStatus.textContent = "書き出し中……";
     try {
-      const res = await fetch(`/api/character/export?cid=${encodeURIComponent(cid)}`);
+      const token = getOwnerToken();
+      const qs = new URLSearchParams({ cid });
+      if (token) qs.set("token", token);
+      const res = await fetch(`/api/character/export?${qs.toString()}`);
+      if (res.status === 403) {
+        exportStatus.textContent = "この操作は、この子を最初に育てた端末からのみ行えます";
+        return;
+      }
       if (!res.ok) throw new Error("export failed");
       const blob = await res.blob();
       const blobUrl = URL.createObjectURL(blob);
@@ -306,12 +334,13 @@
       const res = await fetch("/api/character/import", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ characterId: cid, package: pkg }),
+        body: JSON.stringify({ characterId: cid, package: pkg, token: getOwnerToken() }),
       });
       const data = await res.json();
       if (data.error) {
         exportStatus.textContent = data.error;
       } else {
+        if (data.ownerToken) setOwnerToken(data.ownerToken);
         exportStatus.textContent = `「${data.name}」として復元しました。画面を更新します……`;
         setTimeout(() => location.reload(), 900);
       }
@@ -373,10 +402,12 @@
       const res = await fetch("/api/character/social", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ characterId: cid, optIn: !socialOptIn }),
+        body: JSON.stringify({ characterId: cid, optIn: !socialOptIn, token: getOwnerToken() }),
       });
       const data = await res.json();
-      if (typeof data.optIn === "boolean") {
+      if (data.error) {
+        meetStatus.textContent = data.error;
+      } else if (typeof data.optIn === "boolean") {
         socialOptIn = data.optIn;
         socialOptInBtn.textContent = socialOptIn ? "オン" : "オフ";
         socialOptInBtn.classList.toggle("on", socialOptIn);

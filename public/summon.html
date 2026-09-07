@@ -136,6 +136,28 @@
   const params = new URLSearchParams(location.search);
   const cid = params.get("cid");
   const isFirst = params.get("first") === "1";
+  const tokenParam = params.get("token");
+
+  // 「持ち主トークン」: 誕生の瞬間だけURLに乗ってくるので、すぐlocalStorageへ保存してURLからは消しておく。
+  // これ以降このブラウザが、名前変更・エクスポート/インポート・オプトインなど持ち主専用の操作を行える。
+  if (cid && tokenParam) {
+    try {
+      localStorage.setItem(`sodatsukake_token_${cid}`, tokenParam);
+    } catch (err) {
+      /* localStorageが使えなくても召喚自体は続行する（持ち主保護機能だけ効かなくなる） */
+    }
+    params.delete("token");
+    history.replaceState(null, "", `${location.pathname}?${params.toString()}`);
+  }
+
+  function getOwnerToken() {
+    if (!cid) return "";
+    try {
+      return localStorage.getItem(`sodatsukake_token_${cid}`) || "";
+    } catch (err) {
+      return "";
+    }
+  }
 
   const appearText = document.getElementById("appearText");
   const conceptText = document.getElementById("conceptText");
@@ -222,7 +244,7 @@
           await fetch("/api/character/rename", {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ characterId: cid, name }),
+            body: JSON.stringify({ characterId: cid, name, token: getOwnerToken() }),
           });
         } catch (err) {
           // 命名APIが失敗しても会話自体は続けられるようにする

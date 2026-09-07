@@ -106,6 +106,27 @@ export interface CharacterData {
   socialOptIn?: boolean; // 「他の分身と出会う」機能への同意（デフォルトfalse＝非公開）
   lastMeetingAt?: number; // epoch ms（お散歩機能のクールダウン判定用）
   lastMeeting?: MeetingRecord; // 直近の交流ログ
+  ownerToken?: string; // 「持ち主」判定用の簡易トークン（下記参照）。既存データには無いのでoptional
+}
+
+/**
+ * 所有権トークンについて（アカウント登録なしでの、最小限の「持ち主」保護）。
+ *
+ * そだつかけはユーザーアカウントを持たない設計のため、characterId（cid）さえ分かれば
+ * 誰でも状態を読めてしまう。会話や閲覧はそれで問題ないが、エクスポート（記憶の持ち出し）・
+ * インポート（上書き）・公開ディレクトリへの掲載（オプトイン）・名前変更のように
+ * 「持ち主本人だけが行うべき操作」には、ここで生成する ownerToken を要求する。
+ *
+ * - 新規キャラクター誕生時（init）に1度だけ生成し、NFCタップ直後のリダイレクトURLに乗せてクライアントへ渡す。
+ * - クライアントはこれをlocalStorageに保存し、以後の保護対象APIにだけ添えて送る。
+ * - 既存データ（このトークン導入前に作られたキャラクター）は ownerToken が無いため、
+ *   従来通り誰でも操作できる状態のままにしておく（後から急に締め出さないための互換性維持）。
+ * - アカウントもパスワードも無いMVP向けの割り切った設計であり、正式な認証層ではない
+ *   （人格エクスポート仕様書 5章の「認証・アクセス制御」課題への第一歩という位置づけ）。
+ */
+function isOwner(data: CharacterData, providedToken?: string): boolean {
+  if (!data.ownerToken) return true; // 未設定（レガシー）は従来通りオープン
+  return data.ownerToken === providedToken;
 }
 
 // 悪用・コスト対策の簡易ガード。厳密なセキュリティ機構ではなく、
@@ -150,6 +171,8 @@ export class CharacterState extends DurableObject<Env> {
       createdAt: now,
       // 誕生時点（全パラメータ50）を最初の1点として記録しておく。これが成長グラフの起点になる。
       personalityHistory: [{ t: now, interactionCount: 0, personality: { ...DEFAULT_PERSONALITY } }],
+      // この瞬間にこのキャラクターを呼び出したクライアントが「持ち主」になる。
+      ownerToken: crypto.randomUUID(),
     };
     await this.ctx.storage.put("data", data);
     return data;
@@ -184,11 +207,18 @@ export class CharacterState extends DurableObject<Env> {
     return (await this.ctx.storage.get<CharacterData>("data")) ?? null;
   }
 
-  async rename(newName: string): Promise<CharacterData> {
-    const data = (await this.ctx.storage.get<CharacterData>("data")) ?? (await this.init(newName));
-    data.name = newName;
-    await this.ctx.storage.put("data", data);
-    return data;
+  async rename(newName: string, ownerToken?: string): Promise<CharacterData | { error: string }> {
+    const existing = await this.ctx.storage.get<CharacterData>("data");
+    if (!existing) {
+      // まだ存在しない＝これから作る本人がそのまま持ち主になるので所有権チェックは不要
+      return this.init(newName);
+    }
+    if (!isOwner(existing, ownerToken)) {
+      return { error: "この操作は分身の持ち主だけが行えます" };
+    }
+    existing.name = newName;
+    await this.ctx.storage.put("data", existing);
+    return existing;
   }
 
   async chat(userMessage: string): Promise<{
@@ -304,9 +334,12 @@ export class CharacterState extends DurableObject<Env> {
    * オプトインするとD1の公開ディレクトリに公開してよい情報（名前・種族・色・性格・成長段階）だけが載り、
    * オプトアウトすると即座にディレクトリから削除される（同意していないキャラクターの情報は一切残らない）。
    */
-  async setSocialOptIn(optIn: boolean): Promise<{ optIn: boolean }> {
+  async setSocialOptIn(optIn: boolean, ownerToken?: string): Promise<{ optIn: boolean } | { error: string }> {
     let data = await this.ctx.storage.get<CharacterData>("data");
     if (!data) data = await this.init("名もなきキャラクター");
+    if (!isOwner(data, ownerToken)) {
+      return { error: "この操作は分身の持ち主だけが行えます" };
+    }
     data.socialOptIn = optIn;
     await this.ctx.storage.put("data", data);
 
@@ -400,14 +433,17 @@ export class CharacterState extends DurableObject<Env> {
    * フィジカルAIへの移植・バックアップ・別プラットフォームへの持ち出しなど、
    * 「この分身を別の身体/システムに連れて行く」ためのすべての出発点になる。
    */
-  async exportPackage(): Promise<PersonalityPackageV1 | null> {
+  async exportPackage(ownerToken?: string): Promise<{ ok: true; package: PersonalityPackageV1 } | { ok: false; error: string }> {
     const data = await this.ctx.storage.get<CharacterData>("data");
-    if (!data) return null;
+    if (!data) return { ok: false, error: "not found" };
+    if (!isOwner(data, ownerToken)) {
+      return { ok: false, error: "この操作は分身の持ち主だけが行えます" };
+    }
 
     const characterId = this.ctx.id.name ?? "unknown";
     const longTerm = await exportAllMemories(this.env, characterId);
 
-    return {
+    const pkg: PersonalityPackageV1 = {
       formatVersion: EXPORT_FORMAT_VERSION,
       exportedAt: Date.now(),
       character: {
@@ -434,6 +470,7 @@ export class CharacterState extends DurableObject<Env> {
           "そのままシステムプロンプトの一部として渡すことで記憶を再現できます。",
       },
     };
+    return { ok: true, package: pkg };
   }
 
   /**
@@ -441,7 +478,14 @@ export class CharacterState extends DurableObject<Env> {
    * 「他の分身と出会う」機能へのオプトイン状態は引き継がない＝復元後は必ずオフからのスタートにする
    * （プライバシー上、環境が変わったら同意も取り直すのが安全なため）。
    */
-  async importPackage(pkg: PersonalityPackageV1): Promise<{ ok: true; name: string } | { ok: false; error: string }> {
+  async importPackage(
+    pkg: PersonalityPackageV1,
+    ownerToken?: string
+  ): Promise<{ ok: true; name: string; ownerToken: string } | { ok: false; error: string }> {
+    const existing = await this.ctx.storage.get<CharacterData>("data");
+    if (existing && !isOwner(existing, ownerToken)) {
+      return { ok: false, error: "この操作は分身の持ち主だけが行えます" };
+    }
     if (!pkg || pkg.formatVersion !== EXPORT_FORMAT_VERSION) {
       return { ok: false, error: `対応していない形式です（formatVersion: ${pkg?.formatVersion ?? "不明"}）` };
     }
@@ -461,6 +505,9 @@ export class CharacterState extends DurableObject<Env> {
     }
 
     const now = Date.now();
+    // 復元先が既に持ち主トークンを持っていればそれを維持し、無ければ（新規/レガシー）
+    // このインポートを実行したクライアントを新しい持ち主として登録する。
+    const resolvedOwnerToken = existing?.ownerToken ?? ownerToken ?? crypto.randomUUID();
     const data: CharacterData = {
       name: pkg.character.name || "名もなきキャラクター",
       species: pkg.character.species,
@@ -473,6 +520,7 @@ export class CharacterState extends DurableObject<Env> {
       createdAt: pkg.character.createdAt ?? now,
       personalityHistory: pkg.personalityHistory ?? [],
       socialOptIn: false,
+      ownerToken: resolvedOwnerToken,
     };
     await this.ctx.storage.put("data", data);
 
@@ -481,7 +529,7 @@ export class CharacterState extends DurableObject<Env> {
       await importMemories(this.env, characterId, pkg.memory.longTerm);
     }
 
-    return { ok: true, name: data.name };
+    return { ok: true, name: data.name, ownerToken: resolvedOwnerToken };
   }
 }
 
