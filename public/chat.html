@@ -87,13 +87,39 @@
     background: linear-gradient(180deg, #efeaff, #f5f3ff);
     border-bottom: 1px solid #eee; overflow: hidden; flex-shrink: 0;
   }
-  #modelStage model-viewer { width: 100%; height: 100%; --poster-color: transparent; }
+  #modelStage model-viewer {
+    width: 100%; height: 100%; --poster-color: transparent; cursor: pointer;
+    animation: idleBob 3.4s ease-in-out infinite; transform-origin: center bottom;
+  }
+  #modelStage model-viewer.interacting { animation-play-state: paused; }
+  #modelStage model-viewer.poked { animation: pokeSquish 0.5s ease-in-out; }
+  @keyframes idleBob {
+    0%, 100% { transform: translateY(0) scale(1); }
+    50% { transform: translateY(-4px) scale(1.015); }
+  }
+  @keyframes pokeSquish {
+    0% { transform: scale(1, 1); }
+    30% { transform: scale(1.14, 0.86); }
+    55% { transform: scale(0.9, 1.12); }
+    78% { transform: scale(1.05, 0.96); }
+    100% { transform: scale(1, 1); }
+  }
   #modelToggle {
     position: absolute; top: 8px; right: 8px; border: 1px solid #ddd; background: rgba(255,255,255,0.9);
-    color: #7c5cff; font-size: 11px; padding: 4px 10px; border-radius: 999px;
+    color: #7c5cff; font-size: 11px; padding: 4px 10px; border-radius: 999px; z-index: 2;
   }
   #modelStage.collapsed { height: 0; border-bottom: none; }
   #modelStage.collapsed model-viewer { visibility: hidden; }
+
+  /* タップ（なでる/つつく）した時の一言リアクション用の吹き出し */
+  #reactionBubble {
+    position: absolute; left: 50%; top: 10px; transform: translateX(-50%);
+    background: rgba(255,255,255,0.95); color: #4c3a99; font-size: 12px; font-weight: 700;
+    padding: 6px 13px; border-radius: 999px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity 0.25s ease, transform 0.25s ease;
+    z-index: 3; max-width: 85%; overflow: hidden; text-overflow: ellipsis;
+  }
+  #reactionBubble.show { opacity: 1; transform: translateX(-50%) translateY(-4px); }
 
   #traits { display: none; margin: 10px 16px 0; flex-direction: column; gap: 6px; }
   #traits.show { display: flex; }
@@ -196,6 +222,7 @@
 <!-- 会話しながら見られる3Dモデル表示エリア -->
 <div id="modelStage">
   <button id="modelToggle" type="button">たたむ ▴</button>
+  <div id="reactionBubble"></div>
   <model-viewer id="model" camera-controls disable-zoom auto-rotate auto-rotate-delay="1500"
     rotation-per-second="12deg" interaction-prompt="none" shadow-intensity="0" exposure="1.1"
     ar ar-modes="webxr scene-viewer quick-look">
@@ -272,6 +299,7 @@
   const modelEl = document.getElementById("model");
   const modelStage = document.getElementById("modelStage");
   const modelToggle = document.getElementById("modelToggle");
+  const reactionBubble = document.getElementById("reactionBubble");
   const historyLink = document.getElementById("historyLink");
   const conceptBanner = document.getElementById("conceptBanner");
   const conceptBannerClose = document.getElementById("conceptBannerClose");
@@ -667,6 +695,67 @@
     const collapsed = modelStage.classList.toggle("collapsed");
     modelToggle.textContent = collapsed ? "3Dを見る ▾" : "たたむ ▴";
   });
+
+  // --- モデルをタップ（なでる/つつく）すると、性格に合わせた一言と、ちょこっと跳ねるアニメーションを返す ---
+  // 現行のglbモデルは骨格を持たない静止メッシュ（VRM書き出し検証メモ参照）なので、
+  // 「体そのものが弾む」CSSアニメーションと吹き出しのリアクションで手触りを作っている。
+  const REACTION_POOLS = {
+    warmHigh: ["えへへ、うれしいな", "もっとなでて〜", "きみといると安心する"],
+    cautionHigh: ["わっ、びっくりした…", "ん、んっ……だいじょうぶ", "ちょっとドキドキした"],
+    cheerfulHigh: ["やっほー！", "たのしい〜！", "今日も元気だよ！"],
+    curiosityHigh: ["ん？なになに？", "それ気になる！", "ふしぎだね〜"],
+    humorHigh: ["なでなで、くすぐったいってば（笑）", "ふふっ、それつぼだった"],
+    independentHigh: ["ふーん、まあいいけど", "べつに、悪い気はしないよ"],
+    neutral: ["ん？", "なに？", "はーい", "うん？", "……？"],
+  };
+  const MANY_TAPS_LINE = "今日もいっぱいさわってくれてありがとう";
+  let tapCount = 0;
+  let lastPokeAt = 0;
+
+  function pickReactionLine() {
+    tapCount += 1;
+    if (tapCount > 0 && tapCount % 12 === 0) return MANY_TAPS_LINE;
+
+    const p = currentPersonality || {};
+    const pools = [];
+    if ((p.warmth ?? 50) >= 65) pools.push(...REACTION_POOLS.warmHigh);
+    if ((p.caution ?? 50) >= 65) pools.push(...REACTION_POOLS.cautionHigh);
+    if ((p.cheerfulness ?? 50) >= 65) pools.push(...REACTION_POOLS.cheerfulHigh);
+    if ((p.curiosity ?? 50) >= 65) pools.push(...REACTION_POOLS.curiosityHigh);
+    if ((p.humor ?? 50) >= 65) pools.push(...REACTION_POOLS.humorHigh);
+    if ((p.independence ?? 50) >= 65) pools.push(...REACTION_POOLS.independentHigh);
+    if (pools.length === 0) pools.push(...REACTION_POOLS.neutral);
+
+    return pools[Math.floor(Math.random() * pools.length)];
+  }
+
+  let reactionHideTimer = null;
+  function showReaction(text) {
+    reactionBubble.textContent = text;
+    reactionBubble.classList.add("show");
+    if (reactionHideTimer) clearTimeout(reactionHideTimer);
+    reactionHideTimer = setTimeout(() => reactionBubble.classList.remove("show"), 1600);
+  }
+
+  function playPokeAnimation() {
+    modelEl.classList.remove("poked");
+    void modelEl.offsetWidth; // 連続タップでもアニメーションが再スタートするようにする
+    modelEl.classList.add("poked");
+  }
+
+  modelEl.addEventListener("click", () => {
+    const now = Date.now();
+    if (now - lastPokeAt < 500) return; // 連打で吹き出しが詰まらないように簡易クールダウン
+    lastPokeAt = now;
+    playPokeAnimation();
+    showReaction(pickReactionLine());
+  });
+
+  // カメラをドラッグで回している間は、勝手な浮遊アニメーションが視覚的に邪魔なので一時停止する
+  modelEl.addEventListener("pointerdown", () => modelEl.classList.add("interacting"));
+  ["pointerup", "pointercancel", "pointerleave"].forEach((evt) =>
+    modelEl.addEventListener(evt, () => modelEl.classList.remove("interacting"))
+  );
 
   function addMessage(text, who) {
     const div = document.createElement("div");
