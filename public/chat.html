@@ -20,11 +20,12 @@
   #status { font-size: 12px; color: #666; margin-top: 4px; }
   .nameCol { flex: 1; min-width: 0; }
   .headerActions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; align-self: flex-start; flex-shrink: 0; }
-  #toggleTraits, #historyLink, #infoBtn, #toggleExport, #toggleSocial {
+  #toggleTraits, #historyLink, #infoBtn, #toggleExport, #toggleSocial, #homeLink {
     border: 1px solid #ddd; background: #fff; color: #7c5cff; font-size: 12px;
     padding: 6px 10px; border-radius: 999px; white-space: nowrap; text-decoration: none;
   }
   #infoBtn { padding: 6px 10px; font-weight: 700; }
+  #homeLink { padding: 6px 10px; display: inline-flex; align-items: center; }
   #toggleSocial { position: relative; }
   /* 留守番エージェントが自動で見つけてきた「新しい出会い」があることを知らせるバッジ */
   #toggleSocial.hasNew::after {
@@ -177,6 +178,7 @@
       <div id="status">読み込み中…</div>
     </div>
     <div class="headerActions">
+      <a id="homeLink" href="/home.html" title="分身一覧">🏠</a>
       <button id="infoBtn" type="button" title="そだつかけとは？">?</button>
       <a id="historyLink" href="#">📈 成長</a>
       <button id="toggleSocial" type="button">🤝 交流</button>
@@ -815,6 +817,34 @@
     }
   }
 
+  // このブラウザで開いたことのある分身を、アカウント登録なしで一覧できるようにするための
+  // ローカルな「訪問済みリスト」。/home.html はこのlocalStorageだけを頼りに一覧を作る。
+  const MY_CHARACTERS_KEY = "sodatsukake_myCharacters";
+  const MAX_MY_CHARACTERS = 24;
+
+  function rememberCharacter(data) {
+    if (!cid) return;
+    try {
+      const raw = localStorage.getItem(MY_CHARACTERS_KEY);
+      let list = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(list)) list = [];
+      list = list.filter((c) => c && c.cid !== cid);
+      list.unshift({
+        cid,
+        name: data.name || "キャラクター",
+        species: data.species,
+        color: data.color,
+        growthStage: data.growthStage,
+        interactionCount: data.interactionCount,
+        lastVisit: Date.now(),
+      });
+      if (list.length > MAX_MY_CHARACTERS) list = list.slice(0, MAX_MY_CHARACTERS);
+      localStorage.setItem(MY_CHARACTERS_KEY, JSON.stringify(list));
+    } catch (e) {
+      /* localStorageが使えなくても、一覧機能が使えなくなるだけでチャット自体は問題ない */
+    }
+  }
+
   async function loadInitial() {
     if (!cid) {
       statusEl.textContent = "キャラクターIDが指定されていません";
@@ -825,6 +855,7 @@
       const data = await res.json();
       renderStatus(data);
       showDailyReportIfNeeded(data);
+      rememberCharacter(data);
       if (!data.interactionCount) {
         addMessage("……はじめまして。よろしくね。", "char");
       }
