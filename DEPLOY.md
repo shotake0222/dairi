@@ -72,8 +72,11 @@ npm run deploy                       # ← npx wrangler deploy ではなくこ�
 （`x-waketama-version`）と `/api/health` から確認できます。PWAはService Workerや
 ブラウザキャッシュが絡むので、これが無いと切り分けができません。
 
-独自ドメインとは別に、`https://sodatsukake.<あなたのサブドメイン>.workers.dev` でも
-同じWorkerに到達できます。DNSや証明書と切り分けて確認したいときに便利です。
+> **workers.dev のURLについて**: `routes`（独自ドメイン）を設定すると、wranglerは
+> workers.dev への配信を既定で無効にします。独自ドメインが動いていれば不要ですが、
+> DNSや証明書と切り分けるための予備URLが欲しい場合は `wrangler.toml` に
+> `workers_dev = true` を足すと復活します。URLはデプロイ出力の最後、または
+> ダッシュボードの Workers & Pages → 対象Worker → Settings → Domains & Routes で確認できます。
 
 > Worker名（`sodatsukake`）とworkers.devのURLは、既存のNFCタグを壊さないため
 > 改名せずそのままにしてあります。表示上のサービス名だけが「わけたま」です。
@@ -172,7 +175,21 @@ https://app.waketama.com/t/<タグごとに固有のID>
 ## ステージング環境（本番を汚さずに検証する）
 
 本番のD1に混ざると、テストで作った分身が「お散歩」の相手候補として実ユーザーに出てしまいます。
-検証はステージングへ。初回だけ、専用のD1とVectorizeを作ります。
+検証はステージングへ。初回だけ、専用のD1とVectorizeが必要です。
+
+```bash
+npm run setup:staging    # D1作成 → wrangler.tomlへID書き込み → マイグレーション → Vectorize作成
+npm run deploy:staging   # デプロイ（staging.waketama.com のDNSと証明書もここで作られる）
+```
+
+`npm run setup:staging` は何度実行しても安全です（既にあるものは飛ばします）。
+
+> なぜスクリプトにしたか: 手順自体は `d1 create` の出力にある `database_id` を
+> `wrangler.toml` に貼るだけなのですが、貼り忘れたままデプロイすると
+> `binding DB of type d1 must have a valid database_id specified [code: 10021]`
+> という原因の分かりにくいエラーで止まります。貼り付け作業ごと無くしました。
+
+手作業でやる場合は以下と同じことをしています。
 
 ```bash
 npx wrangler d1 create waketama-staging-db
@@ -180,9 +197,14 @@ npx wrangler d1 create waketama-staging-db
 npx wrangler d1 migrations apply waketama-staging-db --remote --env staging
 npx wrangler vectorize create waketama-staging-memory --dimensions=1024 --metric=cosine
 npx wrangler vectorize create-metadata-index waketama-staging-memory --property-name=characterId --type=string
-
-npm run deploy:staging
 ```
+
+### ステージングは後回しでもよい
+
+実ユーザーがまだいない段階なら、本番で直接触っても実害はほとんどありません。本番には
+`/api/health`・`wrangler tail` のログ・版数ヘッダが入っているので、デバッグ環境としては
+これだけでも機能します。ステージングが本当に効いてくるのは、実ユーザーの分身が
+「お散歩」で動き始めてから（テスト用の分身が他人のマッチング相手に混ざるのを防ぐため）です。
 
 ### ステージングのURL
 
