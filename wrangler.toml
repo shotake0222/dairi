@@ -21,6 +21,11 @@ compatibility_flags = ["nodejs_compat"]
 #   { pattern = "www.waketama.com", custom_domain = true }
 # ]
 
+# --- 環境の識別子 ---
+# コード側で本番か検証環境かを見分けるために使う（検証環境には検索避けと合言葉を付ける）。
+[vars]
+ENVIRONMENT = "production"
+
 # --- 観測性（Workers Logs） ---
 # 本番で何が起きたかを後から追えるようにする。これが無効だとダッシュボードにログが残らず、
 # `wrangler tail` を繋いでいる最中の事象しか見られない（実機で起きた不具合の再現待ちになる）。
@@ -92,6 +97,9 @@ crons = ["0 3,12 * * *"]
 [env.staging]
 name = "waketama-staging"
 
+[env.staging.vars]
+ENVIRONMENT = "staging"
+
 [env.staging.observability]
 enabled = true
 head_sampling_rate = 1
@@ -120,3 +128,22 @@ class_name = "CharacterState"
 [[env.staging.migrations]]
 tag = "v1"
 new_sqlite_classes = ["CharacterState"]
+
+# 検証環境のURL。
+#
+# ゾーンがActiveになるまでは、デプロイ時に発行される
+#   https://waketama-staging.<あなたのサブドメイン>.workers.dev
+# で入れる（DNSの設定は不要。今すぐ使えるのはこちら）。
+#
+# ゾーンがActiveになったら、下のコメントを外して `npm run deploy:staging` すると
+#   https://staging.waketama.com
+# で入れるようになる（DNSレコードと証明書はCloudflareが自動で用意する）。
+# 本番側の routes と同様、ゾーンがActiveになる前に有効化するとデプロイが失敗する。
+#
+# 検証環境は誰でも開ける状態になるため、合言葉をかけておくことを推奨:
+#   npx wrangler secret put STAGING_PASSCODE --env staging
+# 設定すると `?key=合言葉` で入る形になり、未設定なら素通し。
+# 検索避け（noindex）は合言葉の有無に関わらず常に有効。
+# [[env.staging.routes]]
+# pattern = "staging.waketama.com"
+# custom_domain = true

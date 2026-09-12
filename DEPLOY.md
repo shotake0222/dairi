@@ -180,8 +180,58 @@ npx wrangler vectorize create-metadata-index waketama-staging-memory --property-
 npm run deploy:staging
 ```
 
-ステージングには自動お散歩（cron）を意図的に設定していません。検証環境が勝手にAIコストを
-使わないようにするためで、動作確認は手動の「お散歩に出す」から行ってください。
+### ステージングのURL
+
+**いま（ゾーンがActiveになる前）**: DNSの設定は不要で、デプロイすると即座に使えます。
+
+```
+https://waketama-staging.<あなたのサブドメイン>.workers.dev
+```
+
+正確なURLは `npm run deploy:staging` の出力の最後に表示されます。
+`<あなたのサブドメイン>` はCloudflareアカウントごとに決まっている固定の文字列で、
+ダッシュボードの Workers & Pages → 右側の「Your subdomain」でも確認できます。
+
+**ゾーンがActiveになったあと**: `wrangler.toml` の `[[env.staging.routes]]` の
+コメントを外して `npm run deploy:staging` すると、下記で入れるようになります。
+
+```
+https://staging.waketama.com
+```
+
+DNSレコードとTLS証明書はCloudflareが自動で用意します。本番の `routes` と同じく、
+ゾーンがActiveになる前にコメントを外すとデプロイが失敗するので順番に注意してください。
+
+### ステージングに合言葉をかける（推奨）
+
+独自ドメインに載せると誰でも開ける状態になります。検証環境は本物のWorkers AIを呼ぶため、
+放置すると知らない誰かの利用でAI課金が発生します。合言葉をかけておくのが安全です。
+
+```bash
+npx wrangler secret put STAGING_PASSCODE --env staging
+# プロンプトで合言葉を入力
+```
+
+設定すると、初回だけ `https://staging.waketama.com/home?key=合言葉` の形で開きます。
+以降はCookieに入るので、URLに付ける必要はありません（合言葉がURLに残り続けないよう、
+Cookieへ移した時点でURLからは自動で消えます）。未設定なら素通しなので、
+まず動かしてから後で締める、という順番でも構いません。
+
+検索避け（`noindex`）は合言葉の有無に関わらず、ステージングでは常に有効です。
+`/api/health` だけは合言葉なしで開くようにしてあります（デプロイ後の疎通確認のため）。
+
+### 本番との違い
+
+| | 本番 | ステージング |
+| --- | --- | --- |
+| Worker名 | `sodatsukake` | `waketama-staging` |
+| D1 | `nfc-companion-db` | `waketama-staging-db` |
+| Vectorize | `nfc-companion-memory` | `waketama-staging-memory` |
+| 自動お散歩（cron） | 1日2回 | **なし**（勝手にAI課金しないため） |
+| 検索避け | なし | 常に `noindex` |
+
+分身のデータ（Durable Object）もWorkerごとに完全に別なので、ステージングで
+何を作って壊しても本番には影響しません。
 
 ## 本番のログを見る
 

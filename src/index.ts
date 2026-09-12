@@ -5,6 +5,7 @@ import { handleCallStream } from "./call";
 import { handleHealth } from "./health";
 import { handleTranscribe, handleSpeak } from "./voice";
 import { issueTransferCode, claimTransferCode } from "./transfer";
+import { stagingGate, applyStagingHeaders } from "./stagingGuard";
 import { LogContext, newRequestId } from "./lib/log";
 
 export { CharacterState };
@@ -18,6 +19,10 @@ export interface Env {
   /** デプロイ時に注入される版数（npm run deploy が git のコミットハッシュを渡す）。 */
   APP_VERSION?: string;
   BUILT_AT?: string;
+  /** "production" | "staging"。wrangler.toml の [vars] で環境ごとに設定している。 */
+  ENVIRONMENT?: string;
+  /** ステージングの合言葉。設定されているときだけ入口で要求する（secretで設定）。 */
+  STAGING_PASSCODE?: string;
 }
 
 /**
@@ -40,6 +45,10 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     const log: LogContext = { requestId: newRequestId(), route: url.pathname };
+
+    // 検証環境に合言葉が設定されている場合、ここで止める（本番では何もしない）
+    const gated = stagingGate(request, url, env);
+    if (gated) return gated;
 
     // --- トップページ ---
     // public/ に index.html を置いていないため、素のドメインを開くと404になってしまう。
@@ -330,7 +339,8 @@ async function serveAsset(request: Request, url: URL, env: Env): Promise<Respons
   if (!contentType.includes("text/html")) return assetResponse;
 
   // 版数ヘッダを載せる。実機で「いま掴んでいるのはどの版か」を確認するための手がかり。
-  const withVersion = new Response(assetResponse.body, assetResponse);
+  // 検証環境なら、あわせて検索避け（noindex）も付ける。
+  const withVersion = applyStagingHeaders(new Response(assetResponse.body, assetResponse), env);
   for (const [key, value] of Object.entries(versionHeaders(env))) {
     withVersion.headers.set(key, value);
   }
