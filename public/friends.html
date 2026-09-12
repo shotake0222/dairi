@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>そだつかけ｜出会いの図鑑</title>
+<title>わけみたま｜出会いの図鑑</title>
 <style>
   :root { color-scheme: light; }
   * { box-sizing: border-box; }
@@ -59,7 +59,7 @@
   <div class="row">
     <a id="backBtn" href="#">← チャットに戻る</a>
     <div>
-      <div class="brand">そだつかけ</div>
+      <div class="brand">わけみたま</div>
       <h1 id="pageTitle">出会いの図鑑</h1>
     </div>
   </div>
@@ -155,7 +155,7 @@
       return;
     }
 
-    document.title = `そだつかけ｜${data.name}の図鑑`;
+    document.title = `わけみたま｜${data.name}の図鑑`;
     el("pageTitle").textContent = `${data.name}の図鑑`;
 
     const history = Array.isArray(data.meetingHistory) ? data.meetingHistory : [];

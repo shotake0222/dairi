@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>そだつかけ｜キャラクターと会話</title>
+<title>わけみたま｜キャラクターと会話</title>
 <script type="module" src="https://cdn.jsdelivr.net/npm/@google/model-viewer@3.5.0/dist/model-viewer.min.js"></script>
 <style>
   :root { color-scheme: light; }
@@ -181,13 +181,13 @@
   <div class="row">
     <img id="avatarIcon" src="" alt="" hidden />
     <div class="nameCol">
-      <div class="brand">そだつかけ</div>
+      <div class="brand">わけみたま</div>
       <h1 id="charName">キャラクター</h1>
       <div id="status">読み込み中…</div>
     </div>
     <div class="headerActions">
       <a id="homeLink" href="/home.html" title="分身一覧">🏠</a>
-      <button id="infoBtn" type="button" title="そだつかけとは？">?</button>
+      <button id="infoBtn" type="button" title="わけみたまとは？">?</button>
       <a id="historyLink" href="#">📈 成長</a>
       <button id="toggleSocial" type="button">🤝 交流</button>
       <button id="toggleExport" type="button">📦 保存/復元</button>
@@ -273,9 +273,9 @@
 
 <div id="conceptModal" hidden>
   <div class="box">
-    <h3>そだつかけって？</h3>
+    <h3>わけみたまって？</h3>
     <p>
-      「そだつかけ」は、会話を通じてあなただけの分身を育てるサービスです。<br /><br />
+      「わけみたま」は、会話を通じてあなただけの分身を育てるサービスです。<br /><br />
       性格はあなたとの会話によって、少しずつ変わっていきます。今はまだ画面の中だけの存在ですが、
       将来はメタバースのアバターや、ロボットのようなフィジカルAIの姿になって、あなたの代わりに動き出す日を目指しています。<br /><br />
       これまでの性格の変化は「📈 成長」から、いつでも振り返れます。
@@ -290,7 +290,7 @@
 
   // 「持ち主トークン」: 誕生時にsummon.htmlがlocalStorageへ保存したもの。
   // エクスポート/インポート/オプトイン/名前変更など、持ち主専用の操作にだけ添えて送る。
-  // 無くても閲覧・会話はできる（そだつかけはアカウント登録なしで使える設計のため）。
+  // 無くても閲覧・会話はできる（わけみたまはアカウント登録なしで使える設計のため）。
   function getOwnerToken() {
     if (!cid) return "";
     try {

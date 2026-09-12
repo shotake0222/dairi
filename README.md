@@ -1,7 +1,9 @@
-# そだつかけ（Sodatsukake）
+# わけみたま（Wakemitama）
 
 NFCタグ付きグッズをきっかけに、テキスト会話で「育つ」キャラクターと出会うサービスのMVP実装です。
-（開発用のリポジトリ名・フォルダ名は `nfc-companion` のままにしていますが、サービス名は「そだつかけ」です）
+（開発用のリポジトリ名・フォルダ名・Cloudflare Worker名は、既存のNFCタグ配布や動作中のデプロイに影響しないよう
+引き続き `sodatsukake` / `nfc-companion` のままにしていますが、サービス名（ブランド表示）は「わけみたま」です。
+2026/9/12に「そだつかけ」から改名しました）
 Cloudflare Workers / Durable Objects / D1 / Workers AI（SLM）のみで構成されており、外部サーバーは不要です。
 
 ## 全体の仕組み

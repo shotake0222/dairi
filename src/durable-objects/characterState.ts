@@ -48,7 +48,7 @@ export const MEETING_COOLDOWN_MS = 20 * 60 * 60 * 1000; // 20時間
 
 /**
  * 「人格パッケージ」フォーマット。育った性格・記憶を、モデルや実行環境に依存しない形で
- * 出し入れできるようにするための、そだつかけの可搬フォーマット。
+ * 出し入れできるようにするための、わけみたまの可搬フォーマット。
  *
  * 設計の要点:
  * - personality/personalityHistoryは単なる数値なので、どんなAIモデル・どんなハードウェアでも解釈できる
@@ -79,7 +79,7 @@ export interface PersonalityPackageV1 {
     longTerm: ExportedMemory[];
   };
   meta: {
-    generator: "sodatsukake";
+    generator: "sodatsukake" | "wakemitama";
     note: string;
   };
 }
@@ -117,7 +117,7 @@ const MAX_MEETING_HISTORY = 60;
 /**
  * 所有権トークンについて（アカウント登録なしでの、最小限の「持ち主」保護）。
  *
- * そだつかけはユーザーアカウントを持たない設計のため、characterId（cid）さえ分かれば
+ * わけみたまはユーザーアカウントを持たない設計のため、characterId（cid）さえ分かれば
  * 誰でも状態を読めてしまう。会話や閲覧はそれで問題ないが、エクスポート（記憶の持ち出し）・
  * インポート（上書き）・公開ディレクトリへの掲載（オプトイン）・名前変更のように
  * 「持ち主本人だけが行うべき操作」には、ここで生成する ownerToken を要求する。
@@ -507,9 +507,9 @@ export class CharacterState extends DurableObject<Env> {
         longTerm,
       },
       meta: {
-        generator: "sodatsukake",
+        generator: "wakemitama",
         note:
-          "この人格パッケージは、そだつかけで育った性格・記憶をモデル/実行環境に依存しない形で保存したものです。" +
+          "この人格パッケージは、わけみたまで育った性格・記憶をモデル/実行環境に依存しない形で保存したものです。" +
           "personality・personalityHistoryは単純な数値なのでそのまま利用できます。" +
           "memory.longTermは埋め込みベクトルではなく平文テキストのため、移植先のAIモデルで再埋め込みするか、" +
           "そのままシステムプロンプトの一部として渡すことで記憶を再現できます。",
