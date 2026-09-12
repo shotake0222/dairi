@@ -189,6 +189,25 @@ export default {
       return json(state);
     }
 
+    // --- 分身の削除API（「アカウント不要」設計における、持ち主自身によるデータ削除手段） ---
+    // 破壊的操作のため持ち主トークンによる保護対象。成功時、このタグから新しい分身を始め直せるように
+    // nfc_tagsの対応も併せて削除する（同じ物理カードを再利用・譲渡できるようにするため）。
+    if (url.pathname === "/api/character/delete" && request.method === "POST") {
+      const body = await request.json<{ characterId?: string; token?: string }>();
+      if (!body.characterId) {
+        return json({ error: "characterId is required" }, { status: 400 });
+      }
+      const stub = env.CHARACTER.getByName(body.characterId);
+      const result = await stub.deleteData(body.token);
+      if (!result.ok) return json(result, { status: 403 });
+      try {
+        await env.DB.prepare("DELETE FROM nfc_tags WHERE character_id = ?").bind(body.characterId).run();
+      } catch (err) {
+        // nfc_tags削除の失敗は致命的ではない（分身本体のデータは既に削除済み）
+      }
+      return json({ ok: true });
+    }
+
     // --- それ以外は静的ファイル（public/ 配下）を配信 ---
     return env.ASSETS.fetch(request);
   },

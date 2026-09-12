@@ -317,3 +317,74 @@ describe("CharacterState.chat (mocked AI)", () => {
     expect(aiSpy).not.toHaveBeenCalled();
   });
 });
+
+describe("CharacterState.deleteData (owner-token protected, right-to-be-forgotten)", () => {
+  it("succeeds with no-op when the character was never created", async () => {
+    const stub = getStub(freshCid("delete-never-created"));
+    const result = await stub.deleteData(undefined);
+    expect(result).toEqual({ ok: true });
+  });
+
+  it("rejects with the wrong owner token and leaves the data (and directory row) intact", async () => {
+    const cid = freshCid("delete-wrong-token");
+    const stub = getStub(cid);
+    const created = await stub.init("けされないこ");
+    await stub.setSocialOptIn(true, created.ownerToken);
+
+    const result = await stub.deleteData("wrong-token");
+    expect(result).toEqual({ ok: false, error: "この操作は分身の持ち主だけが行えます" });
+
+    const state = await stub.getState();
+    expect(state?.name).toBe("けされないこ");
+    const row = await env.DB.prepare("SELECT * FROM character_directory WHERE character_id = ?")
+      .bind(cid)
+      .first();
+    expect(row).toBeTruthy();
+  });
+
+  it("with the correct token, clears storage entirely and removes the directory row", async () => {
+    const cid = freshCid("delete-ok");
+    const stub = getStub(cid);
+    const created = await stub.init("きえるこ");
+    await stub.setSocialOptIn(true, created.ownerToken);
+    await stub.recordMeeting([{ role: "self", text: "こんにちは" }], {
+      name: "あいて",
+      species: "punikoro",
+      color: "coral",
+    });
+
+    const result = await stub.deleteData(created.ownerToken);
+    expect(result).toEqual({ ok: true });
+
+    // DurableObjectのストレージが本当に空になっている(dataキーが無い)ことを直接確認する
+    const { runInDurableObject } = await import("cloudflare:test");
+    await runInDurableObject(stub, async (_instance, state) => {
+      const data = await state.storage.get<CharacterData>("data");
+      expect(data).toBeUndefined();
+    });
+
+    expect(await stub.getState()).toBeNull();
+
+    const row = await env.DB.prepare("SELECT * FROM character_directory WHERE character_id = ?")
+      .bind(cid)
+      .first();
+    expect(row).toBeNull();
+  });
+
+  it("legacy (no-ownerToken) characters can still be deleted without a token", async () => {
+    const cid = freshCid("delete-legacy");
+    const stub = getStub(cid);
+    await stub.init("むかしのこ");
+
+    const { runInDurableObject } = await import("cloudflare:test");
+    await runInDurableObject(stub, async (_instance, state) => {
+      const data = await state.storage.get<CharacterData>("data");
+      delete (data as CharacterData).ownerToken;
+      await state.storage.put("data", data);
+    });
+
+    const result = await stub.deleteData(undefined);
+    expect(result).toEqual({ ok: true });
+    expect(await stub.getState()).toBeNull();
+  });
+});

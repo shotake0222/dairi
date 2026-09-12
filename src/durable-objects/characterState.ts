@@ -7,7 +7,7 @@ import {
 import { analyzeMessage } from "../ai/signalExtractor";
 import { buildSystemPrompt } from "../ai/promptBuilder";
 import { deriveSpeechStyle } from "../ai/speechStyle";
-import { retrieveRelevantMemories, storeMemory, exportAllMemories, importMemories, ExportedMemory } from "../ai/memory";
+import { retrieveRelevantMemories, storeMemory, exportAllMemories, importMemories, deleteAllMemories, ExportedMemory } from "../ai/memory";
 import { buildMeetingPrompt } from "../ai/promptBuilder";
 
 export interface Env {
@@ -359,6 +359,39 @@ export class CharacterState extends DurableObject<Env> {
       }
     }
     return { optIn };
+  }
+
+  /**
+   * 分身を完全に削除する（「アカウント不要」設計における、持ち主自身によるデータ削除手段）。
+   *
+   * 削除するもの:
+   * - このDurable Objectのストレージ全体（性格・記憶サマリー・出会いの履歴など、data一式）
+   * - character_directory（D1）のこのキャラクターの行（オプトインしていた場合）
+   * - MEMORY_INDEX（Vectorize）に保存された長期記憶ベクトル
+   *
+   * 削除しないもの:
+   * - nfc_tags（tag_id→characterIdの対応）自体はDO内から見えないためここでは触らない。
+   *   物理カードの再利用（同じタグで新しい分身を始められるようにする）は、
+   *   呼び出し元（index.tsの/api/character/deleteルート）でnfc_tagsの該当行を削除する形で対応する。
+   *
+   * 既存データが無い（まだ一度もinitされていない）場合は、削除するものが無いのでそのまま成功扱いにする。
+   */
+  async deleteData(ownerToken?: string): Promise<{ ok: true } | { ok: false; error: string }> {
+    const data = await this.ctx.storage.get<CharacterData>("data");
+    if (!data) return { ok: true };
+    if (!isOwner(data, ownerToken)) {
+      return { ok: false, error: "この操作は分身の持ち主だけが行えます" };
+    }
+
+    const characterId = this.ctx.id.name ?? "unknown";
+    try {
+      await this.env.DB.prepare("DELETE FROM character_directory WHERE character_id = ?").bind(characterId).run();
+    } catch (err) {
+      // ディレクトリ削除の失敗で本体の削除まで止めない
+    }
+    await deleteAllMemories(this.env, characterId);
+    await this.ctx.storage.deleteAll();
+    return { ok: true };
   }
 
   private async syncDirectory(characterId: string, data: CharacterData): Promise<void> {

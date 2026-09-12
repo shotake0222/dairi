@@ -160,3 +160,30 @@ export async function importMemories(env: MemoryEnv, characterId: string, memori
     }
   }
 }
+
+/**
+ * そのキャラクターの長期記憶をVectorizeから全件削除する（「分身を削除する」機能の一部）。
+ *
+ * exportAllMemories同様、Vectorizeには「characterIdで全件削除」の直接APIが無いため、
+ * まずcharacterIdでフィルタしたクエリでヒットしたベクトルのidを集め、deleteByIdsへ渡す
+ * 二段構成にしている。1回のqueryで拾いきれない件数（topKの上限）が残っている可能性はあるが、
+ * 「消し忘れが少し残る」ことよりも「削除操作自体が失敗して全体が止まる」ことを避ける設計とし、
+ * 個々の失敗は握りつぶして呼び出し元（deleteData）の完了を優先する。
+ */
+export async function deleteAllMemories(env: MemoryEnv, characterId: string, limit = 200): Promise<void> {
+  const vector = await embedText(env, `sodatsukake-memory-export:${characterId}`);
+  if (!vector) return;
+
+  try {
+    const result = await env.MEMORY_INDEX.query(vector, {
+      topK: limit,
+      filter: { characterId },
+    });
+    const ids = result.matches.map((m) => m.id).filter((id): id is string => Boolean(id));
+    if (ids.length > 0) {
+      await env.MEMORY_INDEX.deleteByIds(ids);
+    }
+  } catch (err) {
+    // Vectorize側の削除失敗は致命的ではない（DO本体のデータ削除は別途進む）
+  }
+}

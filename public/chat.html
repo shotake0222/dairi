@@ -44,6 +44,14 @@
   }
   #exportStatus { font-size: 11px; color: #7a6bb0; margin-top: 8px; }
 
+  /* 削除（危険な操作）ゾーン。書き出し/復元パネルの一番下に、明確に区別できる見た目で置く */
+  #dangerZone { margin-top: 14px; padding-top: 12px; border-top: 1px dashed #d8cdfa; }
+  .dangerExplain { font-size: 11px; color: #a04a5a; line-height: 1.6; margin-bottom: 8px; }
+  #deleteBtn {
+    border: 1px solid #f0b8c2; background: #fff; color: #d1425a; font-size: 12px; font-weight: 600;
+    padding: 8px 14px; border-radius: 999px; cursor: pointer; white-space: nowrap;
+  }
+
   /* コンセプトを最初に伝えるバナー（初回のみ表示・閉じたら二度と出さない） */
   #conceptBanner {
     margin: 10px 16px 0; padding: 12px 14px; border-radius: 12px;
@@ -220,6 +228,14 @@
       <input id="importFile" type="file" accept="application/json" hidden />
     </div>
     <div id="exportStatus"></div>
+
+    <div id="dangerZone">
+      <div class="dangerExplain">
+        この分身のデータ（性格・記憶・出会いの履歴など）をすべて削除します。元には戻せません。
+        必要であれば、削除する前に上の「書き出す」でバックアップを取っておくことをおすすめします。
+      </div>
+      <button id="deleteBtn" type="button">🗑️ この分身を削除する</button>
+    </div>
   </div>
 </header>
 
@@ -327,6 +343,7 @@
   const importBtn = document.getElementById("importBtn");
   const importFile = document.getElementById("importFile");
   const exportStatus = document.getElementById("exportStatus");
+  const deleteBtn = document.getElementById("deleteBtn");
 
   historyLink.href = `/history.html?cid=${encodeURIComponent(cid || "")}`;
   document.getElementById("friendsLink").href = `/friends.html?cid=${encodeURIComponent(cid || "")}`;
@@ -401,6 +418,55 @@
       exportStatus.textContent = "ファイルを読み込めませんでした。正しいJSONファイルか確認してね";
     } finally {
       importBtn.disabled = false;
+    }
+  });
+
+  // ローカルの「訪問済みリスト」からこの分身を1件だけ取り除く（/home.htmlの一覧に出さなくするため）。
+  // サーバー側のデータ削除とは別物：この関数はブラウザ内の帳簿を掃除するだけ。
+  function forgetCharacterLocally() {
+    try {
+      localStorage.removeItem(`sodatsukake_token_${cid}`);
+      const raw = localStorage.getItem(MY_CHARACTERS_KEY);
+      if (raw) {
+        let list = JSON.parse(raw);
+        if (Array.isArray(list)) {
+          list = list.filter((c) => c && c.cid !== cid);
+          localStorage.setItem(MY_CHARACTERS_KEY, JSON.stringify(list));
+        }
+      }
+    } catch (e) {
+      /* localStorageが使えなくてもサーバー側の削除自体は完了しているので致命的ではない */
+    }
+  }
+
+  deleteBtn.addEventListener("click", async () => {
+    if (!cid) return;
+    const name = nameEl.textContent || "この分身";
+    const confirmed = confirm(
+      `「${name}」を削除します。性格・記憶・出会いの履歴などすべてのデータが失われ、元には戻せません。本当によろしいですか？`
+    );
+    if (!confirmed) return;
+
+    deleteBtn.disabled = true;
+    exportStatus.textContent = "削除中……";
+    try {
+      const res = await fetch("/api/character/delete", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ characterId: cid, token: getOwnerToken() }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        exportStatus.textContent = data.error || "削除に失敗しました。もう一度試してね";
+        deleteBtn.disabled = false;
+        return;
+      }
+      forgetCharacterLocally();
+      exportStatus.textContent = "削除しました。ホームへ戻ります……";
+      setTimeout(() => (location.href = "/home.html"), 900);
+    } catch (err) {
+      exportStatus.textContent = "削除に失敗しました。もう一度試してね";
+      deleteBtn.disabled = false;
     }
   });
 

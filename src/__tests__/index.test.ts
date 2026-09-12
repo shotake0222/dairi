@@ -183,6 +183,69 @@ describe("POST /api/character/rename (持ち主トークン保護)", () => {
   });
 });
 
+describe("POST /api/character/delete (持ち主トークン保護・完全削除)", () => {
+  it("characterId未指定は400", async () => {
+    const res = await SELF.fetch(`${BASE}/api/character/delete`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("誤ったトークンでは403で拒否され、キャラクターは残る", async () => {
+    const cid = freshCid("delete-wrong");
+    await createCharacter(cid);
+
+    const res = await SELF.fetch(`${BASE}/api/character/delete`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ characterId: cid, token: "wrong-token" }),
+    });
+    expect(res.status).toBe(403);
+
+    const check = await SELF.fetch(`${BASE}/api/character?cid=${cid}`);
+    expect(check.status).toBe(200);
+  });
+
+  it("正しいトークンで削除でき、以後は404になる", async () => {
+    const cid = freshCid("delete-ok");
+    const token = await createCharacter(cid);
+
+    const res = await SELF.fetch(`${BASE}/api/character/delete`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ characterId: cid, token }),
+    });
+    expect(res.status).toBe(200);
+    const data = await res.json<{ ok: boolean }>();
+    expect(data.ok).toBe(true);
+
+    const after = await SELF.fetch(`${BASE}/api/character?cid=${cid}`);
+    expect(after.status).toBe(404);
+  });
+
+  it("削除後は同じNFCタグを再タップすると、まったく新しい分身が発行される", async () => {
+    const tagId = freshCid("delete-tag");
+    const first = await SELF.fetch(`${BASE}/t/${tagId}`, { redirect: "manual" });
+    const firstLoc = new URL(first.headers.get("location")!);
+    const firstCid = firstLoc.searchParams.get("cid")!;
+    const token = firstLoc.searchParams.get("token")!;
+
+    const del = await SELF.fetch(`${BASE}/api/character/delete`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ characterId: firstCid, token }),
+    });
+    expect(del.status).toBe(200);
+
+    const second = await SELF.fetch(`${BASE}/t/${tagId}`, { redirect: "manual" });
+    const secondLoc = new URL(second.headers.get("location")!);
+    expect(secondLoc.searchParams.get("first")).toBe("1");
+    expect(secondLoc.searchParams.get("cid")).not.toBe(firstCid);
+  });
+});
+
 describe("POST /api/character/social (公開ディレクトリへのオプトイン)", () => {
   it("optInが真偽値でなければ400", async () => {
     const res = await SELF.fetch(`${BASE}/api/character/social`, {
