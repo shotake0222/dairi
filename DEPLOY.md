@@ -139,7 +139,7 @@ AIまで含めて確認したいときだけ `?deep=1` を付けてください�
 
 ブラウザでも以下を確認してください。
 
-- `https://app.waketama.com/` → 分身一覧に着地する
+- `https://app.waketama.com/` → あなたの分身のホームに着地する
 - `https://app.waketama.com/t/test-002` → 召喚演出が出て、新しい分身が生まれる
 - `https://app.waketama.com/call?cid=<上で発行されたcid>` → その場限りの通話が始まる
 - スマホで開き、「ホーム画面に追加」ができる

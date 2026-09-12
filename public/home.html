@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>わけたま｜分身一覧</title>
-<meta name="description" content="このブラウザで育てている分身の一覧。会話で育つ、もうひとりの自分。" />
+<title>わけたま｜あなたの分身</title>
+<meta name="description" content="NFCタグが手元になくても、ここからあなたの分身に会いに行けます。会話で育つ、もうひとりの自分。" />
 
 <!-- PWA（ホーム画面に追加）。NFCタグが手元に無くても分身に会いに来られるようにするための導線。 -->
 <link rel="manifest" href="/manifest.webmanifest" />
@@ -20,13 +20,13 @@
      src/index.ts の HTMLRewriter がリクエスト元のオリジンを見て書き換える。 -->
 <meta property="og:type" content="website" />
 <meta property="og:site_name" content="わけたま" />
-<meta property="og:title" content="わけたま｜分身一覧" />
-<meta property="og:description" content="このブラウザで育てている分身の一覧。会話で育つ、もうひとりの自分。" />
+<meta property="og:title" content="わけたま｜あなたの分身" />
+<meta property="og:description" content="NFCタグが手元になくても、ここからあなたの分身に会いに行けます。会話で育つ、もうひとりの自分。" />
 <meta property="og:image" content="/icons/ogp.png" />
 <meta property="og:url" content="/" />
 <meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="わけたま｜分身一覧" />
-<meta name="twitter:description" content="このブラウザで育てている分身の一覧。会話で育つ、もうひとりの自分。" />
+<meta name="twitter:title" content="わけたま｜あなたの分身" />
+<meta name="twitter:description" content="NFCタグが手元になくても、ここからあなたの分身に会いに行けます。会話で育つ、もうひとりの自分。" />
 <meta name="twitter:image" content="/icons/ogp.png" />
 <style>
   :root { color-scheme: light; }
@@ -89,8 +89,8 @@
 <body>
 <header>
   <div class="brand">わけたま</div>
-  <h1>あなたの分身たち</h1>
-  <div class="sub">この端末でこれまでに開いたことのある分身の一覧です</div>
+  <h1>あなたの分身</h1>
+  <div class="sub">NFCタグが手元になくても、ここから会いに行けます</div>
 </header>
 
 <main>
@@ -104,15 +104,16 @@
   <div id="grid" class="grid"></div>
   <div id="emptyState" hidden class="empty">
     <div class="big">🌱</div>
-    NFCタグにタップすると、ここに分身が並んでいきます。<br />
-    まずは分身に会いに行ってみましょう。
+    お持ちのNFCタグをタップすると、あなたの分身がここに現れます。<br />
+    まずはタグにタップして、会いに行ってみましょう。
   </div>
 
   <div class="card" id="conceptCard" hidden>
     <div class="concept">
-      それぞれの分身は、そのNFCタグ・その端末で育ってきた「もう一人のあなた」です。この一覧はアカウント登録なしで、
-      この端末のブラウザだけが覚えている記録なので、別の端末で開くとここには表示されません（分身自体のデータは
-      Cloudflare側にちゃんと保存されています）。
+      分身は、あなたのNFCタグとこの端末で育ってきた「もう一人のあなた」です。アカウント登録なしで、
+      この端末のブラウザだけが覚えている記録なので、別の端末で開くとここには表示されません。
+      機種変更などで移したいときは、チャット画面の「保存/復元」から引き継ぎコードを発行してください
+      （分身自体のデータはCloudflare側に保存されているので、コードがあれば別の端末に引き継げます）。
     </div>
   </div>
 </main>

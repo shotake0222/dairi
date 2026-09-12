@@ -76,3 +76,27 @@ export async function tolerate<T>(
 export function newRequestId(): string {
   return crypto.randomUUID().slice(0, 8);
 }
+
+/**
+ * requestIdを持てない場所（Durable Object内部のユーティリティなど）から使う簡易版。
+ *
+ * 本来は1リクエストを串刺しに追えるようrequestIdを引き回したいが、
+ * memory.ts のような下位のユーティリティまで引数を通すと呼び出し側が煩雑になる。
+ * 「どこで何が落ちたか」が分かるだけでも切り分けには十分効くため、
+ * characterIdと事象名だけを持つ軽い版を用意している。
+ */
+export function logDetachedWarn(event: string, fields?: Fields): void {
+  console.warn(JSON.stringify({ level: "warn", event, ...fields }));
+}
+
+export function logDetachedError(event: string, err: unknown, fields?: Fields): void {
+  console.error(
+    JSON.stringify({
+      level: "error",
+      event,
+      ...fields,
+      error: err instanceof Error ? err.message : String(err),
+      errorName: err instanceof Error ? err.name : undefined,
+    })
+  );
+}

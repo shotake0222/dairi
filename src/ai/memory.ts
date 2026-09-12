@@ -14,6 +14,8 @@
  * パース処理だけを直せば良いように、呼び出し口を1箇所に集約してある。
  */
 
+import { logDetachedError, logDetachedWarn } from "../lib/log";
+
 export const EMBEDDING_MODEL = "@cf/baai/bge-m3";
 
 export interface MemoryEnv {
@@ -40,9 +42,14 @@ export async function embedText(env: MemoryEnv, text: string): Promise<number[] 
     if (Array.isArray(vector) && vector.length > 0 && typeof vector[0] === "number") {
       return vector;
     }
+    // 例外ではないが、想定した形でベクトルが取れていない状態。
+    // モデル側のレスポンス形状が変わったときにここに落ちるので、必ず気づけるようにする。
+    logDetachedWarn("memory.embed_unexpected_shape", { keys: Object.keys(asAny || {}).join(",") });
     return null;
   } catch (err) {
-    // 埋め込み失敗時は長期記憶機能を静かにスキップする（チャット自体は継続させる）
+    // 埋め込み失敗時は長期記憶機能をスキップする（チャット自体は継続させる）。
+    // ただし黙って消すと「なんとなく記憶が弱い」の原因が追えなくなるので、必ず記録する。
+    logDetachedError("memory.embed_failed", err);
     return null;
   }
 }
@@ -56,10 +63,13 @@ export async function storeMemory(
 ): Promise<void> {
   const text = `ユーザー: ${userMessage}\nキャラクター: ${reply}`;
   const vector = await embedText(env, text);
-  if (!vector) return;
+  if (!vector) {
+    logDetachedWarn("memory.store_skipped_no_vector", { characterId });
+    return;
+  }
 
   try {
-    await env.MEMORY_INDEX.upsert([
+    const result = await env.MEMORY_INDEX.upsert([
       {
         id: crypto.randomUUID(),
         values: vector,
@@ -70,8 +80,16 @@ export async function storeMemory(
         },
       },
     ]);
+    // Vectorizeの書き込みは非同期に処理されるため、ここでの成功＝即座に検索可能ではない。
+    // mutationIdを残しておくと、後から「送ったのに入っていない」の切り分けができる。
+    logDetachedWarn("memory.stored", {
+      characterId,
+      mutationId: (result as { mutationId?: string } | undefined)?.mutationId,
+    });
   } catch (err) {
-    // Vectorizeへの書き込み失敗は致命的ではないため握りつぶす（次回以降のRAG精度が少し下がるだけ）
+    // 書き込み失敗は致命的ではない（次回以降のRAG精度が少し下がるだけ）が、
+    // 黙って消すと記憶が貯まらない原因が分からなくなるため必ず記録する。
+    logDetachedError("memory.store_failed", err, { characterId });
   }
 }
 
@@ -95,7 +113,9 @@ export async function retrieveRelevantMemories(
       .map((m) => (m.metadata?.text as string) || "")
       .filter((t) => t.length > 0);
   } catch (err) {
-    // メタデータインデックス未作成など、初期セットアップ未完了時にもチャットは継続できるようにする
+    // メタデータインデックス未作成など、初期セットアップ未完了時にもチャットは継続できるようにする。
+    // ここが落ち続けていると「昔の話を思い出さない」状態になるので記録する。
+    logDetachedError("memory.retrieve_failed", err, { characterId });
     return [];
   }
 }
