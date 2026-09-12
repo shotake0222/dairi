@@ -1,6 +1,13 @@
-# 本番反映の手順（わけたま / waketama.com）
+# 本番反映の手順（わけたま / app.waketama.com）
 
-Cloudflare Workers への本番デプロイと、独自ドメイン `waketama.com`（Xserverで取得）の接続手順。
+Cloudflare Workers への本番デプロイ手順。
+
+| | URL |
+| --- | --- |
+| 本番 | `https://app.waketama.com` |
+| 検証（ステージング） | `https://staging.waketama.com` |
+
+`waketama.com`（apex）はアプリでは使っていません。将来LPを置く余地として空けてあります。
 
 前提として、**デプロイ操作はあなたのMacのターミナルから実行する必要があります**。
 Cloudflareの認証情報はあなたのMacのユーザー領域（`~/Library/Preferences/.wrangler` など）にあり、
@@ -53,7 +60,7 @@ npx wrangler vectorize create-metadata-index nfc-companion-memory --property-nam
 
 ---
 
-## 1. まずworkers.devで動作確認（ドメイン接続前）
+## 1. workers.dev でも確認できる（任意）
 
 ```bash
 npm run typecheck && npm test        # 壊れていないことを確認
@@ -65,78 +72,63 @@ npm run deploy                       # ← npx wrangler deploy ではなくこ�
 （`x-waketama-version`）と `/api/health` から確認できます。PWAはService Workerや
 ブラウザキャッシュが絡むので、これが無いと切り分けができません。
 
-表示される `https://sodatsukake.<あなたのサブドメイン>.workers.dev` を開き、
-`/t/test-001` にアクセスして「召喚→会話」まで通ることを確認します。
+独自ドメインとは別に、`https://sodatsukake.<あなたのサブドメイン>.workers.dev` でも
+同じWorkerに到達できます。DNSや証明書と切り分けて確認したいときに便利です。
 
 > Worker名（`sodatsukake`）とworkers.devのURLは、既存のNFCタグを壊さないため
 > 改名せずそのままにしてあります。表示上のサービス名だけが「わけたま」です。
 
 ---
 
-## 2. waketama.com をCloudflareに載せる
+## 2. ドメインの状態（2026-09-12 完了済み）
 
-Workersの独自ドメインは、**そのドメインがCloudflareのゾーンになっている必要があります**。
-つまりネームサーバーをXserverからCloudflareへ向け替えます。
+- `waketama.com` はCloudflareのゾーンとして **Active**
+- ネームサーバーはXserverからCloudflareへ移行済み
+  （`margo.ns.cloudflare.com` / `serenity.ns.cloudflare.com`）
+- Universal SSLにより、apexと第一階層のサブドメイン（`app.` / `staging.`）は証明書が自動発行される
 
-### 2-1. Cloudflareにサイトを追加
-
-1. Cloudflareダッシュボード → 「ドメインを追加」
-2. `waketama.com` を入力
-3. プランは **Free** を選択
-4. DNSレコードのスキャン結果が出ます。新規ドメインなので通常は空でOK（そのまま次へ）
-5. **割り当てられたネームサーバー2つ**（`xxx.ns.cloudflare.com` の形式）が表示されるので控える
-
-### 2-2. Xserver側でネームサーバーを変更
-
-1. Xserverアカウント → 「ドメイン」→ `waketama.com` → **ネームサーバー設定**
-2. 「その他のサービスで利用する」を選び、2-1で控えたCloudflareのネームサーバー2つを入力
-3. 保存
-
-> 現在は `NS1.XSERVER.JP` 〜 `NS5.XSERVER.JP` が設定されています。
-> これを変更すると、このドメインのDNSはCloudflare側で管理されるようになります。
-> **注意**: 将来このドメインでメールを使う場合、MXレコードはCloudflare側に登録し直す必要があります。
-
-### 2-3. 有効化を待つ
-
-Cloudflareのダッシュボードで、ゾーンの状態が **Active** になれば完了です。
-通常は数分〜数時間（最大48時間）。以下でも確認できます。
+確認コマンド:
 
 ```bash
-dig NS waketama.com +short     # cloudflare.com のNSが返ればOK
+dig NS waketama.com +short          # cloudflare.com のNSが返る
+dig app.waketama.com +short         # デプロイ後、Cloudflareのアドレスが返る
 ```
 
 ---
 
 ## 3. Workerに独自ドメインを接続
 
-ゾーンがActiveになってから行います。
-
-`wrangler.toml` の先頭にある `routes` のコメントを外します。
+`wrangler.toml` の `routes` は設定済みです。
 
 ```toml
 routes = [
-  { pattern = "waketama.com", custom_domain = true },
-  { pattern = "www.waketama.com", custom_domain = true }
+  { pattern = "app.waketama.com", custom_domain = true }
 ]
 ```
 
-そしてデプロイします。
+デプロイするだけで、**DNSレコードとTLS証明書はCloudflareが自動で作ります**。
 
 ```bash
 npm run deploy
 ```
 
-`custom_domain = true` にしてあるので、DNSレコードとTLS証明書はCloudflareが自動で用意します
-（証明書の発行に数分かかることがあります）。
+> ⚠️ `app.waketama.com` のDNSレコードを**手動で作らないでください**。
+> 既にレコードがあると「custom domain already has a DNS record」で衝突し、
+> デプロイが止まります。もし作ってしまった場合は、CloudflareのDNS画面から
+> そのレコードを削除してから再度デプロイしてください。
+
+証明書の発行に数分かかることがあります。その間は502やSSLエラーが出ることがありますが、
+待てば解消します。
 
 ---
 
 ## 4. 反映後の確認
 
 ```bash
-curl -sI https://waketama.com/            # 302 で /home に飛ぶ
-curl -s https://waketama.com/home | grep 'og:image'   # https://waketama.com/... の絶対URLになっている
-curl -s https://waketama.com/api/health | head -30    # D1・Vectorizeの疎通と版数
+curl -sI https://app.waketama.com/                        # 302 で /home に飛ぶ
+curl -s https://app.waketama.com/home | grep 'og:image'   # https://app.waketama.com/... の絶対URLになっている
+curl -s https://app.waketama.com/api/health | head -30    # D1・Vectorizeの疎通と版数
+curl -sI https://app.waketama.com/home | grep -i version  # x-waketama-version でデプロイ版数を確認
 ```
 
 `/api/health` は既定ではWorkers AIを呼びません（監視から叩かれても課金させないため）。
@@ -144,9 +136,11 @@ AIまで含めて確認したいときだけ `?deep=1` を付けてください�
 
 ブラウザでも以下を確認してください。
 
-- `https://waketama.com/` → 分身一覧に着地する
-- `https://waketama.com/t/test-002` → 召喚演出が出て、新しい分身が生まれる
+- `https://app.waketama.com/` → 分身一覧に着地する
+- `https://app.waketama.com/t/test-002` → 召喚演出が出て、新しい分身が生まれる
+- `https://app.waketama.com/call?cid=<上で発行されたcid>` → その場限りの通話が始まる
 - スマホで開き、「ホーム画面に追加」ができる
+- スマホでマイクボタンを押し、音声入力が動く（実機でしか確認できない項目）
 - URLをLINEやSlackに貼ると、OGPカード（紫の画像＋「わけたま」）が出る
 
 ---
@@ -154,7 +148,7 @@ AIまで含めて確認したいときだけ `?deep=1` を付けてください�
 ## 5. これ以降のNFCタグに書き込むURL
 
 ```
-https://waketama.com/t/<タグごとに固有のID>
+https://app.waketama.com/t/<タグごとに固有のID>
 ```
 
 タグIDは任意の文字列で構いません（推測されにくい方が安全です）。
@@ -162,6 +156,16 @@ https://waketama.com/t/<タグごとに固有のID>
 
 すでに `*.workers.dev` のURLで書き込み済みのタグがある場合も、Worker名を変えていないため
 引き続き動作します。ただし表示されるURLは古いままなので、新規タグからは独自ドメインを使ってください。
+
+### apex（waketama.com）をどうするか
+
+いまは何も設定していないため、`https://waketama.com` を開いても何も表示されません。
+選択肢は2つあります。
+
+1. **LPを置く**（将来的におすすめ）: サービス紹介ページを別途用意して apex に置く
+2. **アプリへ転送する**（すぐやるなら）: Cloudflareダッシュボードの
+   Rules → Redirect Rules で `waketama.com/*` → `https://app.waketama.com/$1` に転送する。
+   Workerを経由しないので速く、コストもかかりません
 
 ---
 
@@ -182,25 +186,21 @@ npm run deploy:staging
 
 ### ステージングのURL
 
-**いま（ゾーンがActiveになる前）**: DNSの設定は不要で、デプロイすると即座に使えます。
+```
+https://staging.waketama.com
+```
+
+`wrangler.toml` の `[[env.staging.routes]]` は設定済みなので、`npm run deploy:staging`
+するだけでDNSレコードと証明書が自動で用意されます（本番と同じく、手動でDNSレコードを
+作らないでください）。
+
+DNSや証明書と切り分けたいときは、こちらでも同じWorkerに到達できます。
 
 ```
 https://waketama-staging.<あなたのサブドメイン>.workers.dev
 ```
 
 正確なURLは `npm run deploy:staging` の出力の最後に表示されます。
-`<あなたのサブドメイン>` はCloudflareアカウントごとに決まっている固定の文字列で、
-ダッシュボードの Workers & Pages → 右側の「Your subdomain」でも確認できます。
-
-**ゾーンがActiveになったあと**: `wrangler.toml` の `[[env.staging.routes]]` の
-コメントを外して `npm run deploy:staging` すると、下記で入れるようになります。
-
-```
-https://staging.waketama.com
-```
-
-DNSレコードとTLS証明書はCloudflareが自動で用意します。本番の `routes` と同じく、
-ゾーンがActiveになる前にコメントを外すとデプロイが失敗するので順番に注意してください。
 
 ### ステージングに合言葉をかける（推奨）
 

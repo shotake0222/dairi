@@ -3,23 +3,19 @@ main = "src/index.ts"
 compatibility_date = "2026-09-01"
 compatibility_flags = ["nodejs_compat"]
 
-# --- 独自ドメイン（waketama.com） ---
-# 有効化の手順（順番が重要。この順でないとデプロイが失敗する）:
-#   1. Cloudflareダッシュボードで waketama.com をサイトとして追加し、割り当てられた
-#      ネームサーバー2つを控える
-#   2. Xserverのドメイン管理画面で、ネームサーバーをその2つに変更する
-#      （現在は NS1〜NS5.XSERVER.JP。Xserver側のDNSは使わなくなる）
-#   3. Cloudflare側でゾーンの状態が「Active」になるまで待つ（通常は数分〜数時間）
-#   4. 下の routes のコメントを外す
-#   5. npx wrangler deploy
+# --- 独自ドメイン ---
+# 本番の公開URLは https://app.waketama.com
 #
-# ゾーンがActiveになる前に routes を有効にしたままデプロイするとエラーになるため、
-# それまでは意図的にコメントアウトしてある（この状態なら workers.dev には今すぐデプロイできる）。
-# custom_domain = true にすると、DNSレコードとTLS証明書はCloudflareが自動で用意する。
-# routes = [
-#   { pattern = "waketama.com", custom_domain = true },
-#   { pattern = "www.waketama.com", custom_domain = true }
-# ]
+# custom_domain = true にしてあるので、デプロイ時にCloudflareがDNSレコードとTLS証明書を
+# 自動で用意する。**事前に app のDNSレコードを手で作る必要はない**
+# （むしろ手で作っておくと「既にレコードがある」と衝突してデプロイが止まることがある）。
+#
+# apex（waketama.com）はここでは押さえていない。将来LPを置く余地を残すため。
+# 素のドメインを開いた人をアプリへ送りたい場合は、Cloudflareのリダイレクトルールで
+# waketama.com → app.waketama.com を設定するのが手軽（Workerを経由しないので速い）。
+routes = [
+  { pattern = "app.waketama.com", custom_domain = true }
+]
 
 # --- 環境の識別子 ---
 # コード側で本番か検証環境かを見分けるために使う（検証環境には検索避けと合言葉を付ける）。
@@ -129,21 +125,14 @@ class_name = "CharacterState"
 tag = "v1"
 new_sqlite_classes = ["CharacterState"]
 
-# 検証環境のURL。
+# 検証環境のURL: https://staging.waketama.com
+# 本番と同じくDNSレコードと証明書はCloudflareが自動で用意する（手動作成は不要）。
 #
-# ゾーンがActiveになるまでは、デプロイ時に発行される
-#   https://waketama-staging.<あなたのサブドメイン>.workers.dev
-# で入れる（DNSの設定は不要。今すぐ使えるのはこちら）。
-#
-# ゾーンがActiveになったら、下のコメントを外して `npm run deploy:staging` すると
-#   https://staging.waketama.com
-# で入れるようになる（DNSレコードと証明書はCloudflareが自動で用意する）。
-# 本番側の routes と同様、ゾーンがActiveになる前に有効化するとデプロイが失敗する。
-#
-# 検証環境は誰でも開ける状態になるため、合言葉をかけておくことを推奨:
+# 検証環境は誰でも開ける状態になるうえ、本物のWorkers AIを呼ぶため、
+# 合言葉をかけておくことを推奨:
 #   npx wrangler secret put STAGING_PASSCODE --env staging
 # 設定すると `?key=合言葉` で入る形になり、未設定なら素通し。
 # 検索避け（noindex）は合言葉の有無に関わらず常に有効。
-# [[env.staging.routes]]
-# pattern = "staging.waketama.com"
-# custom_domain = true
+[[env.staging.routes]]
+pattern = "staging.waketama.com"
+custom_domain = true
