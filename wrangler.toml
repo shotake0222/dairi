@@ -21,6 +21,14 @@ compatibility_flags = ["nodejs_compat"]
 #   { pattern = "www.waketama.com", custom_domain = true }
 # ]
 
+# --- 観測性（Workers Logs） ---
+# 本番で何が起きたかを後から追えるようにする。これが無効だとダッシュボードにログが残らず、
+# `wrangler tail` を繋いでいる最中の事象しか見られない（実機で起きた不具合の再現待ちになる）。
+# head_sampling_rate = 1 は全リクエストを記録する設定。利用者が増えてコストが気になり始めたら下げる。
+[observability]
+enabled = true
+head_sampling_rate = 1
+
 # --- 静的ファイル（AR召喚ページ・チャットページ） ---
 [assets]
 directory = "./public"
