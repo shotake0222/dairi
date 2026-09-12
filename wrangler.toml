@@ -3,6 +3,24 @@ main = "src/index.ts"
 compatibility_date = "2026-09-01"
 compatibility_flags = ["nodejs_compat"]
 
+# --- 独自ドメイン（waketama.com） ---
+# 有効化の手順（順番が重要。この順でないとデプロイが失敗する）:
+#   1. Cloudflareダッシュボードで waketama.com をサイトとして追加し、割り当てられた
+#      ネームサーバー2つを控える
+#   2. Xserverのドメイン管理画面で、ネームサーバーをその2つに変更する
+#      （現在は NS1〜NS5.XSERVER.JP。Xserver側のDNSは使わなくなる）
+#   3. Cloudflare側でゾーンの状態が「Active」になるまで待つ（通常は数分〜数時間）
+#   4. 下の routes のコメントを外す
+#   5. npx wrangler deploy
+#
+# ゾーンがActiveになる前に routes を有効にしたままデプロイするとエラーになるため、
+# それまでは意図的にコメントアウトしてある（この状態なら workers.dev には今すぐデプロイできる）。
+# custom_domain = true にすると、DNSレコードとTLS証明書はCloudflareが自動で用意する。
+# routes = [
+#   { pattern = "waketama.com", custom_domain = true },
+#   { pattern = "www.waketama.com", custom_domain = true }
+# ]
+
 # --- 静的ファイル（AR召喚ページ・チャットページ） ---
 [assets]
 directory = "./public"
