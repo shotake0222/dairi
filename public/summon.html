@@ -3,7 +3,31 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>わけみたま｜キャラクター召喚</title>
+<title>わけたま｜キャラクター召喚</title>
+<meta name="description" content="NFCタグをタップして、あなたの分身と出会う瞬間。" />
+
+<!-- PWA（ホーム画面に追加）。NFCタグが手元に無くても分身に会いに来られるようにするための導線。 -->
+<link rel="manifest" href="/manifest.webmanifest" />
+<meta name="theme-color" content="#7c5cff" />
+<link rel="icon" href="/icons/favicon-64.png" sizes="64x64" type="image/png" />
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="わけたま" />
+
+<!-- OGP（SNS・メッセージアプリでURLを共有したときのカード表示）。
+     og:image / og:url の絶対URL化は、配信ドメインが変わっても正しく動くよう
+     src/index.ts の HTMLRewriter がリクエスト元のオリジンを見て書き換える。 -->
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="わけたま" />
+<meta property="og:title" content="わけたま｜キャラクター召喚" />
+<meta property="og:description" content="NFCタグをタップして、あなたの分身と出会う瞬間。" />
+<meta property="og:image" content="/icons/ogp.png" />
+<meta property="og:url" content="/" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="わけたま｜キャラクター召喚" />
+<meta name="twitter:description" content="NFCタグをタップして、あなたの分身と出会う瞬間。" />
+<meta name="twitter:image" content="/icons/ogp.png" />
 <script type="module" src="https://cdn.jsdelivr.net/npm/@google/model-viewer@3.5.0/dist/model-viewer.min.js"></script>
 <style>
   :root { color-scheme: dark; }
@@ -81,8 +105,8 @@
 </head>
 <body>
   <div class="stage">
-    <div class="brand">わけみたま</div>
-    <button id="infoBtn" type="button" title="わけみたまとは？">?</button>
+    <div class="brand">わけたま</div>
+    <button id="infoBtn" type="button" title="わけたまとは？">?</button>
     <video id="cam" autoplay playsinline muted></video>
     <div class="fallback" id="fallback" hidden>
       カメラを起動できませんでした。<br />このままキャラクターに会うこともできます。
@@ -117,9 +141,9 @@
 
   <div id="conceptModal" hidden>
     <div class="box">
-      <h3>わけみたまって？</h3>
+      <h3>わけたまって？</h3>
       <p>
-        「わけみたま」は、会話を通じてあなただけの分身を育てるサービスです。<br /><br />
+        「わけたま」は、会話を通じてあなただけの分身を育てるサービスです。<br /><br />
         性格はあなたとの会話によって、少しずつ変わっていきます。今はまだ画面の中だけの存在ですが、
         将来はメタバースのアバターや、ロボットのようなフィジカルAIの姿になって、あなたの代わりに動き出す日を目指しています。
       </p>
@@ -200,7 +224,7 @@
   }
 
   function goToChat() {
-    location.href = `/chat.html?cid=${encodeURIComponent(cid || "")}`;
+    location.href = `/chat?cid=${encodeURIComponent(cid || "")}`;
   }
 
   (async () => {
@@ -267,6 +291,16 @@
       goChatBtn.addEventListener("click", goToChat);
     }
   })();
+</script>
+
+<script>
+  // Service Workerの登録。失敗してもアプリ本体の動作には一切影響させない
+  // （非対応ブラウザ・プライベートモード・http環境などでは単に登録されないだけ）。
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    });
+  }
 </script>
 </body>
 </html>

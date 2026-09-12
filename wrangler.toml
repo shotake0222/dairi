@@ -7,6 +7,11 @@ compatibility_flags = ["nodejs_compat"]
 [assets]
 directory = "./public"
 binding = "ASSETS"
+# HTMLページだけはWorkerを先に通す。
+# 既定では静的ファイルはWorkerに届く前にアセット層が直接返してしまい、
+# src/index.ts の HTMLRewriter（OGPのURL絶対化）が動かないため。
+# 画像や3Dモデルまで対象にするとリクエストごとにWorker呼び出しが増えるので、ページのパスだけに限定する。
+run_worker_first = ["/", "/home", "/chat", "/summon", "/friends", "/history", "/offline"]
 
 # --- Workers AI（序盤はSLMで運用） ---
 [ai]

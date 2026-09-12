@@ -73,12 +73,12 @@ describe("pickMostSimilar (性格ベクトルのユークリッド距離マッ�
 });
 
 describe("GET /t/:tagId (NFCタグ読み取り)", () => {
-  it("未登録タグは新規キャラクターを発行し、初回トークン付きでsummon.htmlへリダイレクトする", async () => {
+  it("未登録タグは新規キャラクターを発行し、初回トークン付きで召喚ページへリダイレクトする", async () => {
     const tagId = freshCid("tag");
     const res = await SELF.fetch(`${BASE}/t/${tagId}`, { redirect: "manual" });
     expect(res.status).toBe(302);
     const loc = new URL(res.headers.get("location")!);
-    expect(loc.pathname).toBe("/summon.html");
+    expect(loc.pathname).toBe("/summon");
     expect(loc.searchParams.get("first")).toBe("1");
     expect(loc.searchParams.get("cid")).toBeTruthy();
     expect(loc.searchParams.get("token")).toBeTruthy();
@@ -424,5 +424,85 @@ describe("scheduled (留守番エージェントの自動お散歩)", () => {
     await worker.scheduled!({} as ScheduledController, env, ctx);
     await waitOnExecutionContext(ctx);
     expect(true).toBe(true);
+  });
+});
+
+describe("静的ファイル配信とPWA/OGP", () => {
+  it("manifestとService Workerが配信される", async () => {
+    const manifestRes = await SELF.fetch(`${BASE}/manifest.webmanifest`);
+    expect(manifestRes.status).toBe(200);
+    const manifest = await manifestRes.json<{ name: string; start_url: string; icons: unknown[] }>();
+    expect(manifest.name).toBe("わけたま");
+    expect(manifest.start_url).toBe("/home");
+    expect(manifest.icons.length).toBeGreaterThan(0);
+
+    const swRes = await SELF.fetch(`${BASE}/sw.js`);
+    expect(swRes.status).toBe(200);
+  });
+
+  it("Service WorkerはAPIレスポンスをキャッシュ対象にしていない（古い分身の状態を表示しないため）", async () => {
+    const sw = await (await SELF.fetch(`${BASE}/sw.js`)).text();
+    // /api/ と /t/ は早期returnでネットワークに素通しされていること
+    expect(sw).toContain('url.pathname.startsWith("/api/")');
+    expect(sw).toContain('url.pathname.startsWith("/t/")');
+    // キャッシュ対象は画像・3Dモデルのみ
+    expect(sw).toContain('url.pathname.startsWith("/characters/")');
+  });
+
+  it("HTMLのog:image / og:url が、配信元のオリジンを使った絶対URLに書き換えられる", async () => {
+    const html = await (await SELF.fetch(`${BASE}/home`)).text();
+    expect(html).toContain(`<meta property="og:image" content="${BASE}/icons/ogp.png" />`);
+    expect(html).toContain(`<meta name="twitter:image" content="${BASE}/icons/ogp.png" />`);
+    expect(html).toContain(`<meta property="og:url" content="${BASE}/home" />`);
+  });
+
+  it("og:urlにはクエリ文字列（cid）を含めない", async () => {
+    const html = await (await SELF.fetch(`${BASE}/chat?cid=secret-character-id`)).text();
+    expect(html).toContain(`<meta property="og:url" content="${BASE}/chat" />`);
+    expect(html).not.toContain("secret-character-id");
+  });
+
+  // Cloudflare Assetsの既定動作では /x.html は /x へ307リダイレクトされる（＝正規URLは拡張子なし）。
+  // アプリ内リンクは正規URLを直接指すようにしてあり、この前提が崩れると全画面遷移に余計な往復が増える。
+  it("拡張子なしの正規URLが200で配信され、.html付きはそこへリダイレクトされる", async () => {
+    const canonical = await SELF.fetch(`${BASE}/chat`, { redirect: "manual" });
+    expect(canonical.status).toBe(200);
+
+    const legacy = await SELF.fetch(`${BASE}/chat.html?cid=abc`, { redirect: "manual" });
+    expect(legacy.status).toBe(307);
+    // 既存のブックマークやNFCタグが壊れないよう、クエリ文字列は維持されること
+    expect(legacy.headers.get("location")).toBe("/chat?cid=abc");
+  });
+
+  it("アプリ内リンクは拡張子なしの正規URLを指している（余計なリダイレクトを挟まない）", async () => {
+    const chatHtml = await (await SELF.fetch(`${BASE}/chat`)).text();
+    expect(chatHtml).toContain('href="/home"');
+    expect(chatHtml).toContain("`/history?cid=");
+    expect(chatHtml).toContain("`/friends?cid=");
+    expect(chatHtml).not.toContain('href="/home.html"');
+
+    const manifest = await (await SELF.fetch(`${BASE}/manifest.webmanifest`)).json<{ start_url: string }>();
+    expect(manifest.start_url).toBe("/home");
+  });
+
+  it("素のドメイン（/）は分身一覧へリダイレクトされる", async () => {
+    const res = await SELF.fetch(`${BASE}/`, { redirect: "manual" });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe(`${BASE}/home`);
+  });
+
+  it("NFCタップのリダイレクト先も正規URL（/summon）である", async () => {
+    const res = await SELF.fetch(`${BASE}/t/${freshCid("canonical-tag")}`, { redirect: "manual" });
+    expect(res.status).toBe(302);
+    expect(new URL(res.headers.get("location")!).pathname).toBe("/summon");
+  });
+
+  it("HTML以外（アイコン等）は書き換えずそのまま配信される", async () => {
+    const res = await SELF.fetch(`${BASE}/icons/icon-192.png`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("image/png");
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    // PNGのマジックナンバー
+    expect(Array.from(bytes.slice(0, 4))).toEqual([0x89, 0x50, 0x4e, 0x47]);
   });
 });

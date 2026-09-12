@@ -3,7 +3,31 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>わけみたま｜分身一覧</title>
+<title>わけたま｜分身一覧</title>
+<meta name="description" content="このブラウザで育てている分身の一覧。会話で育つ、もうひとりの自分。" />
+
+<!-- PWA（ホーム画面に追加）。NFCタグが手元に無くても分身に会いに来られるようにするための導線。 -->
+<link rel="manifest" href="/manifest.webmanifest" />
+<meta name="theme-color" content="#7c5cff" />
+<link rel="icon" href="/icons/favicon-64.png" sizes="64x64" type="image/png" />
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="わけたま" />
+
+<!-- OGP（SNS・メッセージアプリでURLを共有したときのカード表示）。
+     og:image / og:url の絶対URL化は、配信ドメインが変わっても正しく動くよう
+     src/index.ts の HTMLRewriter がリクエスト元のオリジンを見て書き換える。 -->
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="わけたま" />
+<meta property="og:title" content="わけたま｜分身一覧" />
+<meta property="og:description" content="このブラウザで育てている分身の一覧。会話で育つ、もうひとりの自分。" />
+<meta property="og:image" content="/icons/ogp.png" />
+<meta property="og:url" content="/" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="わけたま｜分身一覧" />
+<meta name="twitter:description" content="このブラウザで育てている分身の一覧。会話で育つ、もうひとりの自分。" />
+<meta name="twitter:image" content="/icons/ogp.png" />
 <style>
   :root { color-scheme: light; }
   * { box-sizing: border-box; }
@@ -50,16 +74,33 @@
 
   .empty { text-align: center; color: #888; font-size: 13px; padding: 50px 20px; line-height: 1.8; }
   .empty .big { font-size: 32px; margin-bottom: 12px; }
+
+  /* ホーム画面への追加（PWAインストール）の案内。
+     ブラウザがインストール可能と判断したとき（beforeinstallprompt発火時）だけ出す。 */
+  #installCard { display: none; align-items: center; gap: 12px; }
+  #installCard.show { display: flex; }
+  #installCard .installText { flex: 1; font-size: 12px; color: #5b4b99; line-height: 1.7; }
+  #installBtn {
+    border: none; background: #7c5cff; color: #fff; font-size: 12px; font-weight: 700;
+    padding: 9px 16px; border-radius: 999px; cursor: pointer; white-space: nowrap;
+  }
 </style>
 </head>
 <body>
 <header>
-  <div class="brand">わけみたま</div>
+  <div class="brand">わけたま</div>
   <h1>あなたの分身たち</h1>
   <div class="sub">この端末でこれまでに開いたことのある分身の一覧です</div>
 </header>
 
 <main>
+  <div class="card" id="installCard">
+    <div class="installText">
+      ホーム画面に追加しておくと、NFCタグが手元になくても、ここから分身に会いに来られます。
+    </div>
+    <button id="installBtn" type="button">追加する</button>
+  </div>
+
   <div id="grid" class="grid"></div>
   <div id="emptyState" hidden class="empty">
     <div class="big">🌱</div>
@@ -146,7 +187,7 @@
     for (const c of list) {
       const a = document.createElement("a");
       a.className = "entry";
-      a.href = `/chat.html?cid=${encodeURIComponent(c.cid)}`;
+      a.href = `/chat?cid=${encodeURIComponent(c.cid)}`;
       a.innerHTML = cardHtml(c);
 
       const removeBtn = document.createElement("button");
@@ -180,6 +221,16 @@
     for (const c of list) {
       try {
         const res = await fetch(`/api/character?cid=${encodeURIComponent(c.cid)}`);
+        // 404 = その分身はもう存在しない（別の端末で削除された等）。
+        // 開いても行き止まりになるだけなので、この端末の一覧からも静かに取り除く。
+        if (res.status === 404) {
+          const gone = latest.findIndex((item) => item.cid === c.cid);
+          if (gone !== -1) {
+            latest.splice(gone, 1);
+            changed = true;
+          }
+          continue;
+        }
         if (!res.ok) continue;
         const data = await res.json();
         const idx = latest.findIndex((item) => item.cid === c.cid);
@@ -214,6 +265,48 @@
   }
 
   render();
+</script>
+
+<script>
+  // 「ホーム画面に追加」ボタン。
+  // Chrome系はbeforeinstallpromptが飛んできた時だけ案内を出す（＝インストール可能なときだけ）。
+  // iOS Safariはこのイベントを実装しておらず、共有メニューからの手動追加になるため、ここでは何も出さない。
+  (function setupInstallPrompt() {
+    const card = document.getElementById("installCard");
+    const btn = document.getElementById("installBtn");
+    if (!card || !btn) return;
+    let deferred = null;
+
+    window.addEventListener("beforeinstallprompt", (e) => {
+      e.preventDefault();
+      deferred = e;
+      card.classList.add("show");
+    });
+
+    btn.addEventListener("click", async () => {
+      if (!deferred) return;
+      btn.disabled = true;
+      try {
+        deferred.prompt();
+        await deferred.userChoice;
+      } catch (err) {
+        /* ユーザーが閉じただけなので何もしない */
+      }
+      deferred = null;
+      card.classList.remove("show");
+    });
+
+    // 追加済みになったら案内は不要
+    window.addEventListener("appinstalled", () => card.classList.remove("show"));
+  })();
+
+  // Service Workerの登録。失敗してもアプリ本体の動作には一切影響させない
+  // （非対応ブラウザ・プライベートモード・http環境などでは単に登録されないだけ）。
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    });
+  }
 </script>
 </body>
 </html>

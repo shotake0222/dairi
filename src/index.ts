@@ -23,6 +23,13 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
 
+    // --- トップページ ---
+    // public/ に index.html を置いていないため、素のドメインを開くと404になってしまう。
+    // ドメイン直打ちや共有リンクからの流入は「分身一覧」に着地させる。
+    if (url.pathname === "/") {
+      return Response.redirect(new URL("/home", url.origin).toString(), 302);
+    }
+
     // --- NFCタグ読み取り: /t/:tagId ---
     // NFCタグにはこのURL（例: https://<your-domain>/t/xxxxxx）を書き込む想定。
     if (url.pathname.startsWith("/t/")) {
@@ -58,7 +65,7 @@ export default {
         ownerToken = initData.ownerToken;
       }
 
-      const redirectUrl = new URL("/summon.html", url.origin);
+      const redirectUrl = new URL("/summon", url.origin);
       redirectUrl.searchParams.set("cid", characterId);
       if (isFirstTime) {
         redirectUrl.searchParams.set("first", "1");
@@ -150,7 +157,7 @@ export default {
       const result = await stub.exportPackage(token);
       if (!result.ok) return json({ error: result.error }, { status: result.error === "not found" ? 404 : 403 });
       const pkg = result.package;
-      const fileName = `sodatsukake_${pkg.character.name || characterId}.json`.replace(/[^\w.\-ぁ-んァ-ヶー一-龠]/g, "_");
+      const fileName = `waketama_${pkg.character.name || characterId}.json`.replace(/[^\w.\-ぁ-んァ-ヶー一-龠]/g, "_");
       return new Response(JSON.stringify(pkg, null, 2), {
         headers: {
           "content-type": "application/json; charset=utf-8",
@@ -209,7 +216,7 @@ export default {
     }
 
     // --- それ以外は静的ファイル（public/ 配下）を配信 ---
-    return env.ASSETS.fetch(request);
+    return serveAsset(request, url, env);
   },
 
   /**
@@ -242,6 +249,43 @@ export default {
     }
   },
 } satisfies ExportedHandler<Env>;
+
+/**
+ * 静的ファイルの配信。HTMLだけは、OGP用のURLをその場で絶対URLに書き換えてから返す。
+ *
+ * なぜサーバー側で書き換えるのか:
+ * OGPのog:image / og:urlは、SNSのクローラーがJavaScriptを実行せずに読むため相対パスでは正しく解決されず、
+ * かといってHTMLに絶対URLを直書きすると、配信ドメイン（*.workers.dev / 独自ドメイン / プレビュー環境）が
+ * 変わるたびにカード画像が壊れる。リクエストのオリジンを見てここで補完すれば、どのドメインで配信しても
+ * 常に正しい絶対URLになり、HTML側はドメインを知らなくて済む。
+ */
+async function serveAsset(request: Request, url: URL, env: Env): Promise<Response> {
+  const assetResponse = await env.ASSETS.fetch(request);
+  const contentType = assetResponse.headers.get("content-type") || "";
+  if (!contentType.includes("text/html")) return assetResponse;
+
+  const origin = url.origin;
+  const toAbsolute = (value: string | null): string | null => {
+    if (!value) return null;
+    if (/^https?:\/\//i.test(value)) return null; // すでに絶対URLなら触らない
+    return origin + (value.startsWith("/") ? value : `/${value}`);
+  };
+
+  return new HTMLRewriter()
+    .on('meta[property="og:image"], meta[name="twitter:image"]', {
+      element(element) {
+        const absolute = toAbsolute(element.getAttribute("content"));
+        if (absolute) element.setAttribute("content", absolute);
+      },
+    })
+    .on('meta[property="og:url"]', {
+      element(element) {
+        // 共有されるのは「今開いているページ」。クエリ文字列（cid等）は共有カードに載せない。
+        element.setAttribute("content", origin + url.pathname);
+      },
+    })
+    .transform(assetResponse);
+}
 
 export type MeetingResult =
   | { ok: true; partner: { name: string; species: SpeciesKey; color: ColorKey }; log: MeetingLogEntry[] }

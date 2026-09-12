@@ -3,7 +3,31 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>わけみたま｜キャラクターと会話</title>
+<title>わけたま｜キャラクターと会話</title>
+<meta name="description" content="話しかけるたびに性格が少しずつ変わっていく、あなただけの分身と会話しよう。" />
+
+<!-- PWA（ホーム画面に追加）。NFCタグが手元に無くても分身に会いに来られるようにするための導線。 -->
+<link rel="manifest" href="/manifest.webmanifest" />
+<meta name="theme-color" content="#7c5cff" />
+<link rel="icon" href="/icons/favicon-64.png" sizes="64x64" type="image/png" />
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="わけたま" />
+
+<!-- OGP（SNS・メッセージアプリでURLを共有したときのカード表示）。
+     og:image / og:url の絶対URL化は、配信ドメインが変わっても正しく動くよう
+     src/index.ts の HTMLRewriter がリクエスト元のオリジンを見て書き換える。 -->
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="わけたま" />
+<meta property="og:title" content="わけたま｜キャラクターと会話" />
+<meta property="og:description" content="話しかけるたびに性格が少しずつ変わっていく、あなただけの分身と会話しよう。" />
+<meta property="og:image" content="/icons/ogp.png" />
+<meta property="og:url" content="/" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="わけたま｜キャラクターと会話" />
+<meta name="twitter:description" content="話しかけるたびに性格が少しずつ変わっていく、あなただけの分身と会話しよう。" />
+<meta name="twitter:image" content="/icons/ogp.png" />
 <script type="module" src="https://cdn.jsdelivr.net/npm/@google/model-viewer@3.5.0/dist/model-viewer.min.js"></script>
 <style>
   :root { color-scheme: light; }
@@ -14,12 +38,19 @@
     display: flex; flex-direction: column;
   }
   header { padding: 12px 16px; background: #fff; border-bottom: 1px solid #eee; }
-  header .row { display: flex; align-items: center; gap: 10px; }
+  /* スマホ幅ではボタン群が1行に収まりきらず、名前の列が潰れて縦書きのようになってしまうため、
+     行全体を折り返し可能にし、名前の列には最低幅を与えておく（ボタン群が2行目に回る）。 */
+  header .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   header h1 { margin: 0; font-size: 16px; }
   .brand { font-size: 10px; letter-spacing: 0.08em; color: #a78bfa; font-weight: 700; margin-bottom: 2px; }
   #status { font-size: 12px; color: #666; margin-top: 4px; }
-  .nameCol { flex: 1; min-width: 0; }
-  .headerActions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; align-self: flex-start; flex-shrink: 0; }
+  .nameCol { flex: 1 1 150px; min-width: 150px; }
+  .headerActions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; align-self: flex-start; flex-shrink: 0; min-width: 0; }
+  /* スマホ幅ではボタン群だけで1行を使い切るので、名前の下に丸ごと回して内部で折り返させる
+     （そうしないと横スクロールが発生し、名前も読めなくなる）。 */
+  @media (max-width: 560px) {
+    .headerActions { flex: 1 1 100%; justify-content: flex-start; }
+  }
   #toggleTraits, #historyLink, #infoBtn, #toggleExport, #toggleSocial, #homeLink {
     border: 1px solid #ddd; background: #fff; color: #7c5cff; font-size: 12px;
     padding: 6px 10px; border-radius: 999px; white-space: nowrap; text-decoration: none;
@@ -181,13 +212,13 @@
   <div class="row">
     <img id="avatarIcon" src="" alt="" hidden />
     <div class="nameCol">
-      <div class="brand">わけみたま</div>
+      <div class="brand">わけたま</div>
       <h1 id="charName">キャラクター</h1>
       <div id="status">読み込み中…</div>
     </div>
     <div class="headerActions">
-      <a id="homeLink" href="/home.html" title="分身一覧">🏠</a>
-      <button id="infoBtn" type="button" title="わけみたまとは？">?</button>
+      <a id="homeLink" href="/home" title="分身一覧">🏠</a>
+      <button id="infoBtn" type="button" title="わけたまとは？">?</button>
       <a id="historyLink" href="#">📈 成長</a>
       <button id="toggleSocial" type="button">🤝 交流</button>
       <button id="toggleExport" type="button">📦 保存/復元</button>
@@ -273,9 +304,9 @@
 
 <div id="conceptModal" hidden>
   <div class="box">
-    <h3>わけみたまって？</h3>
+    <h3>わけたまって？</h3>
     <p>
-      「わけみたま」は、会話を通じてあなただけの分身を育てるサービスです。<br /><br />
+      「わけたま」は、会話を通じてあなただけの分身を育てるサービスです。<br /><br />
       性格はあなたとの会話によって、少しずつ変わっていきます。今はまだ画面の中だけの存在ですが、
       将来はメタバースのアバターや、ロボットのようなフィジカルAIの姿になって、あなたの代わりに動き出す日を目指しています。<br /><br />
       これまでの性格の変化は「📈 成長」から、いつでも振り返れます。
@@ -290,7 +321,7 @@
 
   // 「持ち主トークン」: 誕生時にsummon.htmlがlocalStorageへ保存したもの。
   // エクスポート/インポート/オプトイン/名前変更など、持ち主専用の操作にだけ添えて送る。
-  // 無くても閲覧・会話はできる（わけみたまはアカウント登録なしで使える設計のため）。
+  // 無くても閲覧・会話はできる（わけたまはアカウント登録なしで使える設計のため）。
   function getOwnerToken() {
     if (!cid) return "";
     try {
@@ -345,8 +376,8 @@
   const exportStatus = document.getElementById("exportStatus");
   const deleteBtn = document.getElementById("deleteBtn");
 
-  historyLink.href = `/history.html?cid=${encodeURIComponent(cid || "")}`;
-  document.getElementById("friendsLink").href = `/friends.html?cid=${encodeURIComponent(cid || "")}`;
+  historyLink.href = `/history?cid=${encodeURIComponent(cid || "")}`;
+  document.getElementById("friendsLink").href = `/friends?cid=${encodeURIComponent(cid || "")}`;
 
   // --- 人格パッケージの書き出し/復元（フィジカルAI・メタバース移植やバックアップの土台） ---
   toggleExportBtn.addEventListener("click", () => {
@@ -371,7 +402,7 @@
       const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = blobUrl;
-      a.download = `sodatsukake_${nameEl.textContent || "character"}.json`;
+      a.download = `waketama_${nameEl.textContent || "character"}.json`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -423,20 +454,30 @@
 
   // ローカルの「訪問済みリスト」からこの分身を1件だけ取り除く（/home.htmlの一覧に出さなくするため）。
   // サーバー側のデータ削除とは別物：この関数はブラウザ内の帳簿を掃除するだけ。
+  /** 「分身一覧」からこの分身の項目だけを取り除く（持ち主トークンには触れない）。 */
+  function removeFromMyCharacters() {
+    try {
+      const raw = localStorage.getItem(MY_CHARACTERS_KEY);
+      if (!raw) return;
+      const list = JSON.parse(raw);
+      if (!Array.isArray(list)) return;
+      localStorage.setItem(MY_CHARACTERS_KEY, JSON.stringify(list.filter((c) => c && c.cid !== cid)));
+    } catch (e) {
+      /* localStorageが使えなくても致命的ではない */
+    }
+  }
+
+  /**
+   * 削除を実行したあとに、この端末に残った痕跡（持ち主トークン・一覧の項目）を掃除する。
+   * トークンの削除は取り消せないため、「自分で削除したとき」だけに限定して呼ぶこと。
+   */
   function forgetCharacterLocally() {
     try {
       localStorage.removeItem(`sodatsukake_token_${cid}`);
-      const raw = localStorage.getItem(MY_CHARACTERS_KEY);
-      if (raw) {
-        let list = JSON.parse(raw);
-        if (Array.isArray(list)) {
-          list = list.filter((c) => c && c.cid !== cid);
-          localStorage.setItem(MY_CHARACTERS_KEY, JSON.stringify(list));
-        }
-      }
     } catch (e) {
-      /* localStorageが使えなくてもサーバー側の削除自体は完了しているので致命的ではない */
+      /* サーバー側の削除は完了しているので致命的ではない */
     }
+    removeFromMyCharacters();
   }
 
   deleteBtn.addEventListener("click", async () => {
@@ -463,7 +504,7 @@
       }
       forgetCharacterLocally();
       exportStatus.textContent = "削除しました。ホームへ戻ります……";
-      setTimeout(() => (location.href = "/home.html"), 900);
+      setTimeout(() => (location.href = "/home"), 900);
     } catch (err) {
       exportStatus.textContent = "削除に失敗しました。もう一度試してね";
       deleteBtn.disabled = false;
@@ -916,15 +957,43 @@
       statusEl.textContent = "キャラクターIDが指定されていません";
       return;
     }
-    const res = await fetch(`/api/character?cid=${encodeURIComponent(cid)}`);
-    if (res.ok) {
-      const data = await res.json();
-      renderStatus(data);
-      showDailyReportIfNeeded(data);
-      rememberCharacter(data);
-      if (!data.interactionCount) {
-        addMessage("……はじめまして。よろしくね。", "char");
-      }
+    let res;
+    try {
+      res = await fetch(`/api/character?cid=${encodeURIComponent(cid)}`);
+    } catch (err) {
+      statusEl.textContent = "通信できませんでした。電波のいい場所でもう一度ひらいてね";
+      return;
+    }
+
+    // 存在しない分身（削除済み・URLの打ち間違いなど）。
+    // 分身を削除できるようになった以上ここは普通に起こりうる経路なので、
+    // 「読み込み中…」のまま放置せず、状況と次の行き先をはっきり伝える。
+    if (res.status === 404) {
+      statusEl.textContent = "この分身は見つかりませんでした";
+      // 一覧からは外すが、持ち主トークンは消さない
+      // （万一こちらの取り違えだった場合に、所有権まで失わせてしまわないため）。
+      removeFromMyCharacters();
+      addMessage(
+        "この分身のデータは見つかりませんでした。削除されたか、URLが違うのかもしれません。",
+        "system"
+      );
+      addMessage("分身一覧から、ほかの子に会いに行けます。", "system");
+      input.disabled = true;
+      input.placeholder = "この分身とは話せません";
+      return;
+    }
+
+    if (!res.ok) {
+      statusEl.textContent = "うまく読み込めませんでした。少し待ってから開き直してね";
+      return;
+    }
+
+    const data = await res.json();
+    renderStatus(data);
+    showDailyReportIfNeeded(data);
+    rememberCharacter(data);
+    if (!data.interactionCount) {
+      addMessage("……はじめまして。よろしくね。", "char");
     }
   }
 
@@ -959,6 +1028,16 @@
   });
 
   loadInitial();
+</script>
+
+<script>
+  // Service Workerの登録。失敗してもアプリ本体の動作には一切影響させない
+  // （非対応ブラウザ・プライベートモード・http環境などでは単に登録されないだけ）。
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    });
+  }
 </script>
 </body>
 </html>

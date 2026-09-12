@@ -1,9 +1,11 @@
-# わけみたま（Wakemitama）
+# わけたま（Waketama）
 
 NFCタグ付きグッズをきっかけに、テキスト会話で「育つ」キャラクターと出会うサービスのMVP実装です。
 （開発用のリポジトリ名・フォルダ名・Cloudflare Worker名は、既存のNFCタグ配布や動作中のデプロイに影響しないよう
-引き続き `sodatsukake` / `nfc-companion` のままにしていますが、サービス名（ブランド表示）は「わけみたま」です。
-2026/9/12に「そだつかけ」から改名しました）
+引き続き `sodatsukake` / `nfc-companion` のままにしていますが、サービス名（ブランド表示）は「わけたま」です。
+2026/9/12に「そだつかけ」から改名しました。由来は神道の「分け御霊（わけみたま）」＝自分の魂を分けて
+新しい依り代に宿しても元の自分は欠けない、という考え方で、それを短くした「分け魂（わけたま）」です。
+`waketama.com` が取得可能であることを確認した上でこの表記に決めています）
 Cloudflare Workers / Durable Objects / D1 / Workers AI（SLM）のみで構成されており、外部サーバーは不要です。
 
 ## 全体の仕組み
@@ -88,14 +90,49 @@ public/
   chat.html                   # テキストチャットページ
 ```
 
+## テスト
+
+```bash
+npm run typecheck   # tsc --noEmit
+npm test            # vitest（workerd上でDurable Object・D1を実際に動かす統合テスト）
+```
+
+`npm test` は @cloudflare/vitest-plugin を使い、wrangler.toml のバインディング設定そのままで
+Durable Object と D1 を実際に動かします。Workers AI と Vectorize はローカルシミュレータが無く、
+実際に呼ぶとCloudflareアカウントに課金が発生するため、`remoteBindings: false` の上で
+`vi.spyOn(env.AI, "run")` により必ずモックしています（この方針は崩さないでください）。
+
+ブラウザでしか分からない部分（スマホ幅のレイアウト崩れ、削除後の導線、OGPの絶対URL化など）は
+別途E2Eスクリプトでカバーしています。
+
+```bash
+npm run dev         # 別プロセスで開発サーバーを起動しておく
+npm run test:e2e    # Playwrightで実際に画面を操作して検証（要 npm i -D playwright）
+```
+
+ブランド画像（PWAアイコン・OGP画像）は `npm run brand:assets` で再生成できます（要 Pillow）。
+
+## 実装上の注意点（ハマりどころ）
+
+- **静的ファイルは既定でWorkerに届かない**: Cloudflare Workers Assets は、ファイルが存在するパスを
+  Workerより先に返します。そのため `wrangler.toml` の `run_worker_first` にHTMLページのパスを列挙し、
+  OGPのURL絶対化（`src/index.ts` の `serveAsset`）が動くようにしています。ここを消すと
+  SNSシェア時のカード画像が静かに壊れます（vitestの `SELF.fetch` は常にWorkerを通るため気づけません）。
+- **正規URLは拡張子なし**: `/chat.html` は `/chat` へ307リダイレクトされます。アプリ内リンクは
+  最初から拡張子なしを指すようにしてあります（画面遷移ごとの余計な往復を避けるため）。
+- **localStorageのキー名 `sodatsukake_*` は変更しないこと**: 持ち主トークンと分身一覧の保存先です。
+  サービス名を改名した際もあえて据え置きました。変えると既存ユーザーが自分の分身の所有権を失います。
+
 ## 今後の拡張ポイント（優先度順の目安）
 
 1. **性格更新ロジックの調整**: `src/ai/personality.ts` の係数はまだ仮の値です。実際のユーザーの会話ログを見ながらチューニングしてください
 2. **会話の質の検証**: SLM（`@cf/meta/llama-3.2-3b-instruct`）で体験の粗さが目立つ場合は、`characterState.ts` の `CHAT_MODEL` を Workers AI 内のより大きいモデルに差し替えるか、有料プラン向けに外部LLM APIへ切り替えるハイブリッド構成を検討してください
-3. **記憶のRAG化**: 現状は直近20往復をそのまま保持しているだけです。会話量が増えたらVectorizeに埋め込みを保存し、関連する過去の記憶だけを検索して渡す方式に置き換えてください
-4. **signalExtractorの高度化**: 現状はキーワードマッチの簡易版です。SLM自体に一言で分類させる、または軽量な分類器を挟むと精度が上がります
-5. **ユーザーアカウント・複数キャラクター管理**: `users` / `user_characters` テーブルは土台のみ用意しています。認証（Cloudflare Access / 独自実装）と合わせて実装してください
-6. **ユーザー間マッチング・ソーシャル機能、Web3/NFT/メタバース連携**: 開発メモ（フィジビリティ検討メモ）のフェーズ2・3を参照してください
+3. **signalExtractorの高度化**: 現状はキーワードマッチの簡易版です。SLM自体に一言で分類させる、または軽量な分類器を挟むと精度が上がります
+4. **ユーザーアカウント・複数キャラクター管理**: 現状は持ち主トークン（localStorage）による簡易的な所有権のみで、端末を変えると持ち主権限を失います。`users` / `user_characters` テーブルは土台のみ用意してあるので、認証（Cloudflare Access / 独自実装）と合わせて実装してください
+5. **iOS向けのホーム画面追加の案内**: iOS Safariは `beforeinstallprompt` に非対応のため、現在インストール案内はAndroid/Chrome系にしか出ません。共有メニューからの手順を案内するUIが必要です
+6. **Web3/NFT/メタバース連携、フィジカルAIへの人格移植**: 開発メモ（フィジビリティ検討メモ）のフェーズ2・3、および人格エクスポート仕様書を参照してください
+
+※ 長期記憶のRAG化（Vectorize）は実装済みです（`src/ai/memory.ts`）。
 
 ## 特許との関係についての実装メモ
 
