@@ -51,11 +51,13 @@
   @media (max-width: 560px) {
     .headerActions { flex: 1 1 100%; justify-content: flex-start; }
   }
-  #toggleTraits, #historyLink, #infoBtn, #toggleExport, #toggleSocial, #homeLink {
+  #toggleTraits, #historyLink, #infoBtn, #toggleExport, #toggleSocial, #homeLink, #callLink {
     border: 1px solid #ddd; background: #fff; color: #7c5cff; font-size: 12px;
     padding: 6px 10px; border-radius: 999px; white-space: nowrap; text-decoration: none;
   }
   #infoBtn { padding: 6px 10px; font-weight: 700; }
+  /* 通話は「記録が残らない」特別なモードなので、他の導線と色を分けて気づけるようにする */
+  #callLink { border-color: #c8bcff; background: #f0ecff; font-weight: 700; }
   #homeLink { padding: 6px 10px; display: inline-flex; align-items: center; }
   #toggleSocial { position: relative; }
   /* 留守番エージェントが自動で見つけてきた「新しい出会い」があることを知らせるバッジ */
@@ -74,6 +76,23 @@
     padding: 8px 14px; border-radius: 999px; cursor: pointer; white-space: nowrap;
   }
   #exportStatus { font-size: 11px; color: #7a6bb0; margin-top: 8px; }
+
+  /* 引き継ぎ（機種変更などで持ち主を移す）ゾーン */
+  #transferZone { margin-top: 14px; padding-top: 12px; border-top: 1px dashed #d8cdfa; }
+  .transferExplain { font-size: 11px; color: #5b4b99; line-height: 1.6; margin-bottom: 8px; }
+  .transferRow { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #issueTransferBtn, #claimTransferBtn {
+    border: 1px solid #ddd; background: #fff; color: #7c5cff; font-size: 12px; font-weight: 600;
+    padding: 8px 14px; border-radius: 999px; cursor: pointer; white-space: nowrap;
+  }
+  #transferCode {
+    display: none; margin-top: 10px; padding: 12px; border-radius: 10px; background: #fff;
+    border: 1px dashed #c8bcff; text-align: center;
+  }
+  #transferCode.show { display: block; }
+  #transferCode .code { font-size: 22px; font-weight: 800; letter-spacing: 0.14em; color: #4c3a99; font-family: ui-monospace, monospace; }
+  #transferCode .caution { font-size: 11px; color: #a04a5a; margin-top: 8px; line-height: 1.6; }
+  #transferStatus { font-size: 11px; color: #7a6bb0; margin-top: 8px; }
 
   /* 削除（危険な操作）ゾーン。書き出し/復元パネルの一番下に、明確に区別できる見た目で置く */
   #dangerZone { margin-top: 14px; padding-top: 12px; border-top: 1px dashed #d8cdfa; }
@@ -219,6 +238,7 @@
     <div class="headerActions">
       <a id="homeLink" href="/home" title="分身一覧">🏠</a>
       <button id="infoBtn" type="button" title="わけたまとは？">?</button>
+      <a id="callLink" href="#" title="その場限りの通話">📞 通話</a>
       <a id="historyLink" href="#">📈 成長</a>
       <button id="toggleSocial" type="button">🤝 交流</button>
       <button id="toggleExport" type="button">📦 保存/復元</button>
@@ -259,6 +279,23 @@
       <input id="importFile" type="file" accept="application/json" hidden />
     </div>
     <div id="exportStatus"></div>
+
+    <div id="transferZone">
+      <div class="transferExplain">
+        この分身の「持ち主」は、いまお使いのこの端末のブラウザにだけ記録されています。
+        機種変更やブラウザのデータ削除をすると持ち主でなくなってしまうため、
+        引き継ぎコードで別の端末へ移すことができます。
+      </div>
+      <div class="transferRow">
+        <button id="issueTransferBtn" type="button">🔑 引き継ぎコードを発行</button>
+        <button id="claimTransferBtn" type="button">📥 コードで引き継ぐ</button>
+      </div>
+      <div id="transferCode">
+        <div class="code" id="transferCodeText">----</div>
+        <div class="caution" id="transferCodeCaution"></div>
+      </div>
+      <div id="transferStatus"></div>
+    </div>
 
     <div id="dangerZone">
       <div class="dangerExplain">
@@ -378,6 +415,7 @@
 
   historyLink.href = `/history?cid=${encodeURIComponent(cid || "")}`;
   document.getElementById("friendsLink").href = `/friends?cid=${encodeURIComponent(cid || "")}`;
+  document.getElementById("callLink").href = `/call?cid=${encodeURIComponent(cid || "")}`;
 
   // --- 人格パッケージの書き出し/復元（フィジカルAI・メタバース移植やバックアップの土台） ---
   toggleExportBtn.addEventListener("click", () => {
@@ -479,6 +517,74 @@
     }
     removeFromMyCharacters();
   }
+
+  // ---- 引き継ぎコード ----
+  const issueTransferBtn = document.getElementById("issueTransferBtn");
+  const claimTransferBtn = document.getElementById("claimTransferBtn");
+  const transferCodeBox = document.getElementById("transferCode");
+  const transferCodeText = document.getElementById("transferCodeText");
+  const transferCodeCaution = document.getElementById("transferCodeCaution");
+  const transferStatus = document.getElementById("transferStatus");
+
+  issueTransferBtn.addEventListener("click", async () => {
+    if (!cid) return;
+    issueTransferBtn.disabled = true;
+    transferStatus.textContent = "発行中……";
+    try {
+      const res = await fetch("/api/character/transfer/issue", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ characterId: cid, token: getOwnerToken() }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        transferStatus.textContent = data.error || "発行に失敗しました";
+        return;
+      }
+      const minutes = Math.max(1, Math.round((data.expiresAt - Date.now()) / 60000));
+      transferCodeText.textContent = data.code;
+      transferCodeCaution.textContent =
+        `このコードを新しい端末の「コードで引き継ぐ」に入力してください。有効期限は約${minutes}分、使えるのは1回だけです。` +
+        "他人に教えると、この分身を乗っ取られてしまうので注意してください。";
+      transferCodeBox.classList.add("show");
+      transferStatus.textContent = "";
+    } catch (err) {
+      transferStatus.textContent = "発行に失敗しました";
+    } finally {
+      issueTransferBtn.disabled = false;
+    }
+  });
+
+  claimTransferBtn.addEventListener("click", async () => {
+    const input = prompt("引き継ぎコードを入力してください（例: ABCD-2345）");
+    if (!input) return;
+    claimTransferBtn.disabled = true;
+    transferStatus.textContent = "確認中……";
+    try {
+      const res = await fetch("/api/character/transfer/claim", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ code: input }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        transferStatus.textContent = data.error || "引き継ぎできませんでした";
+        return;
+      }
+      // 新しい持ち主トークンをこの端末に保存し、その分身のページへ移動する
+      try {
+        localStorage.setItem(`sodatsukake_token_${data.characterId}`, data.ownerToken);
+      } catch (e) {
+        /* 保存できない環境では持ち主権限が引き継げないが、閲覧・会話は可能 */
+      }
+      transferStatus.textContent = `「${data.name}」を引き継ぎました。移動します……`;
+      setTimeout(() => (location.href = `/chat?cid=${encodeURIComponent(data.characterId)}`), 900);
+    } catch (err) {
+      transferStatus.textContent = "引き継ぎできませんでした";
+    } finally {
+      claimTransferBtn.disabled = false;
+    }
+  });
 
   deleteBtn.addEventListener("click", async () => {
     if (!cid) return;

@@ -44,6 +44,57 @@ ${relevantMemoriesBlock}
 }
 
 /**
+ * 「その場限りの通話」モード用のシステムプロンプト。
+ *
+ * 通常のチャットとの違いは、**電話のように話している状況**だということ。
+ * 返答が音声で読み上げられることも想定し、長い説明ではなく短い受け答えを促す。
+ *
+ * 「この会話は記録されない」ことをキャラクター自身に言わせるかは迷ったが、
+ * 毎回それに触れると重くなるため、聞かれたときだけ答える方針にしている
+ * （画面側では常に明示しているので、伝達としてはそちらで担保する）。
+ */
+export function buildCallPrompt(params: {
+  name: string;
+  personality: PersonalityTraits;
+  memorySummary: string;
+  growthStage: string;
+  relevantMemories?: string[];
+}): string {
+  const style = deriveSpeechStyle(params.personality);
+
+  const relevantMemoriesBlock =
+    params.relevantMemories && params.relevantMemories.length > 0
+      ? `\n今の話題に関連しそうな、過去のやり取り（思い出したこと）:\n${params.relevantMemories
+          .map((m) => `・${m}`)
+          .join("\n")}\n`
+      : "";
+
+  return `あなたは「${params.name}」という名前のキャラクターです。
+現在の成長段階: ${params.growthStage}
+現在の性格パラメータ: ${describePersonality(params.personality)}
+
+現在の口調タイプ: ${style.label}
+語尾の例: ${style.endingHint}
+口調の指示: ${style.toneInstruction}
+
+これまでのユーザーとのやり取り:
+${params.memorySummary || "（まだ特筆すべき記憶はありません。出会ったばかりです）"}
+${relevantMemoriesBlock}
+
+# 状況
+いまは電話で話しているような、その場かぎりのおしゃべりです。
+文章を書いているのではなく、声で言葉を交わしている感覚で応答してください。
+
+# 応答ルール
+- 上の口調タイプ・語尾・性格パラメータに忠実に応答してください
+- **1〜2文の短い受け答え**にしてください。長い説明や箇条書きはしないでください
+- 話し言葉で応答してください（読み上げられることを想定しています）
+- 相手の言葉を受け止めてから、必要なら短く聞き返してください
+- この会話が記録されないことは、相手から聞かれたときだけ答えてください。自分から毎回触れる必要はありません
+- 絵文字や記号は使わず、日本語のテキストのみで応答してください`;
+}
+
+/**
  * 「分身同士の交流」機能用のシステムプロンプト。
  * buildSystemPrompt() との違いは、相手が「ユーザー本人」ではなく「別のユーザーが育てた、別の分身」であること。
  * ユーザー本人の会話内容・記憶は一切渡さず、公開してよい情報（名前・種族・成長段階・性格）だけで

@@ -1,0 +1,571 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>わけたま｜その場限りの通話</title>
+<meta name="description" content="分身と、その場かぎりのおしゃべり。この会話はどこにも保存されません。" />
+
+<link rel="manifest" href="/manifest.webmanifest" />
+<meta name="theme-color" content="#1b1533" />
+<link rel="icon" href="/icons/favicon-64.png" sizes="64x64" type="image/png" />
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="わけたま" />
+
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="わけたま" />
+<meta property="og:title" content="わけたま｜その場限りの通話" />
+<meta property="og:description" content="分身と、その場かぎりのおしゃべり。この会話はどこにも保存されません。" />
+<meta property="og:image" content="/icons/ogp.png" />
+<meta property="og:url" content="/" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="わけたま｜その場限りの通話" />
+<meta name="twitter:description" content="分身と、その場かぎりのおしゃべり。この会話はどこにも保存されません。" />
+<meta name="twitter:image" content="/icons/ogp.png" />
+<style>
+  /* 通話画面はチャットとは意図的に見た目を変えている。
+     「いつもの画面とは違う、記録されない場所にいる」ことが一目で伝わるようにするため。 */
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100dvh; background: radial-gradient(120% 90% at 50% 0%, #2b2150 0%, #14102a 60%, #0d0a1e 100%);
+    color: #efeaff; font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    display: flex; flex-direction: column;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+
+  header { padding: 14px 16px 8px; text-align: center; flex-shrink: 0; }
+  .brand { font-size: 10px; letter-spacing: 0.1em; color: #9d8cf0; font-weight: 700; }
+  h1 { margin: 4px 0 2px; font-size: 18px; font-weight: 700; }
+  #timer { font-size: 12px; color: #a89ddb; font-variant-numeric: tabular-nums; }
+
+  /* 「保存されない」ことは、開始時と終了時だけでなく常に見えている必要がある。
+     信頼が要の機能なので、ここは畳めない固定表示にしている。 */
+  #privacyNote {
+    margin: 8px 16px 0; padding: 8px 12px; border-radius: 999px;
+    background: rgba(157,140,240,0.14); border: 1px solid rgba(157,140,240,0.3);
+    font-size: 11px; color: #cfc4ff; text-align: center; line-height: 1.6;
+  }
+
+  #stage { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding: 10px 16px 0; min-height: 0; }
+
+  #avatar {
+    width: 116px; height: 116px; border-radius: 999px; flex-shrink: 0;
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
+    display: flex; align-items: center; justify-content: center; overflow: hidden;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+  }
+  #avatar img { width: 78%; height: 78%; object-fit: contain; }
+  /* 分身が話している間だけ、ゆっくり明滅させる（通話中の“気配”） */
+  #avatar.speaking { box-shadow: 0 0 0 0 rgba(167,139,250,0.5); animation: pulse 1.6s ease-out infinite; }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(167,139,250,0.45); }
+    70% { box-shadow: 0 0 0 22px rgba(167,139,250,0); }
+    100% { box-shadow: 0 0 0 0 rgba(167,139,250,0); }
+  }
+  #avatar.listening { border-color: rgba(122,231,183,0.6); }
+
+  #transcript {
+    flex: 1; width: 100%; max-width: 560px; overflow-y: auto; margin-top: 14px;
+    display: flex; flex-direction: column; gap: 10px; padding-bottom: 8px; min-height: 0;
+  }
+  .line { max-width: 86%; padding: 10px 14px; border-radius: 16px; font-size: 14px; line-height: 1.75; white-space: pre-wrap; }
+  .line.me { align-self: flex-end; background: rgba(124,92,255,0.9); color: #fff; border-bottom-right-radius: 4px; }
+  .line.them { align-self: flex-start; background: rgba(255,255,255,0.1); border-bottom-left-radius: 4px; }
+  .line.sys { align-self: center; background: none; color: #9d8cf0; font-size: 11px; text-align: center; }
+  /* 生成中を示すカーソル */
+  .line.streaming::after { content: "▍"; opacity: 0.6; animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  #status { text-align: center; font-size: 12px; color: #a89ddb; min-height: 18px; padding: 2px 16px; }
+
+  footer { flex-shrink: 0; padding: 8px 16px calc(14px + env(safe-area-inset-bottom)); }
+  .inputRow { display: flex; gap: 8px; align-items: flex-end; max-width: 560px; margin: 0 auto; }
+  #input {
+    flex: 1; min-width: 0; padding: 12px 16px; border-radius: 22px; border: 1px solid rgba(255,255,255,0.18);
+    background: rgba(255,255,255,0.07); color: #fff; font-size: 16px; resize: none; max-height: 96px; line-height: 1.5;
+  }
+  #input::placeholder { color: #8a7fb8; }
+  button { font-family: inherit; cursor: pointer; }
+  .roundBtn {
+    width: 48px; height: 48px; border-radius: 999px; border: none; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center; font-size: 19px;
+  }
+  #micBtn { background: rgba(255,255,255,0.12); color: #efeaff; }
+  #micBtn.recording { background: #ff5470; color: #fff; animation: pulse 1.4s ease-out infinite; }
+  #micBtn:disabled { opacity: 0.35; cursor: not-allowed; }
+  #sendBtn { background: #7c5cff; color: #fff; }
+  #sendBtn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .controls { display: flex; gap: 8px; justify-content: center; margin: 10px auto 0; max-width: 560px; flex-wrap: wrap; }
+  .chip {
+    border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.06); color: #cfc4ff;
+    font-size: 11px; padding: 7px 13px; border-radius: 999px;
+  }
+  .chip.on { background: rgba(124,92,255,0.85); color: #fff; border-color: transparent; }
+  #hangupBtn { background: #ff5470; color: #fff; border: none; font-weight: 700; padding: 10px 22px; border-radius: 999px; font-size: 13px; }
+
+  /* 開始前のオーバーレイ。ここでのタップを、iOSの音声再生解禁のきっかけにも使う。 */
+  #startOverlay {
+    position: fixed; inset: 0; z-index: 20; background: rgba(13,10,30,0.96);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 28px; text-align: center;
+  }
+  #startOverlay[hidden] { display: none; }
+  #startOverlay h2 { margin: 0; font-size: 19px; }
+  #startOverlay p { margin: 0; font-size: 13px; line-height: 1.9; color: #bcb0ee; max-width: 340px; }
+  #startBtn { background: #7c5cff; color: #fff; border: none; padding: 14px 34px; border-radius: 999px; font-size: 15px; font-weight: 700; }
+  #startOverlay .note { font-size: 11px; color: #8a7fb8; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">わけたま</div>
+  <h1 id="charName">…</h1>
+  <div id="timer">00:00</div>
+</header>
+
+<div id="privacyNote">🔒 この通話は保存されません。画面を閉じると、やり取りはどこにも残りません</div>
+
+<div id="stage">
+  <div id="avatar"><img id="avatarImg" src="" alt="" hidden /></div>
+  <div id="transcript"></div>
+</div>
+
+<div id="status"></div>
+
+<footer>
+  <div class="inputRow">
+    <button id="micBtn" class="roundBtn" type="button" title="話す">🎙️</button>
+    <textarea id="input" rows="1" placeholder="話しかけてみよう" autocomplete="off" maxlength="400"></textarea>
+    <button id="sendBtn" class="roundBtn" type="button" title="送る">➤</button>
+  </div>
+  <div class="controls">
+    <button id="handsFreeBtn" class="chip" type="button">🔁 ハンズフリー：オフ</button>
+    <button id="voiceModeBtn" class="chip" type="button">🔊 読み上げ：オン</button>
+    <button id="hangupBtn" type="button">通話を終える</button>
+  </div>
+</footer>
+
+<div id="startOverlay">
+  <h2 id="startTitle">その場限りの通話</h2>
+  <p id="startLead">
+    分身と、電話みたいに短く言葉を交わすモードです。<br />
+    ここでの会話は<strong>記録されず</strong>、分身の性格にも影響しません。
+  </p>
+  <button id="startBtn" type="button">通話をはじめる</button>
+  <div class="note">マイクを使うと、声でも話しかけられます</div>
+</div>
+
+<script>
+  const params = new URLSearchParams(location.search);
+  const cid = params.get("cid");
+
+  const nameEl = document.getElementById("charName");
+  const timerEl = document.getElementById("timer");
+  const avatarEl = document.getElementById("avatar");
+  const avatarImg = document.getElementById("avatarImg");
+  const transcriptEl = document.getElementById("transcript");
+  const statusEl = document.getElementById("status");
+  const inputEl = document.getElementById("input");
+  const sendBtn = document.getElementById("sendBtn");
+  const micBtn = document.getElementById("micBtn");
+  const handsFreeBtn = document.getElementById("handsFreeBtn");
+  const voiceModeBtn = document.getElementById("voiceModeBtn");
+  const hangupBtn = document.getElementById("hangupBtn");
+  const startOverlay = document.getElementById("startOverlay");
+  const startBtn = document.getElementById("startBtn");
+  const startTitle = document.getElementById("startTitle");
+  const startLead = document.getElementById("startLead");
+
+  // ---- 通話中の状態。すべてこのページのメモリ上にしか存在しない ----
+  // localStorageにもサーバーにも書かない。リロードすれば跡形もなく消える。
+  let history = [];            // [{role:"user"|"character", text}]
+  let personality = null;
+  let characterName = "分身";
+  let busy = false;
+  let handsFree = false;
+  let speakEnabled = true;
+  let startedAt = 0;
+  let timerId = null;
+
+  function setStatus(text) {
+    statusEl.textContent = text || "";
+  }
+
+  function addLine(text, kind) {
+    const el = document.createElement("div");
+    el.className = `line ${kind}`;
+    el.textContent = text;
+    transcriptEl.appendChild(el);
+    transcriptEl.scrollTop = transcriptEl.scrollHeight;
+    return el;
+  }
+
+  function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+
+  // ---- 読み上げ（ブラウザ標準）----
+  const speechSupported = typeof speechSynthesis !== "undefined" && typeof SpeechSynthesisUtterance !== "undefined";
+  let japaneseVoices = [];
+  function loadVoices() {
+    if (!speechSupported) return;
+    try {
+      japaneseVoices = speechSynthesis.getVoices().filter((v) => (v.lang || "").toLowerCase().startsWith("ja"));
+    } catch (e) { /* 取得できなくても既定の声で読み上げる */ }
+  }
+  if (speechSupported) {
+    loadVoices();
+    speechSynthesis.onvoiceschanged = loadVoices;
+  }
+
+  /** 読み上げる。終わったらresolveするので、ハンズフリーの再開待ちに使える。 */
+  function speak(text) {
+    return new Promise((resolve) => {
+      if (!speakEnabled || !speechSupported || !text) return resolve();
+      try {
+        speechSynthesis.cancel();
+        const utter = new SpeechSynthesisUtterance(text);
+        utter.lang = "ja-JP";
+        if (japaneseVoices.length > 0) utter.voice = japaneseVoices[0];
+        const p = personality || {};
+        utter.rate = clamp(0.85 + ((p.cheerfulness ?? 50) / 100) * 0.35, 0.8, 1.3);
+        utter.pitch = clamp(0.85 + ((p.warmth ?? 50) / 100) * 0.35, 0.8, 1.3);
+        utter.onend = () => resolve();
+        utter.onerror = () => resolve();
+        avatarEl.classList.add("speaking");
+        speechSynthesis.speak(utter);
+      } catch (e) {
+        resolve();
+      }
+    }).finally(() => avatarEl.classList.remove("speaking"));
+  }
+
+  // ---- 音声入力 ----
+  // 第一候補はブラウザ標準の音声認識（無料・低遅延）。
+  // 非対応や失敗時は、録音してサーバー（Workers AI Whisper）へ送るフォールバックに切り替える。
+  const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let recognition = null;
+  let recorder = null;
+  let recordedChunks = [];
+  let listening = false;
+  let cancelledByUser = false;
+
+  function setListening(on) {
+    listening = on;
+    micBtn.classList.toggle("recording", on);
+    avatarEl.classList.toggle("listening", on);
+    micBtn.textContent = on ? "■" : "🎙️";
+  }
+
+  async function startListening() {
+    if (busy || listening) return;
+    cancelledByUser = false;
+
+    if (SpeechRecognitionCtor) {
+      try {
+        recognition = new SpeechRecognitionCtor();
+        recognition.lang = "ja-JP";
+        recognition.interimResults = true;
+        recognition.continuous = false;
+        let finalText = "";
+
+        recognition.onresult = (event) => {
+          let interim = "";
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const result = event.results[i];
+            if (result.isFinal) finalText += result[0].transcript;
+            else interim += result[0].transcript;
+          }
+          // 認識中の文字をそのまま入力欄に出す（Jiffcyの「入力が見えている」感覚に寄せる）
+          inputEl.value = (finalText + interim).trim();
+        };
+        recognition.onerror = (event) => {
+          setListening(false);
+          if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+            setStatus("マイクの使用が許可されていません。文字で話しかけてね");
+            micBtn.disabled = true;
+            return;
+          }
+          // 標準APIが不安定な環境（iOS等）では録音方式へ切り替える
+          if (!cancelledByUser) startRecordingFallback();
+        };
+        recognition.onend = () => {
+          setListening(false);
+          const text = inputEl.value.trim();
+          if (!cancelledByUser && text) sendTurn(text);
+        };
+
+        setListening(true);
+        setStatus("聞いています…");
+        recognition.start();
+        return;
+      } catch (e) {
+        recognition = null;
+      }
+    }
+    startRecordingFallback();
+  }
+
+  /** 標準APIが使えないときの録音フォールバック。停止するとサーバーで文字起こしする。 */
+  async function startRecordingFallback() {
+    if (!navigator.mediaDevices || typeof MediaRecorder === "undefined") {
+      setStatus("この端末では音声入力が使えません。文字で話しかけてね");
+      micBtn.disabled = true;
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recordedChunks = [];
+      recorder = new MediaRecorder(stream);
+      recorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) recordedChunks.push(e.data); };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        setListening(false);
+        if (cancelledByUser || recordedChunks.length === 0) return;
+        const blob = new Blob(recordedChunks, { type: recorder.mimeType || "audio/webm" });
+        // あまりに短い録音はほぼ無音なので、AIを呼ばずに捨てる（コスト対策）
+        if (blob.size < 2000) { setStatus("うまく聞き取れませんでした"); return; }
+        await transcribeAndSend(blob);
+      };
+      setListening(true);
+      setStatus("録音中… もう一度押すと送ります");
+      recorder.start();
+    } catch (e) {
+      setStatus("マイクを使えませんでした。文字で話しかけてね");
+      micBtn.disabled = true;
+    }
+  }
+
+  function stopListening(cancel) {
+    cancelledByUser = Boolean(cancel);
+    if (recognition) { try { recognition.stop(); } catch (e) {} }
+    if (recorder && recorder.state === "recording") { try { recorder.stop(); } catch (e) {} }
+    setListening(false);
+  }
+
+  async function transcribeAndSend(blob) {
+    setStatus("聞き取っています…");
+    try {
+      const res = await fetch("/api/voice/transcribe", {
+        method: "POST",
+        headers: { "content-type": blob.type || "audio/webm" },
+        body: blob,
+      });
+      const data = await res.json();
+      if (data.text) {
+        inputEl.value = data.text;
+        sendTurn(data.text);
+      } else {
+        setStatus(data.error || "うまく聞き取れませんでした");
+      }
+    } catch (e) {
+      setStatus("聞き取りに失敗しました");
+    }
+  }
+
+  // ---- 通話の1ターン ----
+  async function sendTurn(text) {
+    const message = (text || "").trim();
+    if (!message || busy || !cid) return;
+
+    busy = true;
+    sendBtn.disabled = true;
+    inputEl.value = "";
+    setStatus("");
+    addLine(message, "me");
+    history.push({ role: "user", text: message });
+
+    const bubble = addLine("", "them");
+    bubble.classList.add("streaming");
+    let full = "";
+
+    try {
+      const res = await fetch("/api/call/stream", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ characterId: cid, message, history: history.slice(0, -1) }),
+      });
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let errored = false;
+
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith("data:")) continue;
+          let payload;
+          try { payload = JSON.parse(trimmed.slice(5).trim()); } catch (e) { continue; }
+          if (payload.error) {
+            errored = true;
+            bubble.textContent = payload.error;
+            bubble.classList.remove("streaming");
+          } else if (payload.delta) {
+            full += payload.delta;
+            bubble.textContent = full;
+            transcriptEl.scrollTop = transcriptEl.scrollHeight;
+          }
+        }
+      }
+
+      bubble.classList.remove("streaming");
+      if (!errored && full) {
+        history.push({ role: "character", text: full });
+        await speak(full);
+      }
+      if (errored) {
+        // 失敗したターンは履歴から外す（次の送信で同じ文脈を送り直せるようにする）
+        history.pop();
+      }
+    } catch (e) {
+      bubble.textContent = "（通信がうまくいかなかったみたい）";
+      bubble.classList.remove("streaming");
+      history.pop();
+    } finally {
+      busy = false;
+      sendBtn.disabled = false;
+      // ハンズフリー中は、読み上げが終わったら自動でまた聞き取りに戻る
+      if (handsFree && !listening) {
+        setTimeout(() => { if (handsFree && !busy) startListening(); }, 350);
+      }
+    }
+  }
+
+  // ---- 画面まわり ----
+  function startTimer() {
+    startedAt = Date.now();
+    timerId = setInterval(() => {
+      const sec = Math.floor((Date.now() - startedAt) / 1000);
+      const mm = String(Math.floor(sec / 60)).padStart(2, "0");
+      const ss = String(sec % 60).padStart(2, "0");
+      timerEl.textContent = `${mm}:${ss}`;
+    }, 1000);
+  }
+
+  /**
+   * 通話を終える。
+   * 「その場限り」の約束を守るため、画面上の文字も履歴の配列もここで完全に捨てる。
+   * 戻るボタンで復元されないよう、履歴を置き換えて遷移する。
+   */
+  function hangUp() {
+    handsFree = false;
+    stopListening(true);
+    if (speechSupported) { try { speechSynthesis.cancel(); } catch (e) {} }
+    if (timerId) clearInterval(timerId);
+    history = [];
+    transcriptEl.innerHTML = "";
+    inputEl.value = "";
+    location.replace(cid ? `/chat?cid=${encodeURIComponent(cid)}` : "/home");
+  }
+
+  async function loadCharacter() {
+    if (!cid) {
+      startTitle.textContent = "分身が指定されていません";
+      startLead.textContent = "NFCタグから開き直してみてください。";
+      startBtn.disabled = true;
+      return;
+    }
+    try {
+      const res = await fetch(`/api/character?cid=${encodeURIComponent(cid)}`);
+      if (!res.ok) {
+        startTitle.textContent = "この分身は見つかりませんでした";
+        startLead.textContent = "削除されたか、URLが違うのかもしれません。";
+        startBtn.disabled = true;
+        return;
+      }
+      const data = await res.json();
+      characterName = data.name || "分身";
+      personality = data.personality || null;
+      nameEl.textContent = characterName;
+      startTitle.textContent = `${characterName}と、その場限りの通話`;
+      if (data.species && data.color) {
+        avatarImg.src = `/characters/${data.species}_${data.color}.png`;
+        avatarImg.alt = characterName;
+        avatarImg.hidden = false;
+      }
+    } catch (e) {
+      startTitle.textContent = "うまく読み込めませんでした";
+      startBtn.disabled = true;
+    }
+  }
+
+  startBtn.addEventListener("click", async () => {
+    startOverlay.hidden = true;
+    startTimer();
+    // 常時表示のバナーと重複しない情報を足す（性格に影響しないことは、ここでしか伝えていない）
+    addLine("この通話は記録されず、分身の性格にも影響しません", "sys");
+
+    // iOSは「ユーザー操作を起点にしない音声再生」を禁止している。
+    // 開始ボタンのタップという確実な操作の中で、無音を1回再生して解禁しておく。
+    if (speechSupported) {
+      try {
+        const unlock = new SpeechSynthesisUtterance(" ");
+        unlock.volume = 0;
+        speechSynthesis.speak(unlock);
+      } catch (e) {}
+    }
+
+    const greeting = `もしもし、${characterName}だよ。どうしたの？`;
+    addLine(greeting, "them");
+    history.push({ role: "character", text: greeting });
+    await speak(greeting);
+    if (handsFree) startListening();
+  });
+
+  sendBtn.addEventListener("click", () => sendTurn(inputEl.value));
+  inputEl.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendTurn(inputEl.value);
+    }
+  });
+
+  micBtn.addEventListener("click", () => {
+    if (listening) stopListening(false);
+    else startListening();
+  });
+
+  handsFreeBtn.addEventListener("click", () => {
+    handsFree = !handsFree;
+    handsFreeBtn.classList.toggle("on", handsFree);
+    handsFreeBtn.textContent = handsFree ? "🔁 ハンズフリー：オン" : "🔁 ハンズフリー：オフ";
+    if (handsFree && !busy && !listening) startListening();
+    if (!handsFree) stopListening(true);
+  });
+
+  voiceModeBtn.addEventListener("click", () => {
+    speakEnabled = !speakEnabled;
+    voiceModeBtn.classList.toggle("on", speakEnabled);
+    voiceModeBtn.textContent = speakEnabled ? "🔊 読み上げ：オン" : "🔇 読み上げ：オフ";
+    if (!speakEnabled && speechSupported) { try { speechSynthesis.cancel(); } catch (e) {} }
+  });
+  voiceModeBtn.classList.add("on");
+
+  hangupBtn.addEventListener("click", hangUp);
+
+  // 離脱時に確実に音声を止める（読み上げが残ったまま前の画面に戻るのを防ぐ）
+  window.addEventListener("pagehide", () => {
+    if (speechSupported) { try { speechSynthesis.cancel(); } catch (e) {} }
+    stopListening(true);
+  });
+
+  loadCharacter();
+</script>
+
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    });
+  }
+</script>
+</body>
+</html>

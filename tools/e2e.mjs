@@ -119,6 +119,74 @@ await page.goto(`${BASE}/t/${tagId}`, { waitUntil: "networkidle" });
 const newCid = new URL(page.url()).searchParams.get("cid");
 check("再タップで新しい分身が発行される", Boolean(newCid) && newCid !== cid);
 
+console.log("\n[6] 自己診断とデバッグ用の版数");
+const health = await (await fetch(`${BASE}/api/health`)).json();
+check("D1のテーブルまで確認できている", health.checks?.d1?.ok === true, JSON.stringify(health.checks?.d1));
+check("版数が返る", Boolean(health.version));
+
+console.log("\n[7] その場限りの通話");
+await page.goto(`${BASE}/call?cid=${newCid}`, { waitUntil: "networkidle" });
+await page.waitForTimeout(500);
+check("開始前に「保存されない」ことが明示されている", (await page.textContent("#privacyNote")).includes("保存されません"));
+
+const callLayout = await page.evaluate(() => ({
+  overflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+}));
+check("通話画面が横に溢れていない", callLayout.overflowX === false);
+
+// 通話開始 → 1ターン送る（AIはローカルでも実際に呼ばれるため、応答有無ではなく画面の挙動を見る）
+await page.click("#startBtn");
+await page.waitForTimeout(400);
+check("開始すると通話画面に切り替わる", await page.isHidden("#startOverlay"));
+const openingLine = await page.textContent("#transcript");
+check(
+  "開始時に「記録されない・性格に影響しない」ことが会話欄にも出る",
+  openingLine.includes("記録され") && openingLine.includes("性格"),
+  openingLine.slice(0, 60)
+);
+
+await page.fill("#input", "テスト発話です");
+await page.click("#sendBtn");
+await page.waitForTimeout(1200);
+const transcript = await page.textContent("#transcript");
+check("送った言葉が画面に出る", transcript.includes("テスト発話です"));
+
+// 通話を終えたら、画面にも履歴にも何も残っていないこと
+await page.click("#hangupBtn");
+await page.waitForTimeout(900);
+check("通話を終えるとチャット画面へ戻る", new URL(page.url()).pathname === "/chat");
+const leftovers = await page.evaluate(() => {
+  const keys = [];
+  for (let i = 0; i < localStorage.length; i++) keys.push(localStorage.key(i));
+  // 通話の内容がlocalStorageに保存されていないこと（キー名に call が現れないこと）
+  return keys.filter((k) => k.toLowerCase().includes("call"));
+});
+check("通話の内容が端末に保存されていない", leftovers.length === 0, leftovers.join(","));
+
+console.log("\n[8] 引き継ぎコード");
+const issueRes = await fetch(`${BASE}/api/character/transfer/issue`, {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ characterId: newCid, token: await page.evaluate((c) => localStorage.getItem(`sodatsukake_token_${c}`), newCid) }),
+});
+const issued = await issueRes.json();
+check("持ち主なら引き継ぎコードを発行できる", Boolean(issued.code), JSON.stringify(issued));
+
+const claimRes = await fetch(`${BASE}/api/character/transfer/claim`, {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ code: issued.code }),
+});
+const claimed = await claimRes.json();
+check("コードで所有権を引き継げる", claimed.characterId === newCid && Boolean(claimed.ownerToken));
+
+const reuse = await fetch(`${BASE}/api/character/transfer/claim`, {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ code: issued.code }),
+});
+check("同じコードは二度使えない", reuse.status === 410);
+
 check("JavaScriptエラーが出ていない", pageErrors.length === 0, pageErrors.join(" / "));
 
 await browser.close();

@@ -37,7 +37,7 @@ binding = "ASSETS"
 # 既定では静的ファイルはWorkerに届く前にアセット層が直接返してしまい、
 # src/index.ts の HTMLRewriter（OGPのURL絶対化）が動かないため。
 # 画像や3Dモデルまで対象にするとリクエストごとにWorker呼び出しが増えるので、ページのパスだけに限定する。
-run_worker_first = ["/", "/home", "/chat", "/summon", "/friends", "/history", "/offline"]
+run_worker_first = ["/", "/home", "/chat", "/call", "/summon", "/friends", "/history", "/offline"]
 
 # --- Workers AI（序盤はSLMで運用） ---
 [ai]
@@ -71,3 +71,52 @@ new_sqlite_classes = ["CharacterState"]
 # 頻度を上げすぎるとAI呼び出しコストが増えるため、まずは控えめな回数から開始し、様子を見て調整してください。
 [triggers]
 crons = ["0 3,12 * * *"]
+
+# ============================================================
+# ステージング環境
+# ============================================================
+# 本番のD1に混ざると、テストで作った分身が「お散歩」の相手候補として実ユーザーに出てしまう。
+# 検証はこちらに投げること。
+#
+# 初回だけ、専用のD1とVectorizeインデックスを作る必要がある:
+#   npx wrangler d1 create waketama-staging-db
+#     → 出力された database_id を下の REPLACE_WITH_STAGING_D1_ID に貼る
+#   npx wrangler d1 migrations apply waketama-staging-db --remote --env staging
+#   npx wrangler vectorize create waketama-staging-memory --dimensions=1024 --metric=cosine
+#   npx wrangler vectorize create-metadata-index waketama-staging-memory --property-name=characterId --type=string
+#
+# デプロイ: npm run deploy:staging
+#
+# 自動お散歩(cron)は意図的に設定していない。検証環境で勝手にAIコストが発生しないようにするため、
+# ステージングでの動作確認は手動の「お散歩に出す」ボタンから行う。
+[env.staging]
+name = "waketama-staging"
+
+[env.staging.observability]
+enabled = true
+head_sampling_rate = 1
+
+[env.staging.assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = ["/", "/home", "/chat", "/call", "/summon", "/friends", "/history", "/offline"]
+
+[env.staging.ai]
+binding = "AI"
+
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "waketama-staging-db"
+database_id = "REPLACE_WITH_STAGING_D1_ID"
+
+[[env.staging.vectorize]]
+binding = "MEMORY_INDEX"
+index_name = "waketama-staging-memory"
+
+[[env.staging.durable_objects.bindings]]
+name = "CHARACTER"
+class_name = "CharacterState"
+
+[[env.staging.migrations]]
+tag = "v1"
+new_sqlite_classes = ["CharacterState"]

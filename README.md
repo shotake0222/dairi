@@ -76,19 +76,46 @@ NFCタグへのURL書き込みには、iPhoneなら「NFC TagWriter」、Android
 
 ```
 src/
-  index.ts                    # ルーティング（/t/:tagId, /api/chat, /api/character, 静的配信）
+  index.ts                    # ルーティング（/t/:tagId, /api/*, 静的配信、OGPのURL絶対化）
+  call.ts                     # その場限りの通話（何も保存しない会話経路・SSEストリーミング）
+  voice.ts                    # 音声の文字起こし（Whisper）と読み上げ（MeloTTS）
+  transfer.ts                 # 引き継ぎコード（端末をまたいだ所有権の移動）
+  health.ts                   # 自己診断（D1・Vectorizeの疎通と版数）
+  lib/
+    log.ts                    # 構造化ログ（本文は出さない。requestIdで串刺しに追える）
+    rateLimit.ts              # AIコストの上限（保存に依存しない回数制限）
   durable-objects/
     characterState.ts         # キャラクター1体分の状態管理（性格・記憶・成長段階）
   ai/
     personality.ts            # 性格パラメータの定義と更新ロジック（育成の核）
     signalExtractor.ts        # ユーザーのメッセージから「育て方の傾向」を抽出する簡易ヒューリスティック
     promptBuilder.ts          # 性格パラメータ→SLMへのシステムプロンプト生成
+    memory.ts                 # 長期記憶（Vectorize）の保存・検索・書き出し・削除
   db/schema.sql               # D1スキーマ（参考。実際の適用はmigrations/を使用）
-migrations/0001_init.sql      # D1マイグレーション
+migrations/                   # D1マイグレーション（nfc_tags / character_directory / transfer_codes）
 public/
   summon.html                 # NFCタップ直後のAR召喚演出ページ
   chat.html                   # テキストチャットページ
+  call.html                   # その場限りの通話ページ（記録が残らないモード）
+  home.html                   # 分身一覧
+  friends.html                # 出会いの図鑑
+  history.html                # 成長グラフ
+  offline.html                # オフライン時の案内（PWA）
+tools/
+  e2e.mjs                     # ブラウザ実機での通しテスト
+  make_brand_assets.py        # PWAアイコン・OGP画像の生成
 ```
+
+## 主なAPI
+
+| エンドポイント | 用途 |
+| --- | --- |
+| `POST /api/chat` | 通常の会話（性格が育ち、記憶に残る） |
+| `POST /api/call/stream` | その場限りの通話。**何も保存しない**。応答はSSEで流れる |
+| `POST /api/voice/transcribe` | 音声の文字起こし（ブラウザ標準の音声認識が使えないとき用） |
+| `POST /api/voice/speak` | 読み上げ音声の生成（既定はブラウザ標準を使うので任意） |
+| `POST /api/character/transfer/issue` / `claim` | 引き継ぎコードの発行・使用 |
+| `GET /api/health` | D1・Vectorizeの疎通と版数（既定ではAIを呼ばない） |
 
 ## テスト
 
@@ -122,6 +149,12 @@ npm run test:e2e    # Playwrightで実際に画面を操作して検証（要 np
   最初から拡張子なしを指すようにしてあります（画面遷移ごとの余計な往復を避けるため）。
 - **localStorageのキー名 `sodatsukake_*` は変更しないこと**: 持ち主トークンと分身一覧の保存先です。
   サービス名を改名した際もあえて据え置きました。変えると既存ユーザーが自分の分身の所有権を失います。
+- **その場限りモードに保存処理を足さないこと**: `src/call.ts` は「何も書かない」ことが機能の価値です。
+  通常の `chat()` と入口を分けてあるのは、条件分岐で保存を足し忘れる事故を防ぐためです。
+  `src/__tests__/call.test.ts` が、会話前後でDurable Objectのストレージが1バイトも変わらないことを
+  検証しています。ここが落ちたら、機能の売り自体が壊れていると考えてください。
+- **レート制限はストレージに書かない**: `src/lib/rateLimit.ts` はDurable Objectのインスタンスメモリで
+  数えます。保存に依存する方式に戻すと、その場限りモードで制限が効かなくなります。
 
 ## 今後の拡張ポイント（優先度順の目安）
 

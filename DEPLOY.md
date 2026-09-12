@@ -28,8 +28,12 @@ npx wrangler d1 migrations list nfc-companion-db --remote   # 未適用のもの
 npm run db:migrate:remote                                    # 適用
 ```
 
-`nfc_tags` と `character_directory` が作られます。未適用のままデプロイすると、
-NFCタップ時に「D1_ERROR: no such table: nfc_tags」で500エラーになります。
+`nfc_tags` / `character_directory` / `transfer_codes`（引き継ぎコード用）が作られます。
+未適用のままデプロイすると、NFCタップ時に「D1_ERROR: no such table: nfc_tags」で500エラーになります。
+
+**マイグレーションを追加したときは毎回これを実行してください。**
+適用済みかどうかは、デプロイ後に `https://<ドメイン>/api/health` を開けば一目で分かります
+（`checks.d1.ok` が false ならテーブルが足りていません）。
 
 ### 0-3. Vectorizeインデックスを作成（長期記憶用）
 
@@ -53,8 +57,13 @@ npx wrangler vectorize create-metadata-index nfc-companion-memory --property-nam
 
 ```bash
 npm run typecheck && npm test        # 壊れていないことを確認
-npx wrangler deploy
+npm run deploy                       # ← npx wrangler deploy ではなくこちらを使う
 ```
+
+`npm run deploy` を使うのは、gitのコミットハッシュを版数として埋め込むためです。
+実機で「直したはずのバグが直っていない」ときに、端末が掴んでいる版をヘッダ
+（`x-waketama-version`）と `/api/health` から確認できます。PWAはService Workerや
+ブラウザキャッシュが絡むので、これが無いと切り分けができません。
 
 表示される `https://sodatsukake.<あなたのサブドメイン>.workers.dev` を開き、
 `/t/test-001` にアクセスして「召喚→会話」まで通ることを確認します。
@@ -114,7 +123,7 @@ routes = [
 そしてデプロイします。
 
 ```bash
-npx wrangler deploy
+npm run deploy
 ```
 
 `custom_domain = true` にしてあるので、DNSレコードとTLS証明書はCloudflareが自動で用意します
@@ -127,7 +136,11 @@ npx wrangler deploy
 ```bash
 curl -sI https://waketama.com/            # 302 で /home に飛ぶ
 curl -s https://waketama.com/home | grep 'og:image'   # https://waketama.com/... の絶対URLになっている
+curl -s https://waketama.com/api/health | head -30    # D1・Vectorizeの疎通と版数
 ```
+
+`/api/health` は既定ではWorkers AIを呼びません（監視から叩かれても課金させないため）。
+AIまで含めて確認したいときだけ `?deep=1` を付けてください（1回だけAIを呼びます）。
 
 ブラウザでも以下を確認してください。
 
@@ -152,11 +165,43 @@ https://waketama.com/t/<タグごとに固有のID>
 
 ---
 
+## ステージング環境（本番を汚さずに検証する）
+
+本番のD1に混ざると、テストで作った分身が「お散歩」の相手候補として実ユーザーに出てしまいます。
+検証はステージングへ。初回だけ、専用のD1とVectorizeを作ります。
+
+```bash
+npx wrangler d1 create waketama-staging-db
+# → 出力された database_id を wrangler.toml の REPLACE_WITH_STAGING_D1_ID に貼る
+npx wrangler d1 migrations apply waketama-staging-db --remote --env staging
+npx wrangler vectorize create waketama-staging-memory --dimensions=1024 --metric=cosine
+npx wrangler vectorize create-metadata-index waketama-staging-memory --property-name=characterId --type=string
+
+npm run deploy:staging
+```
+
+ステージングには自動お散歩（cron）を意図的に設定していません。検証環境が勝手にAIコストを
+使わないようにするためで、動作確認は手動の「お散歩に出す」から行ってください。
+
+## 本番のログを見る
+
+`wrangler.toml` で観測性を有効にしてあるので、Cloudflareダッシュボードから過去のリクエストと
+ログを検索できます。実機を触りながらリアルタイムで追う場合はこちら。
+
+```bash
+npx wrangler tail --format pretty
+npx wrangler tail --status error            # エラーだけ
+npx wrangler tail --search "call.rejected"  # 特定のイベントだけ
+```
+
+ログはJSON1行で出しており、`requestId` で Worker→Durable Object→AI を串刺しで追えます。
+**会話の本文はログに出していません**（識別子・所要時間・成否のみ）。
+
 ## 更新のたびに行うこと
 
 ```bash
 npm run typecheck && npm test   # 壊れていないか確認
-npx wrangler deploy             # 反映
+npm run deploy                  # 反映（版数の埋め込み込み）
 ```
 
 マイグレーションを追加したときだけ、`npm run db:migrate:remote` も忘れずに実行してください。

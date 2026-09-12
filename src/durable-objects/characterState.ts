@@ -9,6 +9,7 @@ import { buildSystemPrompt } from "../ai/promptBuilder";
 import { deriveSpeechStyle } from "../ai/speechStyle";
 import { retrieveRelevantMemories, storeMemory, exportAllMemories, importMemories, deleteAllMemories, ExportedMemory } from "../ai/memory";
 import { buildMeetingPrompt } from "../ai/promptBuilder";
+import { RateLimiter } from "../lib/rateLimit";
 
 export interface Env {
   AI: Ai;
@@ -137,7 +138,6 @@ function isOwner(data: CharacterData, providedToken?: string): boolean {
 // 悪用・コスト対策の簡易ガード。厳密なセキュリティ機構ではなく、
 // あくまでMVP段階での過度な連投・長文投稿を抑える最小限の防御。
 const MAX_MESSAGE_LENGTH = 400;
-const MIN_MESSAGE_INTERVAL_MS = 1200;
 
 // 性格変遷グラフ用の履歴は無制限に貯めるとストレージを圧迫するため上限を設け、
 // 上限を超えたら間引く（＝古いほど記録の密度が粗くなっていく、成長アルバムのような扱い）。
@@ -151,7 +151,7 @@ function randomColor(): ColorKey {
   return COLOR_KEYS[Math.floor(Math.random() * COLOR_KEYS.length)];
 }
 
-const CHAT_MODEL = "@cf/meta/llama-3.2-3b-instruct"; // 序盤運用の軽量モデル。品質次第で差し替え可能
+export const CHAT_MODEL = "@cf/meta/llama-3.2-3b-instruct"; // 序盤運用の軽量モデル。品質次第で差し替え可能
 
 /**
  * キャラクター1体 = Durable Object 1インスタンス。
@@ -159,6 +159,73 @@ const CHAT_MODEL = "@cf/meta/llama-3.2-3b-instruct"; // 序盤運用の軽量モ
  * SLM自体には状態を持たせない（＝モデルを差し替えても育成データは失われない）設計。
  */
 export class CharacterState extends DurableObject<Env> {
+  /**
+   * AI呼び出しの回数制限。**ストレージではなくインスタンスメモリに置いている**。
+   * 1キャラクター=1インスタンスなので、どこからアクセスされても同じ場所で数えられる一方、
+   * 何も永続化しないため「その場限りモード」の“何も残さない”という約束を壊さない。
+   * DOが退避されればカウンタは消えるが、それは十分な時間アクセスが無かったということなので問題ない。
+   */
+  private readonly rateLimiter = new RateLimiter();
+
+  /**
+   * その場限りモード用に、書き込みを一切せずに必要な情報だけを返す。
+   * 通常のchat()は性格更新・履歴追加・記憶保存まで行うため、あちらを条件分岐で使い回すと
+   * 将来の変更で「書かないはずが書いてしまう」事故が起きる。用途ごとに入口を分けている。
+   *
+   * 併せてレート制限の判定もここで行う（判定自体はメモリ上の操作なので書き込みは発生しない）。
+   */
+  async beginEphemeralTurn(userMessage: string): Promise<
+    | { ok: true; name: string; personality: PersonalityTraits; growthStage: string; species: SpeciesKey; color: ColorKey; memorySummary: string }
+    | { ok: false; error: string }
+  > {
+    const data = await this.ctx.storage.get<CharacterData>("data");
+    if (!data) return { ok: false, error: "not found" };
+
+    const trimmed = userMessage.trim();
+    if (!trimmed) return { ok: false, error: "メッセージを入力してね" };
+    if (trimmed.length > MAX_MESSAGE_LENGTH) {
+      return { ok: false, error: `メッセージが長すぎます（${MAX_MESSAGE_LENGTH}文字以内にしてね）` };
+    }
+
+    const verdict = this.rateLimiter.check();
+    if (!verdict.allowed) return { ok: false, error: verdict.message };
+
+    return {
+      ok: true,
+      name: data.name,
+      personality: data.personality,
+      growthStage: data.growthStage,
+      species: data.species,
+      color: data.color,
+      memorySummary: data.memorySummary,
+    };
+  }
+
+  /**
+   * 持ち主かどうかだけを判定する（引き継ぎコードの発行前チェック用）。
+   * 所有権の判定ロジックをDOの外に複製しないために用意している。
+   */
+  async verifyOwner(ownerToken?: string): Promise<boolean> {
+    const data = await this.ctx.storage.get<CharacterData>("data");
+    if (!data) return false;
+    return isOwner(data, ownerToken);
+  }
+
+  /**
+   * 持ち主トークンを差し替える（引き継ぎの実行）。
+   *
+   * ここが呼ばれる時点で、引き継ぎコードの正当性・有効期限・未使用であることは
+   * 呼び出し元（src/transfer.ts）が確認済み。よってここでは旧トークンを要求しない。
+   * 差し替えると古い端末のトークンは通らなくなる＝所有権が移る、という意味になる。
+   */
+  async replaceOwnerToken(newOwnerToken: string): Promise<{ ok: true; name: string } | { ok: false; error: string }> {
+    const data = await this.ctx.storage.get<CharacterData>("data");
+    if (!data) return { ok: false, error: "not found" };
+    data.ownerToken = newOwnerToken;
+    await this.ctx.storage.put("data", data);
+    return { ok: true, name: data.name };
+  }
+
   async init(name: string): Promise<CharacterData> {
     const existing = await this.ctx.storage.get<CharacterData>("data");
     if (existing) return existing;
@@ -253,9 +320,14 @@ export class CharacterState extends DurableObject<Env> {
     if (trimmed.length > MAX_MESSAGE_LENGTH) {
       return { ...this.toSummary(data), error: `メッセージが長すぎます（${MAX_MESSAGE_LENGTH}文字以内にしてね）` };
     }
-    if (data.lastMessageAt && now - data.lastMessageAt < MIN_MESSAGE_INTERVAL_MS) {
-      return { ...this.toSummary(data), error: "ちょっと待って、少し間を空けてから話しかけてね" };
+    // 連投・使いすぎのガード。以前は lastMessageAt の保存で判定していたが、
+    // 「その場限りモード」と同じ判定器（インスタンスメモリ上のカウンタ）に統一した。
+    // 1分/1日あたりの上限も見るので、AI呼び出しコストの青天井を防げる。
+    const verdict = this.rateLimiter.check(now);
+    if (!verdict.allowed) {
+      return { ...this.toSummary(data), error: verdict.message };
     }
+    // 表示や日次レポートで「最後に話した時刻」を使っているため、記録自体は残す
     data.lastMessageAt = now;
 
     // characterId: このDOインスタンス自身の識別子（env.CHARACTER.getByName(characterId)で

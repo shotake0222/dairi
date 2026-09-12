@@ -1,6 +1,11 @@
 import { CharacterState, SPECIES_LABELS, MEETING_COOLDOWN_MS, MeetingLogEntry, SpeciesKey, ColorKey, PersonalityPackageV1 } from "./durable-objects/characterState";
 import { deriveSpeechStyle } from "./ai/speechStyle";
 import { PersonalityTraits, TRAIT_KEYS } from "./ai/personality";
+import { handleCallStream } from "./call";
+import { handleHealth } from "./health";
+import { handleTranscribe, handleSpeak } from "./voice";
+import { issueTransferCode, claimTransferCode } from "./transfer";
+import { LogContext, newRequestId } from "./lib/log";
 
 export { CharacterState };
 
@@ -10,6 +15,18 @@ export interface Env {
   MEMORY_INDEX: VectorizeIndex;
   CHARACTER: DurableObjectNamespace<CharacterState>;
   ASSETS: Fetcher;
+  /** デプロイ時に注入される版数（npm run deploy が git のコミットハッシュを渡す）。 */
+  APP_VERSION?: string;
+  BUILT_AT?: string;
+}
+
+/**
+ * 実機デバッグ用に、全レスポンスへ版数を載せる。
+ * PWA化した以上「いま端末が掴んでいるのはどの版か」が分からないと、
+ * Service Workerやキャッシュが絡んだ不具合の切り分けができなくなる。
+ */
+function versionHeaders(env: Env): Record<string, string> {
+  return { "x-waketama-version": env.APP_VERSION || "dev" };
 }
 
 function json(data: unknown, init?: ResponseInit): Response {
@@ -22,12 +39,37 @@ function json(data: unknown, init?: ResponseInit): Response {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+    const log: LogContext = { requestId: newRequestId(), route: url.pathname };
 
     // --- トップページ ---
     // public/ に index.html を置いていないため、素のドメインを開くと404になってしまう。
     // ドメイン直打ちや共有リンクからの流入は「分身一覧」に着地させる。
     if (url.pathname === "/") {
       return Response.redirect(new URL("/home", url.origin).toString(), 302);
+    }
+
+    // --- 死活・自己診断 ---
+    // 「記憶が保存されていない気がする」類の切り分けを1秒で終わらせるためのエンドポイント。
+    // 既定ではAIを呼ばない（呼ぶと課金が発生するため）。深い確認は ?deep=1 で明示的に行う。
+    if (url.pathname === "/api/health") {
+      return handleHealth(env, url, log);
+    }
+
+    // --- その場限りの通話（何も保存しないモード） ---
+    // 応答はSSEで流す。詳しい設計方針は src/call.ts の冒頭コメントを参照。
+    if (url.pathname === "/api/call/stream" && request.method === "POST") {
+      const body = await request.json<Record<string, unknown>>();
+      return handleCallStream(env, body, { ...log, characterId: typeof body.characterId === "string" ? body.characterId : undefined });
+    }
+
+    // --- 音声入力の文字起こし ---
+    if (url.pathname === "/api/voice/transcribe" && request.method === "POST") {
+      return handleTranscribe(env, request, log);
+    }
+
+    // --- 音声合成（読み上げ）。ブラウザ標準の音声より自然な声を使いたいとき用 ---
+    if (url.pathname === "/api/voice/speak" && request.method === "POST") {
+      return handleSpeak(env, request, log);
     }
 
     // --- NFCタグ読み取り: /t/:tagId ---
@@ -196,6 +238,29 @@ export default {
       return json(state);
     }
 
+    // --- 引き継ぎコードの発行（持ち主のみ） ---
+    // 機種変更やブラウザのデータ削除で所有権を失うのを救うための仕組み。詳細は src/transfer.ts。
+    if (url.pathname === "/api/character/transfer/issue" && request.method === "POST") {
+      const body = await request.json<{ characterId?: string; token?: string }>();
+      if (!body.characterId) {
+        return json({ error: "characterId is required" }, { status: 400 });
+      }
+      const result = await issueTransferCode(env, body.characterId, body.token, {
+        ...log,
+        characterId: body.characterId,
+      });
+      if (!result.ok) return json({ error: result.error }, { status: result.status });
+      return json({ code: result.code, expiresAt: result.expiresAt });
+    }
+
+    // --- 引き継ぎコードの使用（新しい端末側） ---
+    if (url.pathname === "/api/character/transfer/claim" && request.method === "POST") {
+      const body = await request.json<{ code?: string }>();
+      const result = await claimTransferCode(env, body.code || "", log);
+      if (!result.ok) return json({ error: result.error }, { status: result.status });
+      return json({ characterId: result.characterId, ownerToken: result.ownerToken, name: result.name });
+    }
+
     // --- 分身の削除API（「アカウント不要」設計における、持ち主自身によるデータ削除手段） ---
     // 破壊的操作のため持ち主トークンによる保護対象。成功時、このタグから新しい分身を始め直せるように
     // nfc_tagsの対応も併せて削除する（同じ物理カードを再利用・譲渡できるようにするため）。
@@ -264,6 +329,12 @@ async function serveAsset(request: Request, url: URL, env: Env): Promise<Respons
   const contentType = assetResponse.headers.get("content-type") || "";
   if (!contentType.includes("text/html")) return assetResponse;
 
+  // 版数ヘッダを載せる。実機で「いま掴んでいるのはどの版か」を確認するための手がかり。
+  const withVersion = new Response(assetResponse.body, assetResponse);
+  for (const [key, value] of Object.entries(versionHeaders(env))) {
+    withVersion.headers.set(key, value);
+  }
+
   const origin = url.origin;
   const toAbsolute = (value: string | null): string | null => {
     if (!value) return null;
@@ -284,7 +355,7 @@ async function serveAsset(request: Request, url: URL, env: Env): Promise<Respons
         element.setAttribute("content", origin + url.pathname);
       },
     })
-    .transform(assetResponse);
+    .transform(withVersion);
 }
 
 export type MeetingResult =
