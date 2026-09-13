@@ -14,7 +14,7 @@
  * パース処理だけを直せば良いように、呼び出し口を1箇所に集約してある。
  */
 
-import { logDetachedError, logDetachedWarn } from "../lib/log";
+import { logDetachedError, logDetachedInfo, logDetachedWarn } from "../lib/log";
 
 export const EMBEDDING_MODEL = "@cf/baai/bge-m3";
 
@@ -82,7 +82,7 @@ export async function storeMemory(
     ]);
     // Vectorizeの書き込みは非同期に処理されるため、ここでの成功＝即座に検索可能ではない。
     // mutationIdを残しておくと、後から「送ったのに入っていない」の切り分けができる。
-    logDetachedWarn("memory.stored", {
+    logDetachedInfo("memory.stored", {
       characterId,
       mutationId: (result as { mutationId?: string } | undefined)?.mutationId,
     });

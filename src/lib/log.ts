@@ -85,6 +85,10 @@ export function newRequestId(): string {
  * 「どこで何が落ちたか」が分かるだけでも切り分けには十分効くため、
  * characterIdと事象名だけを持つ軽い版を用意している。
  */
+export function logDetachedInfo(event: string, fields?: Fields): void {
+  console.log(JSON.stringify({ level: "info", event, ...fields }));
+}
+
 export function logDetachedWarn(event: string, fields?: Fields): void {
   console.warn(JSON.stringify({ level: "warn", event, ...fields }));
 }
