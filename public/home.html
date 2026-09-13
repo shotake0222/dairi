@@ -84,6 +84,18 @@
     border: none; background: #7c5cff; color: #fff; font-size: 12px; font-weight: 700;
     padding: 9px 16px; border-radius: 999px; cursor: pointer; white-space: nowrap;
   }
+  /* iOS向けの案内。ボタンで追加できないので、手順を文章で出す。 */
+  #iosInstallCard { display: flex; align-items: flex-start; gap: 12px; }
+  #iosInstallCard[hidden] { display: none; }
+  #iosInstallCard .iosIcon {
+    display: inline-block; border: 1px solid #c8bcff; border-radius: 6px;
+    padding: 0 6px; font-size: 11px; color: #7c5cff; white-space: nowrap;
+  }
+  #iosInstallClose {
+    border: none; background: none; color: #b9b0d8; font-size: 18px; line-height: 1;
+    cursor: pointer; padding: 0 2px; flex-shrink: 0;
+  }
+
   /* フッター。アカウント不要のサービスなので、データの扱いへの導線は常に見える場所に置く。 */
   .siteFooter { text-align: center; padding: 22px 0 8px; font-size: 12px; }
   .siteFooter a { color: #9a90c0; text-decoration: none; }
@@ -102,6 +114,18 @@
       ホーム画面に追加しておくと、NFCタグが手元になくても、ここから分身に会いに来られます。
     </div>
     <button id="installBtn" type="button">追加する</button>
+  </div>
+
+  <!-- iOS Safari は beforeinstallprompt に非対応で、ボタンからの追加ができない。
+       手順を書いておかないと、iPhoneの人だけ案内が何も出ないことになる。 -->
+  <div class="card" id="iosInstallCard" hidden>
+    <div class="installText">
+      <strong>ホーム画面に追加しておくと便利です。</strong><br />
+      画面下の <span class="iosIcon">共有</span> を押して、
+      「<strong>ホーム画面に追加</strong>」を選んでください。
+      NFCタグが手元になくても、ここから分身に会いに来られます。
+    </div>
+    <button id="iosInstallClose" type="button" title="閉じる">×</button>
   </div>
 
   <div id="grid" class="grid"></div>
@@ -123,6 +147,8 @@
   <div class="siteFooter">
     <a href="/lp">わけたまとは</a> ・
     <a href="/market">マーケット</a> ・
+    <a href="/biz">法人の方へ</a><br />
+    <a href="/terms">利用規約</a> ・
     <a href="/privacy">プライバシーポリシー</a>
   </div>
 </main>
@@ -308,6 +334,35 @@
 
     // 追加済みになったら案内は不要
     window.addEventListener("appinstalled", () => card.classList.remove("show"));
+  })();
+
+  // iOS Safari 向けの手動追加の案内。
+  // beforeinstallprompt が実装されていないため、上のカードは永久に出ない。
+  // 何も案内しないと、iPhoneの人だけ「ホーム画面に追加できる」ことを知らないままになる。
+  (function setupIosInstallHint() {
+    const card = document.getElementById("iosInstallCard");
+    const closeBtn = document.getElementById("iosInstallClose");
+    if (!card || !closeBtn) return;
+
+    const DISMISS_KEY = "sodatsukake_iosInstallDismissed";
+    const ua = navigator.userAgent || "";
+    // iPadOSはUAがMacを名乗るため、タッチできるMacintoshもiPadとして扱う
+    const isIos = /iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+    // Safari以外（Chrome for iOS等）は共有メニューの項目が違うので出さない
+    const isSafari = /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS/.test(ua);
+    // すでにホーム画面から開かれているなら不要
+    const standalone = window.navigator.standalone === true ||
+      (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+
+    let dismissed = false;
+    try { dismissed = localStorage.getItem(DISMISS_KEY) === "1"; } catch (e) { /* 読めなければ出す */ }
+
+    if (isIos && isSafari && !standalone && !dismissed) card.hidden = false;
+
+    closeBtn.addEventListener("click", () => {
+      card.hidden = true;
+      try { localStorage.setItem(DISMISS_KEY, "1"); } catch (e) { /* 覚えられなくても閉じはする */ }
+    });
   })();
 
   // Service Workerの登録。失敗してもアプリ本体の動作には一切影響させない

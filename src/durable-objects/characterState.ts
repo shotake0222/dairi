@@ -11,7 +11,7 @@ import { retrieveRelevantMemories, storeMemory, exportAllMemories, importMemorie
 import { buildMeetingPrompt } from "../ai/promptBuilder";
 import { RateLimiter } from "../lib/rateLimit";
 import { ChatMessage, contextBudgetFor, primaryChatModel, runChat } from "../ai/modelPolicy";
-import { distillProfileNotes, shouldReflect } from "../ai/reflection";
+import { distillProfileNotes, shouldReflect, MAX_NOTES_CHARS, MAX_NOTES_LINES } from "../ai/reflection";
 import { deriveVoiceProfile, VoiceProfile } from "../ai/voiceProfile";
 import { logDetachedWarn } from "../lib/log";
 import { ConsentState, hasConsent, normalizeConsent } from "../persona/consent";
@@ -734,6 +734,46 @@ export class CharacterState extends DurableObject<Env> {
     await this.ctx.storage.put("data", data);
     await this.syncPersonaRegistry(data);
     return { ok: true, profile: data.profile };
+  }
+
+  /**
+   * 「覚え書き」を本人が直接書き換える。
+   *
+   * なぜ必要か:
+   * 覚え書きはAIが会話から書き留めたもので、必ず間違いが混ざる。
+   * 「弟がいる」と書かれた分身は、以後ずっとその前提で喋り続ける。
+   * 会話で訂正しても、次の蒸留まで反映されないうえ、蒸留が拾ってくれる保証もない。
+   * 自分について書かれた内容を、本人が直せないのは筋が通らないので、直接の入口を用意する。
+   *
+   * 書き換えたあともAIによる蒸留は続くが、蒸留は「現在の覚え書き」を渡したうえで
+   * 統合させる作りなので、本人が直した内容は次回以降も土台として残る。
+   */
+  async setProfileNotes(
+    notes: unknown,
+    ownerToken?: string
+  ): Promise<{ ok: true; notes: string } | { ok: false; error: string }> {
+    const data = await this.ctx.storage.get<CharacterData>("data");
+    if (!data) return { ok: false, error: "not found" };
+    if (!isOwner(data, ownerToken)) return { ok: false, error: "この操作は分身の持ち主だけが行えます" };
+
+    const text = typeof notes === "string" ? notes : "";
+    // 形式はAIの出力と同じ（「・」始まりの箇条書き）に揃える。
+    // 揃えておかないと、次の蒸留でAIに渡したときに書式が崩れる。
+    const normalized = text
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .map((line) => (line.startsWith("・") ? line : `・${line.replace(/^[-*•]\s*/, "")}`))
+      .slice(0, MAX_NOTES_LINES)
+      .join("\n")
+      .slice(0, MAX_NOTES_CHARS);
+
+    data.profileNotes = normalized;
+    // 直した直後に蒸留が走って上書きされると、直した意味が無い。
+    // いま話した分は反映済みとみなして、次の間隔まで待たせる。
+    data.lastReflectedAt = data.interactionCount;
+    await this.ctx.storage.put("data", data);
+    return { ok: true, notes: normalized };
   }
 
   /** アクセシビリティ設定を保存する。同意の対象外（外へ出さないため、同意を取る意味が無い）。 */

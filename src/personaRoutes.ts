@@ -115,6 +115,22 @@ export async function handleSetProfile(
   return json({ profile: result.profile, completion: completionRate(result.profile.answers) });
 }
 
+/**
+ * 覚え書きの書き換え。
+ * 「分身が自分について何を覚えているか」を見せている以上、間違いを直す手段も要る。
+ */
+export async function handleSetNotes(
+  env: PersonaRoutesEnv,
+  body: { characterId?: string; token?: string; notes?: unknown }
+): Promise<Response> {
+  if (!body.characterId) return json({ error: "characterId is required" }, 400);
+
+  const result = await env.CHARACTER.getByName(body.characterId).setProfileNotes(body.notes, body.token);
+  if (!result.ok) return json({ error: result.error }, result.error === "not found" ? 404 : 403);
+
+  return json({ notes: result.notes });
+}
+
 export async function handleSetAccessibility(
   env: PersonaRoutesEnv,
   body: { characterId?: string; token?: string; prefs?: unknown }

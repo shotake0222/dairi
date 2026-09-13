@@ -1,0 +1,489 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>わけたま for Business｜小さなモデルに、人格を載せる。</title>
+<meta name="description" content="人格をモデルの重みではなく構造化データとして持つことで、数B規模の小規模言語モデルでも一貫した人格を成立させます。エッジ・フィジカルAI・メタバース向けに、マスキング済みの人格データと可搬フォーマットを提供します。" />
+
+<link rel="manifest" href="/manifest.webmanifest" />
+<meta name="theme-color" content="#14102a" />
+<link rel="icon" href="/icons/favicon-64.png" sizes="64x64" type="image/png" />
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="わけたま for Business" />
+<meta property="og:title" content="わけたま for Business｜小さなモデルに、人格を載せる。" />
+<meta property="og:description" content="人格をモデルの重みではなくデータで持つ。大規模LLMを常時呼べない現場のための、可搬な人格フォーマットとデータ提供。" />
+<meta property="og:image" content="/icons/ogp.png" />
+<meta property="og:url" content="/" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="わけたま for Business｜小さなモデルに、人格を載せる。" />
+<meta name="twitter:description" content="人格をモデルの重みではなくデータで持つ。大規模LLMを常時呼べない現場のための、可搬な人格フォーマットとデータ提供。" />
+<meta name="twitter:image" content="/icons/ogp.png" />
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0e0b1c;
+    --panel: #17132b;
+    --line: #2a2348;
+    --ink: #eceafb;
+    --muted: #9d94c4;
+    --brand: #8b6cff;
+    --accent: #55e3b0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink); line-height: 1.85;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--brand); }
+  .wrap { max-width: 780px; margin: 0 auto; padding: 0 20px; }
+
+  header.site {
+    position: sticky; top: 0; z-index: 10; background: rgba(14,11,28,0.9);
+    backdrop-filter: blur(10px); border-bottom: 1px solid var(--line);
+  }
+  header.site .wrap { display: flex; align-items: center; gap: 12px; padding-block: 12px; }
+  /* 追従ヘッダーが2行になると、下の内容に重なって読めなくなる。1行に収める。 */
+  .logo { font-weight: 800; letter-spacing: 0.05em; font-size: 15px; white-space: nowrap; }
+  .logo span { color: var(--brand); }
+  .logo .biz { font-size: 10px; color: var(--muted); letter-spacing: 0.14em; margin-left: 6px; font-weight: 700; }
+  header.site .spacer { flex: 1; }
+  .navBtn {
+    font-size: 13px; text-decoration: none; padding: 8px 16px; border-radius: 999px;
+    background: var(--brand); color: #fff; font-weight: 700; white-space: nowrap;
+  }
+  .navLink { font-size: 13px; text-decoration: none; color: var(--muted); white-space: nowrap; }
+  @media (max-width: 430px) { .logo .biz { display: none; } }
+
+  .hero { padding: 56px 0 44px; }
+  .hero .eyebrow {
+    display: inline-block; font-size: 11px; letter-spacing: 0.16em; font-weight: 700;
+    color: var(--accent); border: 1px solid rgba(85,227,176,0.35); padding: 5px 13px; border-radius: 999px;
+  }
+  .hero h1 {
+    font-size: clamp(26px, 6.6vw, 42px); line-height: 1.42; margin: 20px 0 16px;
+    letter-spacing: -0.01em; font-weight: 800; text-wrap: balance;
+  }
+  .hero h1 em { font-style: normal; color: var(--brand); }
+  .hero .sub { font-size: 15px; color: var(--muted); margin: 0 0 26px; max-width: 34em; }
+  .heroCtas { display: flex; gap: 10px; flex-wrap: wrap; }
+  .cta {
+    display: inline-block; background: var(--brand); color: #fff; text-decoration: none;
+    font-weight: 700; font-size: 15px; padding: 14px 30px; border-radius: 999px;
+  }
+  .cta.ghost { background: transparent; border: 1px solid var(--line); color: var(--ink); }
+
+  section { padding: 46px 0; border-top: 1px solid var(--line); }
+  section h2 { font-size: 21px; margin: 0 0 8px; letter-spacing: -0.01em; }
+  section .lead { color: var(--muted); font-size: 14px; margin: 0 0 24px; }
+
+  .problems { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+  .problem { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 18px; }
+  .problem .icon { font-size: 20px; }
+  .problem h3 { margin: 9px 0 5px; font-size: 14.5px; }
+  .problem p { margin: 0; font-size: 13px; color: var(--muted); }
+
+  /* 中心となる主張 */
+  .thesis {
+    background: linear-gradient(150deg, #1d1740 0%, #14102a 100%);
+    border: 1px solid var(--line); border-radius: 22px; padding: 26px 24px; margin-bottom: 24px;
+  }
+  .thesis .big { font-size: clamp(19px, 4.6vw, 26px); font-weight: 800; line-height: 1.5; margin: 0 0 12px; text-wrap: balance; }
+  .thesis .big em { font-style: normal; color: var(--accent); }
+  .thesis p { margin: 0; font-size: 14px; color: #c6bef0; }
+
+  .split { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .col { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 18px; }
+  .col h3 { margin: 0 0 8px; font-size: 14px; }
+  .col.bad h3 { color: #ff8fa6; }
+  .col.good h3 { color: var(--accent); }
+  .col ul { margin: 0; padding-left: 1.2em; font-size: 13px; color: var(--muted); }
+  .col li { margin-bottom: 6px; }
+
+  .offer { display: grid; gap: 14px; }
+  .item {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 20px;
+    display: grid; grid-template-columns: 40px 1fr; gap: 14px; align-items: start;
+  }
+  /* グリッドの子は既定で min-content より狭くならない。中に横長の <pre> があると、
+     overflow-x:auto を付けていてもページ全体が横に溢れる。min-width:0 で縮めるようにする。 */
+  .item > div { min-width: 0; }
+  .item .num {
+    width: 40px; height: 40px; border-radius: 12px; background: rgba(139,108,255,0.18); color: var(--brand);
+    display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 15px;
+  }
+  .item h3 { margin: 4px 0 6px; font-size: 15.5px; }
+  .item p { margin: 0 0 8px; font-size: 13.5px; color: var(--muted); }
+  .item ul { margin: 0; padding-left: 1.2em; font-size: 13px; color: var(--muted); }
+
+  pre {
+    max-width: 100%;
+    background: #0a0817; border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px;
+    overflow-x: auto; font-size: 12px; line-height: 1.7; color: #cfc7f5;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; margin: 12px 0 0;
+  }
+  pre .c { color: #6f668f; }
+  pre .k { color: var(--accent); }
+
+  .targets { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+  .target { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+  .target .icon { font-size: 19px; }
+  .target h3 { margin: 7px 0 3px; font-size: 13.5px; }
+  .target p { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.75; }
+
+  .scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { border: 1px solid var(--line); padding: 10px 12px; text-align: left; vertical-align: top; }
+  th { background: var(--panel); color: var(--ink); font-size: 12.5px; }
+  td { color: var(--muted); }
+  td strong { color: var(--ink); }
+
+  .honest { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 20px; }
+  .honest h3 { margin: 0 0 8px; font-size: 14.5px; }
+  .honest ul { margin: 0 0 16px; padding-left: 1.2em; font-size: 13.5px; color: var(--muted); }
+  .honest ul:last-child { margin-bottom: 0; }
+  .honest li { margin-bottom: 6px; }
+
+  form { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 20px; }
+  label { display: block; font-size: 13px; font-weight: 700; margin: 12px 0 5px; }
+  label:first-of-type { margin-top: 0; }
+  input, textarea, select {
+    width: 100%; padding: 11px 13px; border-radius: 10px; border: 1px solid var(--line);
+    background: #0f0c1f; color: var(--ink); font-family: inherit; font-size: 15px;
+  }
+  textarea { min-height: 110px; resize: vertical; line-height: 1.7; }
+  .hint { font-size: 11.5px; color: #7a7098; margin-top: 5px; }
+  form button {
+    margin-top: 16px; border: none; background: var(--brand); color: #fff; font-weight: 700;
+    font-size: 15px; padding: 13px 30px; border-radius: 999px; cursor: pointer; font-family: inherit;
+  }
+  form button:disabled { opacity: .5; cursor: not-allowed; }
+  #formStatus { font-size: 13px; color: var(--muted); min-height: 20px; margin-top: 10px; }
+
+  footer.site { border-top: 1px solid var(--line); padding: 26px 0 44px; font-size: 12px; color: var(--muted); }
+  footer.site .row { display: flex; gap: 14px; flex-wrap: wrap; }
+  footer.site a { color: var(--muted); text-decoration: none; }
+</style>
+</head>
+<body>
+
+<header class="site">
+  <div class="wrap">
+    <div class="logo">わけ<span>たま</span><span class="biz">FOR BUSINESS</span></div>
+    <div class="spacer"></div>
+    <a class="navLink" href="/lp">個人の方へ</a>
+    <a class="navBtn" href="#contact">問い合わせ</a>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="hero">
+    <span class="eyebrow">PERSONA DATA FOR SMALL MODELS</span>
+    <h1>小さなモデルに、<em>人格</em>を載せる。</h1>
+    <p class="sub">
+      大規模LLMを常時呼べない現場でも、一貫した人格を持った対話は成立します。
+      人格をモデルの重みではなく<strong>構造化データ</strong>として持てばよいからです。
+      わけたまは、その形式と、同意を得たうえでマスキングしたデータを提供します。
+    </p>
+    <div class="heroCtas">
+      <a class="cta" href="#contact">資料・データについて相談する</a>
+      <a class="cta ghost" href="#format">フォーマットを見る</a>
+    </div>
+  </div>
+</div>
+
+<section>
+  <div class="wrap">
+    <h2>大規模LLMが入らない場所がある</h2>
+    <p class="lead">性能ではなく、条件の問題として。</p>
+    <div class="problems">
+      <div class="problem">
+        <div class="icon">💸</div>
+        <h3>常時対話のコスト</h3>
+        <p>1台1台が四六時中しゃべる用途では、呼び出し回数がそのまま原価になります。台数が増えるほど成立しません。</p>
+      </div>
+      <div class="problem">
+        <div class="icon">📡</div>
+        <h3>通信できない・したくない</h3>
+        <p>屋内設備、車載、工場、災害時。回線が細い、切れる、あるいは外へ出したくないデータがある。</p>
+      </div>
+      <div class="problem">
+        <div class="icon">⏱️</div>
+        <h3>応答の間</h3>
+        <p>目の前にいる相手との会話では、1秒の沈黙が致命的になります。往復のたびにネットワークを挟むのは不利です。</p>
+      </div>
+      <div class="problem">
+        <div class="icon">🎭</div>
+        <h3>キャラクターが安定しない</h3>
+        <p>小さなモデルに切り替えると、まず崩れるのが口調と一貫性。「別人になる」問題です。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="thesis">
+      <p class="big">人格は、モデルの中ではなく<br /><em>外側のデータ</em>に持てる。</p>
+      <p>
+        だからモデルを小さくしても人格は消えません。逆に、モデルを差し替えても同じ人格を連れて行けます。
+        わけたまは最初からこの前提で作られており、実際に育った人格を、モデル非依存の形式で書き出せます。
+      </p>
+    </div>
+    <div class="split">
+      <div class="col bad">
+        <h3>重みに人格を持たせる場合</h3>
+        <ul>
+          <li>キャラクターごとに追加学習が要る</li>
+          <li>モデルを更新すると作り直し</li>
+          <li>覚えさせた内容を後から消しにくい</li>
+          <li>個人ごとの人格には現実的でない</li>
+        </ul>
+      </div>
+      <div class="col good">
+        <h3>データに人格を持たせる場合</h3>
+        <ul>
+          <li>学習不要。読み込ませるだけで成立する</li>
+          <li>モデルを変えても人格はそのまま</li>
+          <li>中身が人間に読める。消すのも直すのも容易</li>
+          <li>1人に1体を、数KBの差分で持てる</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="format">
+  <div class="wrap">
+    <h2>提供するもの</h2>
+    <p class="lead">形式そのもの、実際に育ったデータ、そして集計された傾向。3つに分かれます。</p>
+    <div class="offer">
+
+      <div class="item">
+        <div class="num">1</div>
+        <div>
+          <h3>人格カード（可搬フォーマット）</h3>
+          <p>
+            育った人格を、載せ先に依存しない形で書き出したものです。
+            そのままシステムメッセージに入れるだけで、その人格として応答しはじめます。
+          </p>
+          <ul>
+            <li>性格パラメータ（6軸）と、そこから決まる口調・語尾</li>
+            <li>相手について覚えていること（要点だけに蒸留された箇条書き）</li>
+            <li>記憶（<strong>埋め込みベクトルではなく平文</strong>。埋め込みモデルに縛られません）</li>
+            <li>実会話から抜いた応答例（口調の移植には、説明よりこれが効きます）</li>
+            <li>その子固有の声（高さ・速さ）</li>
+          </ul>
+          <pre><span class="c"># 書き出し（4形式）</span>
+GET /api/persona/card?format=<span class="k">json</span>       <span class="c"># 自前実装に組み込む</span>
+GET /api/persona/card?format=<span class="k">prompt</span>     <span class="c"># system に入れるだけ</span>
+GET /api/persona/card?format=<span class="k">modelfile</span>  <span class="c"># Ollama で常駐させる</span>
+GET /api/persona/card?format=<span class="k">readme</span>     <span class="c"># 中身の説明書</span>
+
+<span class="c"># 手元の小さなモデルへ載せる例</span>
+ollama create waketama-persona -f ./Modelfile
+ollama run    waketama-persona</pre>
+          <p style="margin-top:10px">
+            推奨する文脈長は<strong>8Kトークン程度</strong>。数B規模のモデルでも収まる設計にしてあります。
+          </p>
+        </div>
+      </div>
+
+      <div class="item">
+        <div class="num">2</div>
+        <div>
+          <h3>マスキング済みの人格データ</h3>
+          <p>
+            実際に会話を通じて育った人格を、<strong>本人の同意を得たうえで</strong>お渡しします。
+            架空のキャラクター設定ではなく、人が話しかけて形になったデータです。
+          </p>
+          <ul>
+            <li>個人を特定する情報（氏名・連絡先など）は<strong>そもそも収集していません</strong></li>
+            <li>属性は選択肢式のみ。自由記述欄を設けていないため、意図しない情報が混入しません</li>
+            <li>要配慮個人情報（病歴・障害・信条など）は取得対象外です</li>
+            <li>入力方法などのアクセシビリティ設定は、提供対象から構造的に除外しています</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="item">
+        <div class="num">3</div>
+        <div>
+          <h3>セグメント統計</h3>
+          <p>
+            「どういう人たちが、何を話しているか」の傾向を、集計した形で提供します。
+            会話の本文そのものは含まれません。
+          </p>
+          <ul>
+            <li>性格6軸・価値観8軸の分布、話題カテゴリの構成比</li>
+            <li>7つの人物像セグメント別の内訳</li>
+            <li><strong>人数が下限に満たないグループは出力しません</strong>（条件を重ねたときの再識別を避けるため）</li>
+          </ul>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>想定している載せ先</h2>
+    <p class="lead">「その場に居て、ずっと喋る」用途ほど、この構成が効きます。</p>
+    <div class="targets">
+      <div class="target">
+        <div class="icon">🤖</div>
+        <h3>フィジカルAI・ロボット</h3>
+        <p>オンデバイスのSLMで、通信が切れても人格が保たれる家庭用・業務用ロボット。</p>
+      </div>
+      <div class="target">
+        <div class="icon">🕶️</div>
+        <h3>メタバース・アバター</h3>
+        <p>多人数が同時に喋る空間。1体あたりの単価が下がらないと成立しない領域です。</p>
+      </div>
+      <div class="target">
+        <div class="icon">🚗</div>
+        <h3>車載・移動体</h3>
+        <p>圏外を挟んでも会話が途切れない、車内エージェント。</p>
+      </div>
+      <div class="target">
+        <div class="icon">🏠</div>
+        <h3>家電・見守り</h3>
+        <p>常時待機する機器での、短いやり取りの積み重ね。</p>
+      </div>
+      <div class="target">
+        <div class="icon">🎮</div>
+        <h3>ゲーム・NPC</h3>
+        <p>設定を書き起こすのではなく、育ったデータをそのまま人格にする。</p>
+      </div>
+      <div class="target">
+        <div class="icon">🏢</div>
+        <h3>店舗・受付端末</h3>
+        <p>オフラインでも動く接客。データを外へ出さずに済みます。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>なぜ小さなモデルでも崩れないのか</h2>
+    <p class="lead">モデルには「演じること」だけをさせ、人格の定義は外側で固定しているためです。</p>
+    <div class="scroll"><table>
+      <tr><th style="width:34%">担っているもの</th><th>どこで持つか</th></tr>
+      <tr><td><strong>性格・口調・語尾</strong></td><td>構造化された数値と、そこから生成した明示的な指示文。モデルの解釈に委ねません</td></tr>
+      <tr><td><strong>相手についての知識</strong></td><td>蒸留された箇条書き。毎回そのまま渡すため、忘れることがありません</td></tr>
+      <tr><td><strong>話し方の質感</strong></td><td>実会話から抜いた応答例。小さなモデルほど、説明より例文に強く従います</td></tr>
+      <tr><td><strong>過去のやり取り</strong></td><td>平文の記憶。埋め込みが使える環境なら検索、使えなければ直近を丸ごと</td></tr>
+      <tr><td><strong>言語生成そのもの</strong></td><td>ここだけがモデルの仕事。だから差し替えが効きます</td></tr>
+    </table></div>
+    <p class="lead" style="margin:16px 0 0">
+      本体サービスでも、モデルは環境変数ひとつで差し替えられる構成にしています。
+      上位モデルが落ちても下位モデルで会話が続く連鎖を組んであり、人格の定義側は一切変更していません。
+    </p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>正直に書いておくこと</h2>
+    <p class="lead">検討の初期に知っておいたほうが早い情報だと考えています。</p>
+    <div class="honest">
+      <h3>いまできること</h3>
+      <ul>
+        <li>育った人格を4形式で書き出し、他のランタイムで動かすこと</li>
+        <li>同意ベースで収集した属性・価値観・関心を、集計した形で提供すること</li>
+        <li>人格の形式自体を、御社のプロダクトに合わせて拡張すること</li>
+      </ul>
+      <h3>これからのこと</h3>
+      <ul>
+        <li><strong>データの母数はこれから積み上げる段階です。</strong>大規模な統計として使える水準にはまだありません</li>
+        <li>オンデバイスでの動作は、載せ先のモデルと機器に依存します。実機での検証を一緒に行う前提でお考えください</li>
+        <li>本サービス上での決済機能は提供していません。個別のご相談として対応しています</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="contact">
+  <div class="wrap">
+    <h2>お問い合わせ</h2>
+    <p class="lead">
+      具体的な載せ先が決まっていない段階でも構いません。
+      「こういう機器で、こういう会話をさせたい」だけいただければ、成立するかどうかからお話しします。
+    </p>
+    <form id="contactForm">
+      <label for="company">会社名・組織名</label>
+      <input type="text" id="company" maxlength="80" placeholder="株式会社◯◯" />
+
+      <label for="contactEmail">メールアドレス</label>
+      <input type="email" id="contactEmail" maxlength="120" placeholder="you@example.com" required />
+
+      <label for="topic">ご関心</label>
+      <select id="topic">
+        <option value="format">人格カード（フォーマット）の利用</option>
+        <option value="data">マスキング済み人格データの提供</option>
+        <option value="insights">セグメント統計の提供</option>
+        <option value="poc">実機での検証・共同開発</option>
+        <option value="other">その他</option>
+      </select>
+
+      <label for="message">ご相談内容</label>
+      <textarea id="message" maxlength="1000" placeholder="想定している機器、台数、稼働環境（通信の有無）、時期など、決まっている範囲で構いません。"></textarea>
+      <div class="hint">いただいた内容は、ご連絡と検討のためだけに使用します。</div>
+
+      <button type="submit" id="submitBtn">送信する</button>
+      <div id="formStatus"></div>
+    </form>
+  </div>
+</section>
+
+<footer class="site">
+  <div class="wrap">
+    <div class="row">
+      <a href="/lp">個人の方へ</a>
+      <a href="/market">マーケット</a>
+      <a href="/terms">利用規約</a>
+      <a href="/privacy">プライバシーポリシー</a>
+    </div>
+    <div style="margin-top:10px">わけたま for Business</div>
+  </div>
+</footer>
+
+<script>
+  const form = document.getElementById("contactForm");
+  const statusEl = document.getElementById("formStatus");
+  const submitBtn = document.getElementById("submitBtn");
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    submitBtn.disabled = true;
+    statusEl.textContent = "送信しています…";
+    try {
+      const res = await fetch("/api/contact", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          kind: "biz",
+          company: document.getElementById("company").value,
+          contact: document.getElementById("contactEmail").value,
+          topic: document.getElementById("topic").value,
+          message: document.getElementById("message").value,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "送信できませんでした");
+      statusEl.textContent = "受け付けました。折り返しご連絡します。";
+      form.reset();
+    } catch (err) {
+      statusEl.textContent = err.message;
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>

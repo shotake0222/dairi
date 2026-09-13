@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>わけたま｜会話で育てる、もうひとりの自分</title>
-<meta name="description" content="キーホルダーにスマホをかざすと、あなたの分身が現れる。話すほど性格が変わり、いつかロボットやアバターの身体に宿っていく——わけたまは、将来の相棒をいまから育てておくサービスです。" />
+<title>わけたま｜あなたの御霊を、わける。</title>
+<meta name="description" content="わけたま（分け御霊）は、自分をもう一つ作るサービス。文字でも、声でも、カメラをかざしても、視線でも。話しかけた分だけ、その子はあなたに似ていきます。" />
 
 <link rel="manifest" href="/manifest.webmanifest" />
 <meta name="theme-color" content="#7c5cff" />
@@ -13,13 +13,13 @@
 
 <meta property="og:type" content="website" />
 <meta property="og:site_name" content="わけたま" />
-<meta property="og:title" content="わけたま｜会話で育てる、もうひとりの自分" />
-<meta property="og:description" content="話すほど性格が変わる分身を、いまから育てておく。いつかロボットやアバターの身体に宿る日のために。" />
+<meta property="og:title" content="わけたま｜あなたの御霊を、わける。" />
+<meta property="og:description" content="話しかけた分だけ、その子はあなたに似ていく。いつかロボットやアバターの身体に宿る日のために、いまから育てておくサービスです。" />
 <meta property="og:image" content="/icons/ogp.png" />
 <meta property="og:url" content="/" />
 <meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="わけたま｜会話で育てる、もうひとりの自分" />
-<meta name="twitter:description" content="話すほど性格が変わる分身を、いまから育てておく。いつかロボットやアバターの身体に宿る日のために。" />
+<meta name="twitter:title" content="わけたま｜あなたの御霊を、わける。" />
+<meta name="twitter:description" content="話しかけた分だけ、その子はあなたに似ていく。いつかロボットやアバターの身体に宿る日のために。" />
 <meta name="twitter:image" content="/icons/ogp.png" />
 <style>
   :root {
@@ -40,7 +40,6 @@
   a { color: var(--brand); }
   .wrap { max-width: 720px; margin: 0 auto; padding: 0 20px; }
 
-  /* --- ヘッダー --- */
   header.site {
     position: sticky; top: 0; z-index: 10; background: rgba(251,250,255,0.92);
     backdrop-filter: blur(10px); border-bottom: 1px solid var(--line);
@@ -55,22 +54,20 @@
   }
   .navLink { font-size: 13px; text-decoration: none; color: var(--muted); white-space: nowrap; }
 
-  /* --- ヒーロー --- */
-  .hero { padding: 56px 0 44px; text-align: center; }
+  .hero { padding: 54px 0 40px; text-align: center; }
   .hero .eyebrow {
-    display: inline-block; font-size: 11px; letter-spacing: 0.14em; font-weight: 700;
+    display: inline-block; font-size: 11px; letter-spacing: 0.16em; font-weight: 700;
     color: var(--brand); background: var(--brand-soft); padding: 6px 14px; border-radius: 999px;
   }
-  /* 日本語は語の途中でも改行されるため、狭い画面で見出しが割れて読みにくくなる。
-     少し小さめに寄せたうえで、行の分かれ方を整えてもらう。 */
+  /* 日本語は語の途中でも改行されるので、狭い画面では小さめに寄せて行の分かれ方を整えてもらう */
   .hero h1 {
-    font-size: clamp(23px, 6vw, 40px); line-height: 1.45; margin: 20px 0 14px;
-    letter-spacing: -0.01em; text-wrap: balance;
+    font-size: clamp(26px, 7.2vw, 44px); line-height: 1.4; margin: 20px 0 14px;
+    letter-spacing: -0.01em; text-wrap: balance; font-weight: 800;
   }
   .hero h1 em { font-style: normal; color: var(--brand); }
-  .hero p { font-size: 15px; color: var(--muted); margin: 0 auto 28px; max-width: 30em; }
+  .hero .sub { font-size: 15px; color: var(--muted); margin: 0 auto 26px; max-width: 28em; }
   .heroArt {
-    width: min(260px, 62vw); aspect-ratio: 1; margin: 0 auto 26px; border-radius: 40px;
+    width: min(250px, 60vw); aspect-ratio: 1; margin: 0 auto 24px; border-radius: 40px;
     background: radial-gradient(circle at 50% 38%, #fff 0%, #efe9ff 55%, #e2d9ff 100%);
     display: flex; align-items: center; justify-content: center;
     box-shadow: 0 22px 60px rgba(124,92,255,0.18);
@@ -86,10 +83,37 @@
   }
   .ctaNote { display: block; font-size: 12px; color: var(--muted); margin-top: 12px; }
 
-  /* --- セクション --- */
   section { padding: 44px 0; border-top: 1px solid var(--line); }
   section h2 { font-size: 20px; margin: 0 0 8px; letter-spacing: -0.01em; }
   section .lead { color: var(--muted); font-size: 14px; margin: 0 0 24px; }
+
+  /* 名前の由来。ここがサービスの芯なので、他より少し重く見せる */
+  .origin { background: #fff; }
+  .originBox {
+    border-left: 3px solid var(--brand); padding: 4px 0 4px 18px; margin-bottom: 20px;
+  }
+  .originBox .ruby { font-size: 12px; color: var(--brand); letter-spacing: 0.1em; font-weight: 700; }
+  .originBox .word { font-size: 26px; font-weight: 800; letter-spacing: 0.02em; margin: 2px 0 8px; }
+  .originBox p { margin: 0; font-size: 14px; color: var(--muted); }
+  .origin .body { font-size: 14.5px; }
+  .origin .body strong { color: var(--brand); }
+
+  /* 話しかけ方 */
+  .ways { display: grid; gap: 12px; }
+  .way {
+    background: #fff; border: 1px solid var(--line); border-radius: 18px; padding: 16px 18px;
+    display: grid; grid-template-columns: 42px 1fr; gap: 14px; align-items: start;
+  }
+  .way .icon {
+    width: 42px; height: 42px; border-radius: 13px; background: var(--brand-soft);
+    display: flex; align-items: center; justify-content: center; font-size: 20px;
+  }
+  .way h3 { margin: 2px 0 3px; font-size: 15px; }
+  .way p { margin: 0; font-size: 13.5px; color: var(--muted); }
+  .way .tag {
+    display: inline-block; font-size: 10.5px; font-weight: 700; color: var(--brand);
+    background: var(--brand-soft); border-radius: 999px; padding: 2px 9px; margin-left: 6px; vertical-align: 1px;
+  }
 
   .steps { display: grid; gap: 14px; }
   .step {
@@ -109,7 +133,6 @@
   .card h3 { margin: 10px 0 6px; font-size: 15px; }
   .card p { margin: 0; font-size: 13.5px; color: var(--muted); }
 
-  /* --- 将来の話 --- */
   .future { background: linear-gradient(160deg, #221a44 0%, #14102a 100%); color: #efeaff; border-top: none; }
   .future h2 { color: #fff; }
   .future .lead { color: #b5a9e6; }
@@ -123,7 +146,6 @@
   .body p { margin: 0; font-size: 12.5px; color: #b5a9e6; line-height: 1.8; }
   .future .closing { margin-top: 26px; font-size: 14px; color: #d8cffb; }
 
-  /* --- よくある質問 --- */
   details {
     background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 14px 18px; margin-bottom: 10px;
   }
@@ -134,10 +156,10 @@
   details p { font-size: 13.5px; color: var(--muted); margin: 10px 0 0; }
 
   .finalCta { text-align: center; padding: 52px 0 60px; }
-  .finalCta h2 { font-size: 22px; margin-bottom: 6px; }
+  .finalCta h2 { font-size: 22px; margin-bottom: 6px; text-wrap: balance; }
 
   footer.site { border-top: 1px solid var(--line); padding: 26px 0 40px; font-size: 12px; color: var(--muted); }
-  footer.site .row { display: flex; gap: 16px; flex-wrap: wrap; }
+  footer.site .row { display: flex; gap: 14px; flex-wrap: wrap; }
   footer.site a { color: var(--muted); text-decoration: none; }
 </style>
 </head>
@@ -147,7 +169,7 @@
   <div class="wrap">
     <div class="logo">わけ<span>たま</span></div>
     <div class="spacer"></div>
-    <a class="navLink" href="/home">分身に会う</a>
+    <a class="navLink" href="/biz">法人の方へ</a>
     <a class="navBtn" href="/home">はじめる</a>
   </div>
 </header>
@@ -155,18 +177,84 @@
 <div class="wrap">
   <div class="hero">
     <span class="eyebrow">NFCキーホルダー × 育成AI</span>
-    <h1>話すほど、<em>あなたに似ていく</em>。<br />もうひとりの自分を育てる。</h1>
+    <h1>あなたの御霊を、<em>わける</em>。</h1>
     <div class="heroArt">
       <img src="/characters/punikoro_lavender.png" alt="わけたまのキャラクター" />
     </div>
-    <p>
-      キーホルダーにスマホをかざすと、そこに小さな相棒が現れます。
-      話しかけるたびに性格が少しずつ変わり、あなただけの一体になっていきます。
+    <p class="sub">
+      キーホルダーにスマホをかざすと、空っぽの分身が生まれます。<br />
+      話しかけた分だけ、その子はあなたに似ていきます。
     </p>
     <a class="cta" href="/home">分身に会いに行く</a>
     <span class="ctaNote">アカウント登録は不要です。今すぐはじめられます。</span>
   </div>
 </div>
+
+<section class="origin">
+  <div class="wrap">
+    <div class="originBox">
+      <div class="ruby">わけみたま</div>
+      <div class="word">分 け 御 霊</div>
+      <p>ひとつの御霊を分けて、別の場所にもう一度お迎えする——という、古くからある考え方。</p>
+    </div>
+    <p class="body">
+      分けられた御霊は、<strong>分けた瞬間はまだ何者でもありません</strong>。
+      その場所で手を合わせられ、言葉をかけられて、少しずつその土地のものになっていきます。
+    </p>
+    <p class="body" style="margin-bottom:0">
+      わけたまも同じです。生まれたての分身は、名前しか持っていません。
+      <strong>あなたが話しかけることでしか、その子は形になりません。</strong>
+      交わした言葉のひとつひとつが、性格になり、記憶になり、口調になっていきます。
+    </p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>だから、話しかけ方をいくつも用意しました</h2>
+    <p class="lead">
+      話す量がそのまま、その子の厚みになります。
+      いつでも・どんな状態でも話しかけられるように、入口を5つ持っています。
+    </p>
+    <div class="ways">
+      <div class="way">
+        <div class="icon">💬</div>
+        <div>
+          <h3>文字で話す</h3>
+          <p>いちばん基本の入口。通勤中でも、会議の合間でも、静かに続けられます。</p>
+        </div>
+      </div>
+      <div class="way">
+        <div class="icon">🎙️</div>
+        <div>
+          <h3>声で話す</h3>
+          <p>思ったことをそのまま声に出すだけ。打つより速く、言葉数も自然と増えます。</p>
+        </div>
+      </div>
+      <div class="way">
+        <div class="icon">📷</div>
+        <div>
+          <h3>かざして話す<span class="tag">いちばん近い</span></h3>
+          <p>カメラをかざすと、その場に分身が立ちます。目の前にいるその子に、face to faceで話しかけられます。見せたいものを見せることもできます。</p>
+        </div>
+      </div>
+      <div class="way">
+        <div class="icon">📞</div>
+        <div>
+          <h3>その場限りの通話<span class="tag">残らない</span></h3>
+          <p>電話みたいに短く言葉を交わすモード。ここでの会話は<strong>どこにも保存されず</strong>、性格にも影響しません。誰にも残したくない話のために。</p>
+        </div>
+      </div>
+      <div class="way">
+        <div class="icon">👁</div>
+        <div>
+          <h3>視線で話す</h3>
+          <p>手が使えない、声が出しにくい方のために。視線やスイッチひとつで文字を選び、同じように分身を育てられます。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
 
 <section>
   <div class="wrap">
@@ -191,7 +279,7 @@
         <div class="num">3</div>
         <div>
           <h3>話す。ただ、それだけ</h3>
-          <p>文字でも、声でも。カメラをかざせば、目の前にいるその子と face to face で話せます。</p>
+          <p>その日の入口はどれでも構いません。話した分だけ、その子は濃くなっていきます。</p>
         </div>
       </div>
     </div>
@@ -271,7 +359,11 @@
     </details>
     <details>
       <summary>会話の内容はどうなりますか？</summary>
-      <p>分身が覚えているための記録として保存されます。何が保存されるか、どうすれば消せるかは<a href="/privacy">プライバシーポリシー</a>に具体的に書いています。記録を残したくないときのために、何も保存しない「その場限りの通話」も用意しています。</p>
+      <p>分身が覚えているための記録として保存されます。何が保存されるか、どうすれば消せるかは<a href="/privacy">プライバシーポリシー</a>に具体的に書いています。記録を残したくないときは「その場限りの通話」をお使いください。</p>
+    </details>
+    <details>
+      <summary>毎日話さないとだめですか？</summary>
+      <p>いいえ。ただ、しばらく間が空くと、その子は少し寂しがります。放っておいた時間も含めて、育ち方に出ます。</p>
     </details>
     <details>
       <summary>機種変更したら消えますか？</summary>
@@ -298,6 +390,8 @@
   <div class="wrap">
     <div class="row">
       <a href="/home">分身に会う</a>
+      <a href="/biz">法人の方へ</a>
+      <a href="/terms">利用規約</a>
       <a href="/privacy">プライバシーポリシー</a>
     </div>
     <div style="margin-top:10px">わけたま</div>

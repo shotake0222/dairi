@@ -233,7 +233,7 @@ check("カメラ映像の扱いが書かれている", privacyHtml.includes("カ
 
 console.log("\n[11] LP・マーケット・管理画面");
 const lpHtml = await (await fetch(`${BASE}/lp`)).text();
-check("LPが配信される", lpHtml.includes("もうひとりの自分"));
+check("LPが配信される", lpHtml.includes("御霊"));
 // LPは一般向けの入口。人格データの売買の話は表に出さない方針にしている
 check("LPに人格データ販売の話が出ていない", !lpHtml.includes("販売") && !lpHtml.includes("マーケット"));
 
@@ -331,6 +331,58 @@ const privacy2 = await (await fetch(`${BASE}/privacy`)).text();
 check("3つの同意が説明されている", privacy2.includes("あなたが選ぶ3つの同意"));
 check("統計に含まれないものが列挙されている", privacy2.includes("統計として提供されるもの"));
 check("運営が会話を読めないことが書かれている", privacy2.includes("運営からも見えない"));
+
+console.log("\n[17] 利用規約・LP・法人向けページ");
+const termsHtml = await (await fetch(`${BASE}/terms`)).text();
+check("利用規約が配信される", termsHtml.includes("利用規約"));
+check("マーケットの扱いが書かれている", termsHtml.includes("マーケットについて"));
+check("決済を提供していないことが明記されている", termsHtml.includes("決済機能は提供していません"));
+
+const lp2 = await (await fetch(`${BASE}/lp`)).text();
+check("LPで分け御霊の由来を説明している", lp2.includes("分 け 御 霊") || lp2.includes("分け御霊"));
+check("LPで話しかけ方が5通り紹介されている", lp2.includes("かざして話す") && lp2.includes("視線で話す") && lp2.includes("その場限りの通話"));
+check("LPから法人ページへ行ける", lp2.includes('href="/biz"'));
+
+const bizHtml = await (await fetch(`${BASE}/biz`)).text();
+check("法人向けページが配信される", bizHtml.includes("小さなモデルに"));
+check("SLM・エッジ向けの訴求が入っている", bizHtml.includes("フィジカルAI") && bizHtml.includes("メタバース"));
+check("マスキング済みデータの説明が入っている", bizHtml.includes("マスキング済み"));
+check("人格カードの書き出し形式が示されている", bizHtml.includes("modelfile"));
+
+await page.goto(`${BASE}/biz`, { waitUntil: "domcontentloaded" });
+await page.waitForTimeout(600);
+const bizLayout = await page.evaluate(() => ({
+  overflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+}));
+check("法人向けページが横に溢れていない", bizLayout.overflowX === false);
+
+// 問い合わせフォームが実際に届くこと
+const bizMail = `e2e-biz-${Date.now()}@example.com`;
+await page.fill("#company", "E2E株式会社");
+await page.fill("#contactEmail", bizMail);
+await page.fill("#message", "検証用の問い合わせです");
+await page.click("#submitBtn");
+await page.waitForTimeout(1200);
+check("問い合わせが受け付けられる", ((await page.textContent("#formStatus")) || "").includes("受け付けました"));
+await page.screenshot({ path: path.join(OUT_DIR, "biz.png") });
+
+const contactsClosed = await fetch(`${BASE}/api/admin/contacts`);
+check("届いた問い合わせは管理画面の中にしか無い", contactsClosed.status === 404 || contactsClosed.status === 401);
+
+console.log("\n[18] 覚え書きの書き直し");
+const notesRes = await fetch(`${BASE}/api/notes`, {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ characterId: newCid, token: profileToken, notes: "妹がいる" }),
+});
+const notesData = await notesRes.json();
+check("本人が覚え書きを直せる", notesData.notes === "・妹がいる", JSON.stringify(notesData));
+const notesNoAuth = await fetch(`${BASE}/api/notes`, {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ characterId: newCid, notes: "勝手に書き換える" }),
+});
+check("持ち主以外は覚え書きを書き換えられない", notesNoAuth.status === 403, String(notesNoAuth.status));
 
 check("JavaScriptエラーが出ていない", pageErrors.length === 0, pageErrors.join(" / "));
 

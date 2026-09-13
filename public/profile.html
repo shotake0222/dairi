@@ -123,8 +123,17 @@
 
   <section id="memorySection">
     <h2>分身があなたについて覚えていること</h2>
-    <p class="lead">会話から分身が自分で書き留めたものです。事実と違うところがあれば、会話の中で伝えると直っていきます。</p>
+    <p class="lead">会話から分身が自分で書き留めたものです。<strong>間違いがあれば、ここで直せます。</strong>直した内容は、分身が次に書き足すときの土台になります。</p>
     <div id="notes" class="empty">まだ何も覚えていません。</div>
+    <textarea id="notesEdit" hidden style="width:100%;min-height:120px;padding:12px 14px;border-radius:12px;border:1px solid var(--line);font-family:inherit;font-size:13px;line-height:1.9;background:#fff;color:var(--ink);resize:vertical"></textarea>
+    <div class="row" style="margin-top:10px">
+      <button class="action ghost" id="editNotesBtn" type="button">書き直す</button>
+      <button class="action" id="saveNotesBtn" type="button" hidden>保存する</button>
+      <button class="action ghost" id="cancelNotesBtn" type="button" hidden>やめる</button>
+    </div>
+    <p class="lead" id="notesHint" style="margin:10px 0 0" hidden>
+      1行に1つ、事実だけを書いてください。ここで直した内容は、分身が次に書き足すときの土台になります。
+    </p>
   </section>
 
   <section id="profileSection">
@@ -205,7 +214,9 @@
     <a class="action" id="marketLink" href="/market" style="display:none; text-decoration:none">出品ページへ →</a>
   </section>
 
-  <p style="text-align:center;font-size:12px"><a class="link" href="/privacy">プライバシーポリシー</a></p>
+  <p style="text-align:center;font-size:12px">
+    <a class="link" href="/terms">利用規約</a> ・ <a class="link" href="/privacy">プライバシーポリシー</a>
+  </p>
 </main>
 
 <script>
@@ -420,6 +431,49 @@
     }
   });
 
+  // ---- 覚え書きの書き直し ----
+  // AIが会話から書き留めたものなので、必ず間違いが混ざる。
+  // 「弟がいる」と書かれたまま放置されると、分身はずっとその前提で喋る。
+  // 会話での訂正を待たずに直せる入口をここに置いている。
+  const notesEdit = document.getElementById("notesEdit");
+  const editNotesBtn = document.getElementById("editNotesBtn");
+  const saveNotesBtn = document.getElementById("saveNotesBtn");
+  const cancelNotesBtn = document.getElementById("cancelNotesBtn");
+  const notesHint = document.getElementById("notesHint");
+
+  function setNotesEditing(on) {
+    notesEl.hidden = on;
+    notesEdit.hidden = !on;
+    editNotesBtn.hidden = on;
+    saveNotesBtn.hidden = !on;
+    cancelNotesBtn.hidden = !on;
+    notesHint.hidden = !on;
+    if (on) { notesEdit.value = state.notes || ""; notesEdit.focus(); }
+  }
+
+  editNotesBtn.addEventListener("click", () => setNotesEditing(true));
+  cancelNotesBtn.addEventListener("click", () => setNotesEditing(false));
+  saveNotesBtn.addEventListener("click", async () => {
+    try {
+      const data = await api("/api/notes", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ characterId: cid, token: token(), notes: notesEdit.value }),
+      });
+      state.notes = data.notes;
+      renderNotes();
+      setNotesEditing(false);
+      setStatus("保存しました");
+    } catch (e) {
+      setStatus(e.message);
+    }
+  });
+
+  function renderNotes() {
+    renderNotes();
+    setNotesEditing(false);
+  }
+
   // ---- 人物像 ----
   function renderInsight() {
     const seg = state.segment;
@@ -523,8 +577,8 @@
     renderInsight();
     renderA11y();
 
-    notesEl.textContent = state.notes || "まだ何も覚えていません。";
-    notesEl.className = state.notes ? "notes" : "empty";
+    renderNotes();
+    setNotesEditing(false);
 
     const c = state.consent || {};
     const canMarket = c.version === schema.consentVersion && c.marketplace === true;

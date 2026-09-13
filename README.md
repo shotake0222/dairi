@@ -82,6 +82,7 @@ src/
   talk.ts                     # かざして話す（カメラ映像を出したまま声で会話。保存され、育つ）
   vision.ts                   # 「これ見て」— 見せられた1枚を言葉に変える（保存しない）
   ime.ts                      # かな漢字変換（視線・スイッチ入力の補助）
+  contact.ts                  # 法人向けページからの問い合わせの受付
   personaRoutes.ts            # 同意・属性・アクセシビリティ設定・人格カードの書き出し（持ち主のみ）
   market.ts                   # 人格マーケット（本人出品／匿名集約セグメント統計）
   admin.ts                    # 管理画面の入口と集計API（合言葉で保護。未設定なら開かない）
@@ -109,7 +110,7 @@ src/
     psychographics.ts         # 価値観・関心の推定と、人格データへの緩やかなマージ
     segments.ts               # 性格＋価値観＋関心からのセグメント分類
   db/schema.sql               # D1スキーマ（参考。実際の適用はmigrations/を使用）
-migrations/                   # D1マイグレーション（nfc_tags / character_directory / transfer_codes / persona_registry ほか）
+migrations/                   # D1マイグレーション（nfc_tags / character_directory / transfer_codes / persona_registry / contact_requests）
 public/
   summon.html                 # NFCタップ直後のAR召喚演出ページ
   chat.html                   # テキストチャットページ
@@ -120,7 +121,9 @@ public/
   eyes.html                   # 視線／スイッチによる文字入力
   market.html                 # 人格マーケット（さがす・傾向・出品）
   admin.html                  # 管理画面
-  lp.html                     # toC向けランディングページ
+  lp.html                     # toC向けランディングページ（分け御霊というコンセプト）
+  biz.html                    # 法人向けランディングページ（SLM・エッジ向けの人格データ）
+  terms.html                  # 利用規約
   home.html                   # あなたの分身（NFCタグが手元にないときの入口）
   friends.html                # 出会いの図鑑
   history.html                # 成長グラフ
@@ -145,6 +148,8 @@ tools/
 | `GET/POST /api/profile`, `POST /api/consent`, `POST /api/accessibility` | 持ち主のみ。同意・属性・入力設定 |
 | `GET /api/persona/card` | 人格カードの書き出し（`format=json\|prompt\|modelfile\|readme`） |
 | `POST /api/ime` | ひらがな→漢字かな交じりの変換（視線・スイッチ入力の補助） |
+| `POST /api/notes` | 覚え書きの書き換え（持ち主のみ）。分身が覚えている内容を本人が直す |
+| `POST /api/contact` | 法人向けページからの問い合わせ |
 | `GET/POST /api/market/*` | マーケット（一覧・出品・問い合わせ・集約セグメント統計） |
 | `GET /api/admin/*` | 管理画面用。`ADMIN_PASSCODE` を設定していなければ 404 |
 

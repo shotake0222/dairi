@@ -361,3 +361,104 @@ describe("かな漢字変換（/api/ime）", () => {
     expect(data.text).toBe("ありがとう");
   });
 });
+
+describe("覚え書きの書き換え（/api/notes）", () => {
+  it("is owner-only", async () => {
+    const cid = freshCid("notes-auth");
+    await createCharacter(cid);
+    const res = await post("/api/notes", { characterId: cid, notes: "・勝手に書き換える" });
+    expect(res.status).toBe(403);
+  });
+
+  it("lets the owner correct what the character believes about them", async () => {
+    const cid = freshCid("notes-edit");
+    const token = await createCharacter(cid);
+
+    const stub = env.CHARACTER.getByName(cid);
+    await runInDurableObject(stub, async (_i, state) => {
+      const data = await state.storage.get<CharacterData>("data");
+      data!.profileNotes = "・弟がいる\n・犬を飼っている";
+      await state.storage.put("data", data);
+    });
+
+    const res = await post("/api/notes", {
+      characterId: cid,
+      token,
+      notes: "妹がいる\n・犬を飼っている",
+    });
+    const data = await res.json<{ notes: string }>();
+
+    // 「・」が無い行にも揃えて付ける（次の蒸留でAIに渡したときに書式が崩れないように）
+    expect(data.notes).toBe("・妹がいる\n・犬を飼っている");
+    expect(data.notes).not.toContain("弟");
+  });
+
+  it("does not let the next reflection immediately overwrite the correction", async () => {
+    const cid = freshCid("notes-hold");
+    const token = await createCharacter(cid);
+    const stub = env.CHARACTER.getByName(cid);
+    await runInDurableObject(stub, async (_i, state) => {
+      const data = await state.storage.get<CharacterData>("data");
+      data!.interactionCount = 12;
+      data!.lastReflectedAt = 0; // 本来ならすぐ蒸留が走る状態
+      await state.storage.put("data", data);
+    });
+
+    await post("/api/notes", { characterId: cid, token, notes: "・直した内容" });
+
+    await runInDurableObject(stub, async (_i, state) => {
+      const data = await state.storage.get<CharacterData>("data");
+      // 直した直後に上書きされないよう、反映済みとして扱う
+      expect(data!.lastReflectedAt).toBe(12);
+    });
+  });
+
+  it("accepts an empty value as 'forget everything you wrote about me'", async () => {
+    const cid = freshCid("notes-clear");
+    const token = await createCharacter(cid);
+    const res = await post("/api/notes", { characterId: cid, token, notes: "" });
+    const data = await res.json<{ notes: string }>();
+    expect(data.notes).toBe("");
+  });
+});
+
+describe("法人からの問い合わせ（/api/contact）", () => {
+  it("requires a plausible email address", async () => {
+    expect((await post("/api/contact", { contact: "" })).status).toBe(400);
+    expect((await post("/api/contact", { contact: "not-an-email" })).status).toBe(400);
+  });
+
+  it("stores the inquiry", async () => {
+    const contact = `biz-${crypto.randomUUID()}@example.com`;
+    const res = await post("/api/contact", {
+      kind: "biz",
+      company: "テスト株式会社",
+      contact,
+      topic: "poc",
+      message: "ロボットに載せたいです",
+    });
+    expect(res.status).toBe(200);
+
+    const row = await env.DB.prepare("SELECT * FROM contact_requests WHERE contact = ?")
+      .bind(contact)
+      .first<Record<string, unknown>>();
+    expect(row!.company).toBe("テスト株式会社");
+    expect(row!.topic).toBe("poc");
+    expect(row!.status).toBe("new");
+  });
+
+  it("falls back to a known topic instead of storing arbitrary values", async () => {
+    const contact = `biz2-${crypto.randomUUID()}@example.com`;
+    await post("/api/contact", { contact, topic: "'; DROP TABLE contact_requests; --" });
+    const row = await env.DB.prepare("SELECT topic FROM contact_requests WHERE contact = ?")
+      .bind(contact)
+      .first<{ topic: string }>();
+    expect(row!.topic).toBe("other");
+  });
+
+  it("is not readable without the admin passcode", async () => {
+    // 連絡先が入る表なので、管理画面と同じ扉の内側にあること
+    const res = await SELF.fetch(`${BASE}/api/admin/contacts`);
+    expect(res.status).toBe(404);
+  });
+});

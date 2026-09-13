@@ -15,6 +15,7 @@ import {
   handleProfileSchema,
   handleSetAccessibility,
   handleSetConsent,
+  handleSetNotes,
   handleSetProfile,
 } from "./personaRoutes";
 import {
@@ -25,6 +26,7 @@ import {
   handleSaveListing,
 } from "./market";
 import { handleIme } from "./ime";
+import { handleContact, handleAdminContacts } from "./contact";
 import { countMetric } from "./persona/registry";
 import { LogContext, newRequestId } from "./lib/log";
 
@@ -113,6 +115,9 @@ export default {
     if (url.pathname === "/api/admin/requests") {
       return handleAdminRequests(env, request, url);
     }
+    if (url.pathname === "/api/admin/contacts") {
+      return handleAdminContacts(env, request, url);
+    }
 
     // --- 属性・同意・アクセシビリティ（すべて持ち主トークンで保護） ---
     if (url.pathname === "/api/profile/schema" && request.method === "GET") {
@@ -129,6 +134,10 @@ export default {
     }
     if (url.pathname === "/api/accessibility" && request.method === "POST") {
       return handleSetAccessibility(env, await request.json());
+    }
+    // 分身が自分について覚えている内容は、間違っていたら本人が直せる必要がある
+    if (url.pathname === "/api/notes" && request.method === "POST") {
+      return handleSetNotes(env, await request.json());
     }
 
     // --- 人格カード（エッジAI・別ランタイムへの持ち出し） ---
@@ -151,6 +160,11 @@ export default {
     }
     if (url.pathname === "/api/market/insights" && request.method === "GET") {
       return handleInsights(env, log);
+    }
+
+    // --- 法人向けページからの問い合わせ ---
+    if (url.pathname === "/api/contact" && request.method === "POST") {
+      return handleContact(env, await request.json(), log);
     }
 
     // --- かな漢字変換（視線入力・スイッチ入力の補助） ---
