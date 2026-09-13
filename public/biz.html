@@ -47,7 +47,14 @@
   }
   header.site .wrap { display: flex; align-items: center; gap: 12px; padding-block: 12px; }
   /* 追従ヘッダーが2行になると、下の内容に重なって読めなくなる。1行に収める。 */
-  .logo { font-weight: 800; letter-spacing: 0.05em; font-size: 15px; white-space: nowrap; }
+  .logo { 
+    display: flex; align-items: center; gap: 6px;
+    font-weight: 800; letter-spacing: 0.05em; font-size: 15px; white-space: nowrap; 
+  }
+  .logo svg {
+    width: 20px; height: 20px;
+    fill: var(--brand);
+  }
   .logo span { color: var(--brand); }
   .logo .biz { font-size: 10px; color: var(--muted); letter-spacing: 0.14em; margin-left: 6px; font-weight: 700; }
   header.site .spacer { flex: 1; }
@@ -172,7 +179,13 @@
 
 <header class="site">
   <div class="wrap">
-    <div class="logo">わけ<span>たま</span><span class="biz">FOR BUSINESS</span></div>
+    <div class="logo">
+      <!-- シンプルな勾玉モチーフのSVGロゴ -->
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-2-9c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2zm6 0c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2z"/>
+      </svg>
+      <div>わけ<span>たま</span><span class="biz">FOR BUSINESS</span></div>
+    </div>
     <div class="spacer"></div>
     <a class="navLink" href="/lp">個人の方へ</a>
     <a class="navBtn" href="#contact">問い合わせ</a>
