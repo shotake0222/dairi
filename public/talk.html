@@ -1,0 +1,796 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>わけたま｜かざして話す</title>
+<meta name="description" content="カメラをかざすと、そこに分身がいる。声で話しかけて、その場で答えてもらえます。" />
+
+<link rel="manifest" href="/manifest.webmanifest" />
+<meta name="theme-color" content="#0b0b12" />
+<link rel="icon" href="/icons/favicon-64.png" sizes="64x64" type="image/png" />
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="わけたま" />
+
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="わけたま" />
+<meta property="og:title" content="わけたま｜かざして話す" />
+<meta property="og:description" content="カメラをかざすと、そこに分身がいる。声で話しかけて、その場で答えてもらえます。" />
+<meta property="og:image" content="/icons/ogp.png" />
+<meta property="og:url" content="/" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="わけたま｜かざして話す" />
+<meta name="twitter:description" content="カメラをかざすと、そこに分身がいる。声で話しかけて、その場で答えてもらえます。" />
+<meta name="twitter:image" content="/icons/ogp.png" />
+
+<script type="module" src="https://cdn.jsdelivr.net/npm/@google/model-viewer@3.5.0/dist/model-viewer.min.js"></script>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: #07060d; color: #fff; overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+  }
+
+  /* 画面全体が「かざしている窓」。ここから外へはみ出す要素を作らないこと（没入が切れる）。 */
+  #stage { position: fixed; inset: 0; overflow: hidden; }
+  #cam { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  /* カメラが使えない端末でも会話は成立させる。背景だけ差し替えて同じUIを出す。 */
+  #camFallback {
+    position: absolute; inset: 0;
+    background: radial-gradient(120% 90% at 50% 15%, #2b2150 0%, #14102a 60%, #0b0a18 100%);
+  }
+  #camFallback[hidden] { display: none; }
+
+  /* 上下の暗がり。文字を読みやすくしつつ、カメラ映像は見えたままにする。 */
+  #vignette {
+    position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(to bottom, rgba(0,0,0,0.5), rgba(0,0,0,0) 22%, rgba(0,0,0,0) 52%, rgba(0,0,0,0.75));
+  }
+
+  /* --- キャラクター --- */
+  #charLayer {
+    /* 下の操作パネルと吹き出しに場所を譲るため、中央よりやや上に立たせる。 */
+    position: absolute; left: 50%; top: 50%; width: min(70vw, 300px); height: min(70vw, 300px);
+    transform: translate(-50%, -72%);
+    display: flex; align-items: center; justify-content: center;
+  }
+  #charInner { width: 100%; height: 100%; position: relative; will-change: transform; }
+  model-viewer {
+    width: 100%; height: 100%; --poster-color: transparent; background-color: transparent;
+    opacity: 0; transition: opacity 0.9s ease;
+  }
+  model-viewer.show { opacity: 1; }
+  /* 3Dモデルが読めない環境（ネットワーク/端末）向けの静止画。何も出ないよりずっとよい。 */
+  #charImg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0; transition: opacity 0.6s ease; }
+  #charImg.show { opacity: 1; }
+
+  /* 感情に応じた光。表情差分の画像を持たなくても、色と強さで気持ちは伝わる。 */
+  #aura {
+    position: absolute; left: 50%; top: 50%; width: 118%; height: 118%; transform: translate(-50%, -50%);
+    border-radius: 999px; pointer-events: none; opacity: 0; transition: opacity 0.5s ease, background 0.5s ease;
+    filter: blur(26px);
+  }
+  #aura.on { opacity: 0.55; }
+
+  /* 動き。演出スクリプトの move ステップがこのクラスを一時的に付ける。 */
+  @keyframes hop { 0%,100% { transform: translateY(0) } 25% { transform: translateY(-16%) } 50% { transform: translateY(0) } 70% { transform: translateY(-7%) } }
+  @keyframes lean { 0%,100% { transform: rotate(0deg) } 40% { transform: rotate(-9deg) } 70% { transform: rotate(4deg) } }
+  @keyframes spin { 0% { transform: rotate(0deg) scale(1) } 50% { transform: rotate(180deg) scale(1.06) } 100% { transform: rotate(360deg) scale(1) } }
+  @keyframes shake { 0%,100% { transform: translateX(0) } 20% { transform: translateX(-6px) } 40% { transform: translateX(6px) } 60% { transform: translateX(-4px) } 80% { transform: translateX(3px) } }
+  @keyframes nod { 0%,100% { transform: translateY(0) rotate(0deg) } 45% { transform: translateY(5%) rotate(3deg) } }
+  @keyframes idle { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-2.5%) } }
+  #charInner { animation: idle 3.6s ease-in-out infinite; }
+  #charInner.motion-hop { animation: hop 0.7s ease-in-out; }
+  #charInner.motion-lean { animation: lean 0.7s ease-in-out; }
+  #charInner.motion-spin { animation: spin 0.7s ease-in-out; }
+  #charInner.motion-shake { animation: shake 0.7s ease-in-out; }
+  #charInner.motion-nod { animation: nod 0.7s ease-in-out; }
+
+  /* エフェクト（キラキラ等）。 */
+  #fx { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  .particle { position: absolute; font-size: 22px; animation: rise 1.3s ease-out forwards; }
+  @keyframes rise { from { opacity: 0; transform: translateY(0) scale(0.6) } 25% { opacity: 1 } to { opacity: 0; transform: translateY(-90px) scale(1.15) } }
+
+  /* --- 画面下側の積み重ね ---
+     吹き出し・聞き取り結果・操作ボタンを、それぞれ絶対配置で置くと
+     文字数や入力欄の開閉で簡単に重なる（実際に重なった）。
+     ひとつの縦並びに入れて、上から順に積むだけにしておく。 */
+  #bottom {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    display: flex; flex-direction: column; gap: 6px;
+    padding-bottom: calc(10px + env(safe-area-inset-bottom));
+  }
+
+  /* --- 応答の吹き出し。撮像画像を表示したまま、その上に重ねて出す --- */
+  #bubbleWrap { display: flex; justify-content: center; padding: 0 18px; pointer-events: none; }
+  #bubble {
+    max-width: 560px; width: 100%; padding: 14px 18px; border-radius: 18px;
+    max-height: 34vh; overflow-y: auto;
+    background: rgba(16,12,32,0.82); border: 1px solid rgba(167,139,250,0.35);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    font-size: 15px; line-height: 1.8; white-space: pre-wrap;
+    opacity: 0; transform: translateY(10px); transition: opacity 0.35s ease, transform 0.35s ease;
+  }
+  #bubble.show { opacity: 1; transform: translateY(0); }
+  #bubble .who { display: block; font-size: 10px; letter-spacing: 0.08em; color: #a78bfa; margin-bottom: 4px; }
+
+  /* 自分が話した内容。認識中もここに出して「聞こえている」ことを示す。 */
+  #heard {
+    text-align: center; padding: 0 18px;
+    font-size: 12px; color: rgba(255,255,255,0.65); min-height: 16px; pointer-events: none;
+  }
+
+  /* --- HUD --- */
+  #topBar {
+    position: absolute; top: 0; left: 0; right: 0; padding: calc(10px + env(safe-area-inset-top)) 14px 10px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  #topBar .name { font-size: 14px; font-weight: 700; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #topBar .brand { font-size: 10px; letter-spacing: 0.1em; color: rgba(255,255,255,0.55); font-weight: 700; }
+  .iconBtn {
+    width: 34px; height: 34px; border-radius: 999px; flex-shrink: 0;
+    border: 1px solid rgba(255,255,255,0.25); background: rgba(0,0,0,0.35); color: #fff;
+    font-size: 15px; line-height: 1; cursor: pointer;
+  }
+
+  #status {
+    position: absolute; left: 0; right: 0; top: calc(52px + env(safe-area-inset-top));
+    text-align: center; font-size: 11px; color: #c9b8ff; min-height: 15px; padding: 0 16px; pointer-events: none;
+  }
+
+  #controls {
+    padding: 4px 16px 0;
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+  }
+  .row { display: flex; gap: 10px; align-items: center; justify-content: center; flex-wrap: wrap; }
+  button { font-family: inherit; cursor: pointer; }
+  #micBtn {
+    width: 68px; height: 68px; border-radius: 999px; border: none; font-size: 26px;
+    background: rgba(255,255,255,0.16); color: #fff; backdrop-filter: blur(8px);
+    transition: background 0.25s ease, transform 0.15s ease;
+  }
+  #micBtn.recording { background: #ff5470; animation: pulse 1.4s ease-out infinite; }
+  #micBtn:disabled { opacity: 0.35; }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(255,84,112,0.55) } 70% { box-shadow: 0 0 0 20px rgba(255,84,112,0) } 100% { box-shadow: 0 0 0 0 rgba(255,84,112,0) } }
+  .chip {
+    border: 1px solid rgba(255,255,255,0.22); background: rgba(0,0,0,0.35); color: #e6dfff;
+    font-size: 11px; padding: 8px 14px; border-radius: 999px; backdrop-filter: blur(8px);
+  }
+  .chip.on { background: rgba(124,92,255,0.9); border-color: transparent; color: #fff; }
+  .chip:disabled { opacity: 0.4; }
+
+  /* 文字入力（騒がしい場所・音声が使えない端末のための逃げ道） */
+  #typeRow { display: none; width: 100%; max-width: 480px; gap: 8px; }
+  #typeRow.show { display: flex; }
+  #typeInput {
+    flex: 1; min-width: 0; padding: 11px 15px; border-radius: 22px; font-size: 16px;
+    border: 1px solid rgba(255,255,255,0.22); background: rgba(0,0,0,0.45); color: #fff;
+  }
+  #typeSend { border: none; background: #7c5cff; color: #fff; border-radius: 999px; padding: 0 18px; font-size: 15px; }
+
+  /* --- 開始オーバーレイ（カメラ/マイクの許可と、iOSの音声解禁のきっかけ） --- */
+  #startOverlay {
+    position: fixed; inset: 0; z-index: 30; background: rgba(7,6,13,0.96);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 16px; padding: 28px; text-align: center;
+  }
+  #startOverlay[hidden] { display: none; }
+  #startOverlay h2 { margin: 0; font-size: 20px; }
+  #startOverlay p { margin: 0; font-size: 13px; line-height: 1.9; color: #bcb0ee; max-width: 340px; }
+  #startBtn { background: #7c5cff; color: #fff; border: none; padding: 14px 34px; border-radius: 999px; font-size: 15px; font-weight: 700; }
+  #startBtn:disabled { opacity: 0.4; }
+  #startOverlay .note { font-size: 11px; color: #857aad; max-width: 320px; line-height: 1.8; }
+
+  #privacyModal {
+    position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,0.65);
+    display: flex; align-items: center; justify-content: center; padding: 20px;
+  }
+  #privacyModal[hidden] { display: none; }
+  #privacyModal .box { background: #17131f; border: 1px solid rgba(255,255,255,0.12); border-radius: 16px; padding: 20px; max-width: 360px; }
+  #privacyModal h3 { margin: 0 0 10px; font-size: 15px; color: #c9b8ff; }
+  #privacyModal p { margin: 0 0 12px; font-size: 12.5px; line-height: 1.9; color: rgba(255,255,255,0.85); }
+  #privacyModal a { color: #a78bfa; }
+  #privacyModal button { width: 100%; padding: 11px; border-radius: 999px; border: none; background: #7c5cff; color: #fff; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <div id="camFallback" hidden></div>
+  <video id="cam" autoplay playsinline muted></video>
+  <div id="vignette"></div>
+
+  <div id="charLayer">
+    <div id="charInner">
+      <div id="aura"></div>
+      <img id="charImg" alt="" />
+      <model-viewer id="model" camera-controls disable-zoom interaction-prompt="none"
+        shadow-intensity="0" exposure="1.15" auto-rotate-delay="0"></model-viewer>
+    </div>
+  </div>
+
+  <div id="fx"></div>
+
+  <div id="topBar">
+    <div>
+      <div class="brand">わけたま</div>
+      <div class="name" id="charName">…</div>
+    </div>
+    <div style="flex:1"></div>
+    <button class="iconBtn" id="infoBtn" type="button" title="この画面について">?</button>
+    <button class="iconBtn" id="closeBtn" type="button" title="終わる">✕</button>
+  </div>
+
+  <div id="status"></div>
+
+  <div id="bottom">
+  <div id="bubbleWrap">
+    <div id="bubble"><span class="who" id="bubbleWho">…</span><span id="bubbleText"></span></div>
+  </div>
+  <div id="heard"></div>
+
+  <div id="controls">
+    <div class="row">
+      <button class="chip" id="lookBtn" type="button">👁 これ見て</button>
+      <button id="micBtn" type="button" title="話す">🎙️</button>
+      <button class="chip" id="handsFreeBtn" type="button">🔁 連続：オン</button>
+    </div>
+    <div class="row">
+      <button class="chip" id="typeBtn" type="button">⌨️ 文字で話す</button>
+      <button class="chip on" id="voiceBtn" type="button">🔊 声：オン</button>
+    </div>
+    <div class="row" id="typeRow">
+      <input id="typeInput" type="text" maxlength="400" placeholder="話しかけてみよう" autocomplete="off" />
+      <button id="typeSend" type="button">送る</button>
+    </div>
+  </div>
+  </div>
+</div>
+
+<div id="startOverlay">
+  <h2 id="startTitle">かざして話す</h2>
+  <p id="startLead">
+    カメラをかざすと、その場に分身が現れます。<br />
+    そのまま声で話しかけてみてください。
+  </p>
+  <button id="startBtn" type="button">はじめる</button>
+  <div class="note">
+    カメラとマイクを使います。<strong>映像は送信も保存もされません</strong>。<br />
+    「👁 これ見て」を押したときだけ、その瞬間の1枚を分身に見せます。
+  </div>
+</div>
+
+<div id="privacyModal" hidden>
+  <div class="box">
+    <h3>この画面について</h3>
+    <p>
+      カメラ映像は<strong>あなたの端末の中だけ</strong>で表示していて、サーバーには送っていません。
+    </p>
+    <p>
+      「👁 これ見て」を押したときだけ、その瞬間の静止画を1枚だけ送り、何が写っているかを言葉に変えます。
+      画像も、その説明文も保存されません。
+    </p>
+    <p>
+      話しかけた言葉と分身の返事は、通常の会話と同じように保存され、性格に反映されます
+      （記録を残したくないときは「その場限りの通話」を使ってください）。
+    </p>
+    <p style="margin-bottom:14px"><a href="/privacy">プライバシーポリシー</a></p>
+    <button id="privacyClose" type="button">とじる</button>
+  </div>
+</div>
+
+<script>
+  // ============================================================
+  // かざして話す
+  //
+  // この画面の肝は「カメラ映像を出したまま、声で会話が成立し続けること」。
+  // 画面遷移を挟むと体験が切れるので、ここから他のページへ移動する処理は
+  // 「終わる」ボタン以外に置かないこと。
+  //
+  // サーバーは文章だけでなく「演出スクリプト」を返す（src/ai/actionScript.ts）。
+  // このページはそれを上から順に実行するだけで、感情の解釈は一切持たない。
+  // 解釈をクライアントに書くと、分身の振る舞いの決定権が2箇所に割れてしまうため。
+  // ============================================================
+
+  const params = new URLSearchParams(location.search);
+  const cid = params.get("cid");
+
+  const camEl = document.getElementById("cam");
+  const camFallback = document.getElementById("camFallback");
+  const modelEl = document.getElementById("model");
+  const charImg = document.getElementById("charImg");
+  const charInner = document.getElementById("charInner");
+  const auraEl = document.getElementById("aura");
+  const fxEl = document.getElementById("fx");
+  const nameEl = document.getElementById("charName");
+  const statusEl = document.getElementById("status");
+  const bubbleEl = document.getElementById("bubble");
+  const bubbleWho = document.getElementById("bubbleWho");
+  const bubbleText = document.getElementById("bubbleText");
+  const heardEl = document.getElementById("heard");
+  const micBtn = document.getElementById("micBtn");
+  const lookBtn = document.getElementById("lookBtn");
+  const handsFreeBtn = document.getElementById("handsFreeBtn");
+  const typeBtn = document.getElementById("typeBtn");
+  const typeRow = document.getElementById("typeRow");
+  const typeInput = document.getElementById("typeInput");
+  const typeSend = document.getElementById("typeSend");
+  const voiceBtn = document.getElementById("voiceBtn");
+  const closeBtn = document.getElementById("closeBtn");
+  const infoBtn = document.getElementById("infoBtn");
+  const privacyModal = document.getElementById("privacyModal");
+  const privacyClose = document.getElementById("privacyClose");
+  const startOverlay = document.getElementById("startOverlay");
+  const startBtn = document.getElementById("startBtn");
+  const startTitle = document.getElementById("startTitle");
+  const startLead = document.getElementById("startLead");
+
+  let characterName = "分身";
+  let personality = null;
+  let voiceProfile = null;
+  let busy = false;
+  let handsFree = true;
+  let speakEnabled = true;
+  let cameraReady = false;
+  let showNext = false; // 「これ見て」が押された状態。次の発言に画像を添える。
+
+  function setStatus(text) { statusEl.textContent = text || ""; }
+
+  function showBubble(text, who) {
+    bubbleWho.textContent = who;
+    bubbleText.textContent = text;
+    bubbleEl.classList.add("show");
+  }
+
+  // ---- 演出スクリプトの実行 ----
+  const AURA_COLORS = {
+    happy: "radial-gradient(circle, rgba(255,214,102,0.9), rgba(255,214,102,0) 70%)",
+    curious: "radial-gradient(circle, rgba(124,196,255,0.9), rgba(124,196,255,0) 70%)",
+    shy: "radial-gradient(circle, rgba(255,160,190,0.9), rgba(255,160,190,0) 70%)",
+    calm: "radial-gradient(circle, rgba(167,139,250,0.8), rgba(167,139,250,0) 70%)",
+    surprised: "radial-gradient(circle, rgba(255,255,255,0.95), rgba(255,255,255,0) 70%)",
+    sad: "radial-gradient(circle, rgba(120,140,200,0.85), rgba(120,140,200,0) 70%)",
+  };
+  const EFFECT_GLYPHS = { sparkle: "✨", heart: "💜", note: "♪", question: "？", drop: "💧" };
+
+  function playMotion(motion, ms) {
+    const cls = `motion-${motion}`;
+    charInner.classList.remove(cls);
+    // アニメーションを付け直すためにリフローを挟む
+    void charInner.offsetWidth;
+    charInner.classList.add(cls);
+    setTimeout(() => charInner.classList.remove(cls), Math.max(300, ms || 700));
+  }
+
+  function playEffect(effect, ms) {
+    const glyph = EFFECT_GLYPHS[effect] || "✨";
+    const count = 6;
+    for (let i = 0; i < count; i++) {
+      const el = document.createElement("div");
+      el.className = "particle";
+      el.textContent = glyph;
+      el.style.left = `${40 + Math.random() * 20}%`;
+      el.style.top = `${38 + Math.random() * 18}%`;
+      el.style.animationDelay = `${i * 90}ms`;
+      fxEl.appendChild(el);
+      setTimeout(() => el.remove(), 1600 + i * 90);
+    }
+    setTimeout(() => {}, ms || 0);
+  }
+
+  function applyEmotion(emotion) {
+    auraEl.style.background = AURA_COLORS[emotion] || AURA_COLORS.calm;
+    auraEl.classList.add("on");
+    setTimeout(() => auraEl.classList.remove("on"), 2600);
+  }
+
+  /** サーバーから届いたスクリプトを順に実行する。知らない type は黙って読み飛ばす（前方互換）。 */
+  async function runScript(steps) {
+    if (!Array.isArray(steps)) return;
+    for (const step of steps) {
+      if (!step || typeof step !== "object") continue;
+      if (step.type === "emote") {
+        applyEmotion(step.emotion);
+      } else if (step.type === "move") {
+        playMotion(step.motion, step.ms);
+      } else if (step.type === "effect") {
+        playEffect(step.effect, step.ms);
+      } else if (step.type === "say" && step.text) {
+        showBubble(step.text, characterName);
+        await speak(step.text);
+      }
+    }
+  }
+
+  // ---- 読み上げ（分身ごとの固有の声で）----
+  const speechSupported = typeof speechSynthesis !== "undefined" && typeof SpeechSynthesisUtterance !== "undefined";
+  let japaneseVoices = [];
+  function loadVoices() {
+    if (!speechSupported) return;
+    try {
+      japaneseVoices = speechSynthesis.getVoices().filter((v) => (v.lang || "").toLowerCase().startsWith("ja"));
+    } catch (e) { /* 取得できなくても既定の声で読み上げる */ }
+  }
+  if (speechSupported) {
+    loadVoices();
+    speechSynthesis.onvoiceschanged = loadVoices;
+  }
+
+  function speak(text) {
+    return new Promise((resolve) => {
+      if (!speakEnabled || !speechSupported || !text) return resolve();
+
+      // 読み上げの完了待ちは、次のターンに進む条件そのもの。
+      // onend が発火しないブラウザが実在し、そこで詰まると
+      // 「二度と話しかけられない画面」になってしまうので、必ず時間切れで先へ進める。
+      let settled = false;
+      const finish = () => { if (!settled) { settled = true; resolve(); } };
+      const guard = setTimeout(finish, Math.min(20000, 2500 + text.length * 180));
+
+      try {
+        speechSynthesis.cancel();
+        const utter = new SpeechSynthesisUtterance(text);
+        utter.lang = "ja-JP";
+        // 声はサーバーが決めている（characterIdから導出）。どの端末でも同じ子の声に聞こえるようにするため。
+        if (japaneseVoices.length > 0) {
+          const idx = voiceProfile ? voiceProfile.voiceIndex % japaneseVoices.length : 0;
+          utter.voice = japaneseVoices[idx];
+        }
+        utter.rate = voiceProfile ? voiceProfile.rate : 1;
+        utter.pitch = voiceProfile ? voiceProfile.pitch : 1;
+        utter.onend = () => { clearTimeout(guard); finish(); };
+        utter.onerror = () => { clearTimeout(guard); finish(); };
+        speechSynthesis.speak(utter);
+      } catch (e) {
+        clearTimeout(guard);
+        finish();
+      }
+    });
+  }
+
+  // ---- カメラ ----
+  async function startCamera() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" } },
+        // マイクはここでは取らない。音声認識側が別に取得するため、二重取得で競合させない。
+        audio: false,
+      });
+      camEl.srcObject = stream;
+      cameraReady = true;
+    } catch (e) {
+      // カメラが使えなくても、声で話すことはできる。背景だけ差し替えて続行する。
+      cameraReady = false;
+      camFallback.hidden = false;
+      camEl.hidden = true;
+      lookBtn.disabled = true;
+      lookBtn.textContent = "👁 カメラなし";
+    }
+  }
+
+  /**
+   * いま映っている1コマを、送れる大きさのJPEGにして返す。
+   * 端末側で縮小してから送るのは、通信量と、サーバーに渡る情報量の両方を小さくするため。
+   */
+  function captureFrame() {
+    if (!cameraReady || !camEl.videoWidth) return null;
+    const maxSide = 512;
+    const scale = Math.min(1, maxSide / Math.max(camEl.videoWidth, camEl.videoHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(camEl.videoWidth * scale);
+    canvas.height = Math.round(camEl.videoHeight * scale);
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(camEl, 0, 0, canvas.width, canvas.height);
+    try {
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
+      return dataUrl.slice(dataUrl.indexOf(",") + 1);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // ---- 音声入力 ----
+  const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let recognition = null;
+  let recorder = null;
+  let recordedChunks = [];
+  let listening = false;
+  let cancelled = false;
+
+  function setListening(on) {
+    listening = on;
+    micBtn.classList.toggle("recording", on);
+    micBtn.textContent = on ? "■" : "🎙️";
+  }
+
+  function startListening() {
+    if (busy || listening) return;
+    cancelled = false;
+
+    if (SpeechRecognitionCtor) {
+      try {
+        recognition = new SpeechRecognitionCtor();
+        recognition.lang = "ja-JP";
+        recognition.interimResults = true;
+        recognition.continuous = false;
+        let finalText = "";
+
+        recognition.onresult = (event) => {
+          let interim = "";
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const r = event.results[i];
+            if (r.isFinal) finalText += r[0].transcript;
+            else interim += r[0].transcript;
+          }
+          heardEl.textContent = (finalText + interim).trim();
+        };
+        recognition.onerror = (event) => {
+          setListening(false);
+          if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+            setStatus("マイクが使えません。「⌨️ 文字で話す」を使ってね");
+            micBtn.disabled = true;
+            typeRow.classList.add("show");
+            return;
+          }
+          if (!cancelled) startRecordingFallback();
+        };
+        recognition.onend = () => {
+          setListening(false);
+          const text = heardEl.textContent.trim();
+          if (!cancelled && text) sendTurn(text);
+          else if (!cancelled && handsFree) setTimeout(() => { if (handsFree && !busy && !listening) startListening(); }, 500);
+        };
+
+        setListening(true);
+        setStatus("聞いています…");
+        recognition.start();
+        return;
+      } catch (e) {
+        recognition = null;
+      }
+    }
+    startRecordingFallback();
+  }
+
+  /** 標準の音声認識が使えないときは、録音してサーバーで文字起こしする。 */
+  async function startRecordingFallback() {
+    if (!navigator.mediaDevices || typeof MediaRecorder === "undefined") {
+      setStatus("この端末では音声入力が使えません。「⌨️ 文字で話す」を使ってね");
+      micBtn.disabled = true;
+      typeRow.classList.add("show");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recordedChunks = [];
+      recorder = new MediaRecorder(stream);
+      recorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) recordedChunks.push(e.data); };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        setListening(false);
+        if (cancelled || recordedChunks.length === 0) return;
+        const blob = new Blob(recordedChunks, { type: recorder.mimeType || "audio/webm" });
+        if (blob.size < 2000) { setStatus("うまく聞き取れませんでした"); return; }
+        setStatus("聞き取っています…");
+        try {
+          const res = await fetch("/api/voice/transcribe", {
+            method: "POST",
+            headers: { "content-type": blob.type || "audio/webm" },
+            body: blob,
+          });
+          const data = await res.json();
+          if (data.text) { heardEl.textContent = data.text; sendTurn(data.text); }
+          else setStatus(data.error || "うまく聞き取れませんでした");
+        } catch (e) {
+          setStatus("聞き取りに失敗しました");
+        }
+      };
+      setListening(true);
+      setStatus("録音中… もう一度押すと送ります");
+      recorder.start();
+    } catch (e) {
+      setStatus("マイクを使えませんでした。「⌨️ 文字で話す」を使ってね");
+      micBtn.disabled = true;
+      typeRow.classList.add("show");
+    }
+  }
+
+  function stopListening(cancel) {
+    cancelled = Boolean(cancel);
+    if (recognition) { try { recognition.stop(); } catch (e) {} }
+    if (recorder && recorder.state === "recording") { try { recorder.stop(); } catch (e) {} }
+    setListening(false);
+  }
+
+  // ---- 1ターン ----
+  async function sendTurn(text) {
+    const message = (text || "").trim();
+    if (!message || busy || !cid) return;
+
+    busy = true;
+    micBtn.disabled = true;
+    heardEl.textContent = message;
+    setStatus("");
+    showBubble("…", characterName);
+
+    // 「これ見て」が押されていれば、この瞬間の1枚を添える（押されていなければ何も送らない）。
+    let image = null;
+    if (showNext) {
+      image = captureFrame();
+      showNext = false;
+      lookBtn.classList.remove("on");
+      lookBtn.textContent = "👁 これ見て";
+    }
+
+    try {
+      const res = await fetch("/api/talk", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ characterId: cid, message, image }),
+      });
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        showBubble(data.error || "うまく返事ができなかったみたい", characterName);
+      } else {
+        if (data.voice) voiceProfile = data.voice;
+        if (data.personality) personality = data.personality;
+        if (data.saw) setStatus(`👁 ${data.saw}`);
+        await runScript(data.script && data.script.length ? data.script : [{ type: "say", text: data.reply }]);
+      }
+    } catch (e) {
+      showBubble("（うまく声が届かなかったみたい）", characterName);
+    } finally {
+      busy = false;
+      micBtn.disabled = false;
+      // 連続モードなら、返事が終わったらまた耳を澄ませる。画面はカメラを映したまま。
+      if (handsFree && !listening) {
+        setTimeout(() => { if (handsFree && !busy && !listening) startListening(); }, 400);
+      }
+    }
+  }
+
+  // ---- 操作 ----
+  micBtn.addEventListener("click", () => {
+    if (listening) stopListening(false);
+    else startListening();
+  });
+
+  lookBtn.addEventListener("click", () => {
+    if (!cameraReady) return;
+    showNext = !showNext;
+    lookBtn.classList.toggle("on", showNext);
+    lookBtn.textContent = showNext ? "👁 見せる準備OK" : "👁 これ見て";
+    if (showNext) {
+      setStatus("このまま話しかけると、いま映っているものを見せます");
+      // 何も言わずに見せたいときのために、押しっぱなしでも成立するようにしておく。
+      if (!listening && !busy && handsFree) startListening();
+    } else {
+      setStatus("");
+    }
+  });
+
+  handsFreeBtn.addEventListener("click", () => {
+    handsFree = !handsFree;
+    handsFreeBtn.classList.toggle("on", handsFree);
+    handsFreeBtn.textContent = handsFree ? "🔁 連続：オン" : "🔁 連続：オフ";
+    if (handsFree && !busy && !listening) startListening();
+    if (!handsFree) stopListening(true);
+  });
+  handsFreeBtn.classList.add("on");
+
+  typeBtn.addEventListener("click", () => {
+    typeRow.classList.toggle("show");
+    if (typeRow.classList.contains("show")) typeInput.focus();
+  });
+  typeSend.addEventListener("click", () => { const v = typeInput.value; typeInput.value = ""; sendTurn(v); });
+  typeInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); const v = typeInput.value; typeInput.value = ""; sendTurn(v); }
+  });
+
+  voiceBtn.addEventListener("click", () => {
+    speakEnabled = !speakEnabled;
+    voiceBtn.classList.toggle("on", speakEnabled);
+    voiceBtn.textContent = speakEnabled ? "🔊 声：オン" : "🔇 声：オフ";
+    if (!speakEnabled && speechSupported) { try { speechSynthesis.cancel(); } catch (e) {} }
+  });
+
+  infoBtn.addEventListener("click", () => (privacyModal.hidden = false));
+  privacyClose.addEventListener("click", () => (privacyModal.hidden = true));
+
+  function leave() {
+    handsFree = false;
+    stopListening(true);
+    if (speechSupported) { try { speechSynthesis.cancel(); } catch (e) {} }
+    const stream = camEl.srcObject;
+    if (stream) stream.getTracks().forEach((t) => t.stop());
+    location.href = cid ? `/chat?cid=${encodeURIComponent(cid)}` : "/home";
+  }
+  closeBtn.addEventListener("click", leave);
+
+  window.addEventListener("pagehide", () => {
+    if (speechSupported) { try { speechSynthesis.cancel(); } catch (e) {} }
+    stopListening(true);
+    const stream = camEl.srcObject;
+    if (stream) stream.getTracks().forEach((t) => t.stop());
+  });
+
+  // ---- 読み込み ----
+  async function loadCharacter() {
+    if (!cid) {
+      startTitle.textContent = "分身が指定されていません";
+      startLead.textContent = "NFCタグから開き直してみてください。";
+      startBtn.disabled = true;
+      return null;
+    }
+    try {
+      const res = await fetch(`/api/character?cid=${encodeURIComponent(cid)}`);
+      if (!res.ok) {
+        startTitle.textContent = "この分身は見つかりませんでした";
+        startLead.textContent = "削除されたか、URLが違うのかもしれません。";
+        startBtn.disabled = true;
+        return null;
+      }
+      const data = await res.json();
+      characterName = data.name || "分身";
+      personality = data.personality || null;
+      voiceProfile = data.voice || null;
+      nameEl.textContent = characterName;
+      startTitle.textContent = `${characterName}に会いに行く`;
+      if (data.species && data.color) {
+        modelEl.src = `/characters/${data.species}_${data.color}.glb`;
+        modelEl.setAttribute("alt", characterName);
+        charImg.src = `/characters/${data.species}_${data.color}.png`;
+      }
+      return data;
+    } catch (e) {
+      startTitle.textContent = "うまく読み込めませんでした";
+      startBtn.disabled = true;
+      return null;
+    }
+  }
+
+  // 3Dモデルが読めたらそちらを、だめなら静止画を出す。どちらも出ないと「居ない」ことになってしまう。
+  modelEl.addEventListener("load", () => { modelEl.classList.add("show"); charImg.classList.remove("show"); });
+  modelEl.addEventListener("error", () => { charImg.classList.add("show"); });
+  setTimeout(() => { if (!modelEl.classList.contains("show")) charImg.classList.add("show"); }, 2500);
+
+  startBtn.addEventListener("click", async () => {
+    startOverlay.hidden = true;
+
+    // iOSは「ユーザー操作を起点にしない音声再生」を禁止している。
+    // このタップの中で無音を1回鳴らして解禁しておく。
+    if (speechSupported) {
+      try {
+        const unlock = new SpeechSynthesisUtterance(" ");
+        unlock.volume = 0;
+        speechSynthesis.speak(unlock);
+      } catch (e) {}
+    }
+
+    await startCamera();
+
+    const greeting = `${characterName}だよ。そこにいるんだね`;
+    applyEmotion("happy");
+    playMotion("hop", 700);
+    showBubble(greeting, characterName);
+    await speak(greeting);
+    if (handsFree) startListening();
+  });
+
+  loadCharacter();
+</script>
+
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    });
+  }
+</script>
+</body>
+</html>

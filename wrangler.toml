@@ -38,7 +38,7 @@ binding = "ASSETS"
 # 既定では静的ファイルはWorkerに届く前にアセット層が直接返してしまい、
 # src/index.ts の HTMLRewriter（OGPのURL絶対化）が動かないため。
 # 画像や3Dモデルまで対象にするとリクエストごとにWorker呼び出しが増えるので、ページのパスだけに限定する。
-run_worker_first = ["/", "/home", "/chat", "/call", "/summon", "/friends", "/history", "/offline"]
+run_worker_first = ["/", "/home", "/chat", "/call", "/talk", "/summon", "/friends", "/history", "/privacy", "/offline"]
 
 # --- Workers AI（序盤はSLMで運用） ---
 [ai]
@@ -81,7 +81,7 @@ crons = ["0 3,12 * * *"]
 #
 # 初回だけ、専用のD1とVectorizeインデックスを作る必要がある:
 #   npx wrangler d1 create waketama-staging-db
-#     → 出力された database_id を下の b5ec7529-b3c4-4615-b5d7-b2d9c6e79634 に貼る
+#     → 出力された database_id を下の REPLACE_WITH_STAGING_D1_ID に貼る
 #   npx wrangler d1 migrations apply waketama-staging-db --remote --env staging
 #   npx wrangler vectorize create waketama-staging-memory --dimensions=1024 --metric=cosine
 #   npx wrangler vectorize create-metadata-index waketama-staging-memory --property-name=characterId --type=string
@@ -103,7 +103,7 @@ head_sampling_rate = 1
 [env.staging.assets]
 directory = "./public"
 binding = "ASSETS"
-run_worker_first = ["/", "/home", "/chat", "/call", "/summon", "/friends", "/history", "/offline"]
+run_worker_first = ["/", "/home", "/chat", "/call", "/talk", "/summon", "/friends", "/history", "/privacy", "/offline"]
 
 [env.staging.ai]
 binding = "AI"

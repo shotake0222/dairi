@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>わけたま｜プライバシーポリシー</title>
+<meta name="description" content="わけたまが扱うデータと、その扱い方について。" />
+
+<link rel="manifest" href="/manifest.webmanifest" />
+<meta name="theme-color" content="#7c5cff" />
+<link rel="icon" href="/icons/favicon-64.png" sizes="64x64" type="image/png" />
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="わけたま" />
+<meta property="og:title" content="わけたま｜プライバシーポリシー" />
+<meta property="og:description" content="わけたまが扱うデータと、その扱い方について。" />
+<meta property="og:image" content="/icons/ogp.png" />
+<meta property="og:url" content="/" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="わけたま｜プライバシーポリシー" />
+<meta name="twitter:description" content="わけたまが扱うデータと、その扱い方について。" />
+<meta name="twitter:image" content="/icons/ogp.png" />
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: #f5f3ff; color: #2c2440;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    line-height: 1.9;
+  }
+  header { padding: 18px 16px; background: #fff; border-bottom: 1px solid #eee; }
+  .brand { font-size: 10px; letter-spacing: 0.08em; color: #a78bfa; font-weight: 700; }
+  header h1 { margin: 4px 0 0; font-size: 19px; }
+  header .updated { font-size: 12px; color: #9a90c0; margin-top: 6px; }
+  main { max-width: 720px; margin: 0 auto; padding: 20px 16px 64px; }
+  section { background: #fff; border: 1px solid #eee; border-radius: 16px; padding: 18px 18px 20px; margin-bottom: 14px; }
+  h2 { font-size: 15px; margin: 0 0 10px; color: #4c3a99; }
+  p { margin: 0 0 12px; font-size: 14px; }
+  p:last-child { margin-bottom: 0; }
+  ul { margin: 0 0 12px; padding-left: 1.2em; font-size: 14px; }
+  li { margin-bottom: 6px; }
+  .lead { background: #f0ecff; border: 1px solid #ddd4ff; color: #4c3a99; font-size: 13px; }
+  .draft { background: #fff6e0; border: 1px solid #f0dfae; color: #7a5c17; font-size: 13px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 12px; }
+  th, td { border: 1px solid #eee; padding: 8px 10px; text-align: left; vertical-align: top; }
+  th { background: #faf8ff; color: #4c3a99; white-space: nowrap; }
+  code { background: #f0ecff; padding: 1px 5px; border-radius: 5px; font-size: 12px; }
+  a { color: #7c5cff; }
+  .back { display: inline-block; margin-top: 8px; font-size: 13px; }
+  .todo { color: #d1425a; font-weight: 700; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">わけたま</div>
+  <h1>プライバシーポリシー</h1>
+  <div class="updated">最終更新: 2026年9月13日</div>
+</header>
+
+<main>
+  <section class="draft">
+    <strong>※ この文書は下書きです。</strong>
+    実際の運用内容に沿って書いていますが、法的な有効性については弁護士等の専門家の確認を受けてください。
+    事業者名・連絡先など <span class="todo">［　］</span> の箇所は、公開前に必ず埋めてください。
+  </section>
+
+  <section class="lead">
+    <p>
+      わけたまは、<strong>アカウント登録なしで使えるサービス</strong>です。氏名・メールアドレス・電話番号など、
+      あなた個人を特定する情報は一切お預かりしていません。
+    </p>
+    <p style="margin-bottom:0">
+      一方で、<strong>分身との会話の内容はサーバーに保存されます</strong>（それが「育つ」ための仕組みだからです）。
+      何がどこに保存され、どう使われ、どうすれば消せるのかを、以下に具体的に書きます。
+    </p>
+  </section>
+
+  <section>
+    <h2>1. 取得しない情報</h2>
+    <ul>
+      <li>氏名、メールアドレス、電話番号、住所、生年月日</li>
+      <li>SNSアカウントとの連携情報</li>
+      <li>広告目的のトラッキング情報（第三者の広告・解析タグは一切設置していません）</li>
+    </ul>
+    <p>ログイン機能そのものがないため、これらを入力する場面がありません。</p>
+  </section>
+
+  <section>
+    <h2>2. 取得・保存する情報</h2>
+    <table>
+      <tr><th>情報</th><th>保存場所</th><th>目的</th></tr>
+      <tr>
+        <td>分身との会話の内容</td>
+        <td>Cloudflare（Durable Objects / Vectorize）</td>
+        <td>分身が過去のやり取りを覚えて応答するため</td>
+      </tr>
+      <tr>
+        <td>分身の名前・見た目・性格の数値・成長段階</td>
+        <td>Cloudflare（Durable Objects）</td>
+        <td>育成状態の保持</td>
+      </tr>
+      <tr>
+        <td>NFCタグのIDと分身の対応</td>
+        <td>Cloudflare（D1）</td>
+        <td>同じタグをタップしたとき同じ分身に戻すため</td>
+      </tr>
+      <tr>
+        <td>持ち主トークン</td>
+        <td>お使いの端末のブラウザ（localStorage）</td>
+        <td>名前変更・書き出し・削除などを持ち主だけに限るため</td>
+      </tr>
+      <tr>
+        <td>アクセスログ（IPアドレス・ブラウザ情報を含む）</td>
+        <td>Cloudflare</td>
+        <td>障害対応とセキュリティのため</td>
+      </tr>
+    </table>
+    <p>
+      アクセスログには通信の性質上IPアドレス等が含まれますが、<strong>会話の本文は記録していません</strong>。
+      不具合調査のために記録しているのは、処理の種類・所要時間・成功か失敗か・分身の識別子までです。
+    </p>
+  </section>
+
+  <section>
+    <h2>3. 音声の扱い</h2>
+    <p>
+      音声で話しかける機能では、次のいずれかの方法で音声が文字に変換されます。
+    </p>
+    <ul>
+      <li><strong>お使いのブラウザの音声認識機能</strong>を使う場合: 音声の処理はブラウザ／OSの提供元に委ねられます（Google Chromeなど、ブラウザによっては提供元のサーバーへ送信されます）</li>
+      <li><strong>わけたまのサーバーで文字起こしする</strong>場合: 録音した音声がCloudflareのAI（Whisper）へ送信されます</li>
+    </ul>
+    <p>
+      いずれの場合も、<strong>わけたまは音声データそのものを保存しません</strong>。
+      文字に変換されたテキストは、あなたが入力した文章と同じ扱いになります（つまり分身の記憶として保存されます）。
+    </p>
+    <p style="margin-bottom:0">
+      読み上げ機能でサーバー側の音声合成を使う場合、読み上げる文章がCloudflareのAIへ送信されます。生成された音声は保存しません。
+    </p>
+  </section>
+
+  <section>
+    <h2>4. カメラ映像の扱い（「かざして話す」）</h2>
+    <p>
+      「かざして話す」では、スマートフォンのカメラ映像を画面に表示します。この<strong>映像はお使いの端末の中だけで表示しており、
+      サーバーへは送っていません</strong>。録画も保存もしていません。
+    </p>
+    <p>
+      例外は「👁 これ見て」を押したときだけです。押した瞬間の静止画1枚を縮小してサーバーへ送り、
+      CloudflareのAIが「何が写っているか」を短い文章に変換します。
+    </p>
+    <ul>
+      <li>送った画像は保存しません（変換が終わった時点で破棄されます）</li>
+      <li>生成された説明文も保存しません。そのときの返事を作るためだけに使われます</li>
+      <li>人物が写っていても、容姿や個人を特定できることは書かせない指示をAIに与えています</li>
+    </ul>
+    <p style="margin-bottom:0">
+      「かざして話す」で<strong>話しかけた言葉と分身の返事は、通常の会話と同じように保存され</strong>、性格に反映されます。
+      記録を残したくないときは「その場限りの通話」をお使いください。
+    </p>
+  </section>
+
+  <section>
+    <h2>5. 「その場限りの通話」で保存されないもの</h2>
+    <p>
+      通話モードでのやり取りは、<strong>どこにも保存されません</strong>。会話の内容はもちろん、
+      性格の変化・やり取りの回数・記憶のいずれも記録されず、画面を閉じた時点で消えます。
+      サーバー側には、そのとき参照した性格を読み出した記録が残るだけです。
+    </p>
+  </section>
+
+  <section>
+    <h2>6. 他の人に見えるもの</h2>
+    <p>
+      「他の分身と出会う」機能は<strong>初期状態でオフ</strong>です。オンにした場合に限り、
+      次の情報が他の利用者の分身とのマッチングに使われます。
+    </p>
+    <ul>
+      <li>分身の名前・種族・色・成長段階・性格の数値</li>
+    </ul>
+    <p style="margin-bottom:0">
+      <strong>あなたと分身の会話の内容や記憶は、他の利用者にも他の分身にも一切渡りません。</strong>
+      人間同士のメッセージのやり取りが発生する機能もありません。オフに戻すと、掲載情報は即座に削除されます。
+    </p>
+  </section>
+
+  <section>
+    <h2>7. 第三者提供・委託先</h2>
+    <p>
+      情報を第三者に販売・提供することはありません。ただしサービスの提供にあたり、
+      以下の事業者のインフラを利用しています（データはその事業者のサーバー上で処理・保存されます）。
+    </p>
+    <ul>
+      <li><strong>Cloudflare, Inc.</strong> — サーバー、データベース、AIによる応答生成・音声認識・音声合成</li>
+    </ul>
+    <p style="margin-bottom:0">
+      会話の内容はCloudflareのAIに送信されます。処理は日本国外のサーバーで行われる場合があります。
+    </p>
+  </section>
+
+  <section>
+    <h2>8. 保存期間と削除</h2>
+    <p>
+      分身のデータは、あなたが削除するまで保存されます。<strong>いつでも自分で完全に削除できます。</strong>
+    </p>
+    <ul>
+      <li>チャット画面の「📦 保存/復元」→「🗑️ この分身を削除する」</li>
+      <li>削除すると、性格・記憶・出会いの履歴・公開ディレクトリへの掲載・NFCタグとの対応がすべて消えます</li>
+      <li>削除は取り消せません。必要なら、事前に「⬇️ 書き出す」でバックアップを取ってください</li>
+    </ul>
+    <p style="margin-bottom:0">
+      アクセスログは、障害対応のためCloudflare側の設定に従って一定期間保持されたのち削除されます。
+    </p>
+  </section>
+
+  <section>
+    <h2>9. データの持ち出し</h2>
+    <p style="margin-bottom:0">
+      育った性格と記憶は、いつでも1つのJSONファイルとして書き出せます（チャット画面の「📦 保存/復元」）。
+      特定の形式に閉じ込めない方針で設計しており、他の環境へ持ち出せる形になっています。
+    </p>
+  </section>
+
+  <section>
+    <h2>10. Cookieなどの利用</h2>
+    <p style="margin-bottom:0">
+      広告や解析のためのCookieは使用していません。持ち主トークンや、この端末で開いた分身の記録は、
+      Cookieではなくブラウザのローカル領域（localStorage）に保存され、外部へ送信されることはありません。
+      ブラウザのデータを消去すると、これらも消えます（分身自体は残りますが、持ち主としての操作ができなくなります。
+      機種変更などの際は、事前に「引き継ぎコード」をご利用ください）。
+    </p>
+  </section>
+
+  <section>
+    <h2>11. お子さまの利用について</h2>
+    <p style="margin-bottom:0">
+      本サービスはNFCタグ付きグッズを入口とするため、お子さまが利用する可能性があります。
+      個人を特定する情報は取得していませんが、会話の内容は保存されます。
+      保護者の方は、お子さまが個人情報（氏名・学校名・住所など）を会話に入力しないようご配慮ください。
+    </p>
+  </section>
+
+  <section>
+    <h2>12. 改定</h2>
+    <p style="margin-bottom:0">
+      本ポリシーの内容は必要に応じて改定します。重要な変更がある場合は、サービス上でお知らせします。
+    </p>
+  </section>
+
+  <section>
+    <h2>13. お問い合わせ</h2>
+    <p style="margin-bottom:0">
+      本ポリシーおよびデータの取り扱いに関するお問い合わせ先: <span class="todo">［事業者名・連絡先メールアドレスを記載してください］</span>
+    </p>
+  </section>
+
+  <a class="back" href="/home">← あなたの分身へ戻る</a>
+</main>
+</body>
+</html>

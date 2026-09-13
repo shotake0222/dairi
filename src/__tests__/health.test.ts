@@ -19,6 +19,7 @@ interface HealthBody {
     d1: { ok: boolean; detail?: string };
     vectorize: { ok: boolean; detail?: string };
     ai: { ok: boolean; detail?: string };
+    chat: { ok: boolean; detail?: string };
   };
 }
 
@@ -52,16 +53,57 @@ describe("GET /api/health", () => {
     expect(aiSpy).not.toHaveBeenCalled();
     expect(body.checks.ai.ok).toBe(true);
     expect(body.checks.ai.detail).toContain("skipped");
+    // 会話モデルの「設定」はAIを呼ばずに見せる（何を使うつもりなのかは無料で確認できるべき）
+    expect(body.checks.chat.ok).toBe(true);
+    expect(body.checks.chat.detail).toContain("configured:");
   });
 
-  it("?deep=1 のときだけAIを1回呼んで確認する", async () => {
-    const aiSpy = vi.spyOn(env.AI, "run").mockResolvedValue({ data: [[0.1, 0.2, 0.3]] } as never);
+  it("?deep=1 のときだけAIを呼び、埋め込みと会話モデルの両方を確かめる", async () => {
+    const aiSpy = vi
+      .spyOn(env.AI, "run")
+      .mockResolvedValue({ data: [[0.1, 0.2, 0.3]], response: "pong" } as never);
     const res = await SELF.fetch(`${BASE}/api/health?deep=1`);
     const body = await res.json<HealthBody>();
 
-    expect(aiSpy).toHaveBeenCalledTimes(1);
+    // 埋め込みで1回、会話モデルで1回。どちらも最小の呼び出しに留める
+    expect(aiSpy).toHaveBeenCalledTimes(2);
     expect(body.checks.ai.ok).toBe(true);
     expect(body.checks.ai.detail).toContain("dimensions=3");
+    expect(body.checks.chat.ok).toBe(true);
+    expect(body.checks.chat.detail).toContain("answered by");
+  });
+
+  it("?deep=1 で、実際に応答したのが第一候補かフォールバックかまで分かる", async () => {
+    // 第一候補だけ落ちている状況を作る（本番でいちばん気づきにくい壊れ方）
+    let call = 0;
+    vi.spyOn(env.AI, "run").mockImplementation((async (_model: string, input: unknown) => {
+      if ((input as { messages?: unknown }).messages) {
+        call++;
+        if (call === 1) throw new Error("primary model down");
+        return { response: "pong" };
+      }
+      return { data: [[0.1, 0.2, 0.3]] };
+    }) as never);
+
+    const res = await SELF.fetch(`${BASE}/api/health?deep=1`);
+    const body = await res.json<HealthBody>();
+
+    expect(body.checks.chat.ok).toBe(true);
+    // 「動いてはいるが下位モデルに落ちている」ことが、ログを漁らずに分かること
+    expect(body.checks.chat.detail).toContain("フォールバック");
+  });
+
+  it("?deep=1 で会話モデルが全滅していたら 503 になる", async () => {
+    vi.spyOn(env.AI, "run").mockImplementation((async (_model: string, input: unknown) => {
+      if ((input as { messages?: unknown }).messages) throw new Error("all models down");
+      return { data: [[0.1, 0.2, 0.3]] };
+    }) as never);
+
+    const res = await SELF.fetch(`${BASE}/api/health?deep=1`);
+    const body = await res.json<HealthBody>();
+
+    expect(res.status).toBe(503);
+    expect(body.checks.chat.ok).toBe(false);
   });
 
   it("依存先が落ちているときは 503 を返し、どれが駄目かが分かる", async () => {

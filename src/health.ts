@@ -13,6 +13,7 @@
  */
 
 import { EMBEDDING_MODEL } from "./ai/memory";
+import { chatModelChain, runChat } from "./ai/modelPolicy";
 import { LogContext, logInfo } from "./lib/log";
 
 interface CheckResult {
@@ -27,6 +28,7 @@ interface HealthEnv {
   AI: Ai;
   APP_VERSION?: string;
   BUILT_AT?: string;
+  CHAT_MODEL?: string;
 }
 
 async function timed(fn: () => Promise<string | undefined>): Promise<CheckResult> {
@@ -64,15 +66,31 @@ export async function handleHealth(env: HealthEnv, url: URL, log: LogContext): P
       })
     : { ok: true, detail: "skipped (?deep=1 で実行。呼ぶと課金が発生します)" };
 
+  // 会話モデル: 「意図した設定」はAIを呼ばずに見せ、「実際に応答するのはどれか」は ?deep=1 のときだけ確かめる。
+  //
+  // これが無いと、フォールバックで下位モデルに落ちたまま運用していても気づけない。
+  // 上位モデルが落ちても会話は続く設計なので、症状が「なんとなく返事が浅い」だけになり、
+  // ログを漁るまで分からない状態になってしまう。ここを見れば1回で分かるようにしておく。
+  const chain = chatModelChain(env);
+  const chat: CheckResult = deep
+    ? await timed(async () => {
+        const result = await runChat(env, [{ role: "user", content: "ping" }], { maxTokens: 8, temperature: 0 });
+        if (!result) throw new Error(`全モデルが応答しませんでした（試した順: ${chain.join(", ")}）`);
+        return result.fallbacks === 0
+          ? `answered by ${result.model}`
+          : `answered by ${result.model}（第一候補から${result.fallbacks}段フォールバック）`;
+      })
+    : { ok: true, detail: `configured: ${chain.join(" → ")}（実際の応答確認は ?deep=1）` };
+
   const body = {
-    ok: d1.ok && vectorize.ok && ai.ok,
+    ok: d1.ok && vectorize.ok && ai.ok && chat.ok,
     version: env.APP_VERSION || "dev",
     builtAt: env.BUILT_AT || null,
     checkedAt: new Date().toISOString(),
-    checks: { d1, vectorize, ai },
+    checks: { d1, vectorize, ai, chat },
   };
 
-  logInfo(log, "health", { ok: body.ok, d1: d1.ok, vectorize: vectorize.ok, deep });
+  logInfo(log, "health", { ok: body.ok, d1: d1.ok, vectorize: vectorize.ok, chat: chat.ok, deep });
 
   return new Response(JSON.stringify(body, null, 2), {
     status: body.ok ? 200 : 503,

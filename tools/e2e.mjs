@@ -89,7 +89,11 @@ const manifest = await (await fetch(`${BASE}/manifest.webmanifest`)).json();
 check("manifestが配信される", manifest.name === "わけたま" && manifest.start_url === "/home");
 check("Service Workerが配信される", (await fetch(`${BASE}/sw.js`)).ok);
 const html = await (await fetch(`${BASE}/home`)).text();
-check("og:imageが絶対URLになっている", html.includes(`content="${BASE}/icons/ogp.png"`));
+// 検証したいのは「相対パスのままSNSに渡らないこと」。オリジンそのものは環境で変わる
+// （wrangler devはwrangler.tomlのカスタムドメインをホスト名として使うため、ローカルでも
+//   http://app.waketama.com/... になる）ので、絶対URLかどうかだけを見る。
+const ogImage = /<meta property="og:image" content="([^"]+)"/.exec(html)?.[1] || "";
+check("og:imageが絶対URLになっている", /^https?:\/\/[^/]+\/icons\/ogp\.png$/.test(ogImage), ogImage);
 
 console.log("\n[4] 分身の削除と、そのあとの導線");
 await page.click("#toggleExport");
@@ -186,6 +190,46 @@ const reuse = await fetch(`${BASE}/api/character/transfer/claim`, {
   body: JSON.stringify({ code: issued.code }),
 });
 check("同じコードは二度使えない", reuse.status === 410);
+
+console.log("\n[9] かざして話す");
+// E2Eの実行環境にカメラは無い前提。カメラが取れなくても会話が成立することまで含めて確認する。
+await page.goto(`${BASE}/talk?cid=${newCid}`, { waitUntil: "networkidle" });
+await page.waitForTimeout(600);
+check("開始前に「映像は送らない」ことが明示されている", (await page.textContent("#startOverlay")).includes("送信も保存もされません"));
+check("分身の名前が読み込まれている", ((await page.textContent("#charName")) || "").length > 1);
+
+await page.click("#startBtn");
+await page.waitForTimeout(900);
+check("開始するとカメラ画面に切り替わる", await page.isHidden("#startOverlay"));
+check("出迎えの言葉が撮像画面の上に出る", ((await page.textContent("#bubbleText")) || "").length > 0);
+check("カメラが無くても「これ見て」が無効化されるだけで会話は続く", await page.isDisabled("#lookBtn"));
+
+const talkLayout = await page.evaluate(() => ({
+  overflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+}));
+check("かざして話す画面が横に溢れていない", talkLayout.overflowX === false);
+
+// 音声入力はE2Eでは使えないので、文字入力の逃げ道から1ターン送る
+const beforeTalk = await (await fetch(`${BASE}/api/character?cid=${newCid}`)).json();
+await page.click("#typeBtn");
+await page.fill("#typeInput", "かざして話すのテストです");
+await page.click("#typeSend");
+await page.waitForTimeout(4000);
+check("話しかけた言葉が画面に出る", ((await page.textContent("#heard")) || "").includes("かざして話す"));
+const afterTalk = await (await fetch(`${BASE}/api/character?cid=${newCid}`)).json();
+check(
+  "かざして話すの会話は保存される（通話モードとは違い、育つ）",
+  afterTalk.interactionCount > beforeTalk.interactionCount,
+  `${beforeTalk.interactionCount} -> ${afterTalk.interactionCount}`
+);
+check("会話の中身は公開APIから読めない", !JSON.stringify(afterTalk).includes("かざして話すのテストです"));
+check("分身ごとの声が返ってくる", typeof afterTalk.voice?.pitch === "number");
+await page.screenshot({ path: path.join(OUT_DIR, "talk.png") });
+
+console.log("\n[10] プライバシーポリシー");
+const privacyHtml = await (await fetch(`${BASE}/privacy`)).text();
+check("プライバシーポリシーが配信される", privacyHtml.includes("プライバシーポリシー"));
+check("カメラ映像の扱いが書かれている", privacyHtml.includes("カメラ映像の扱い"));
 
 check("JavaScriptエラーが出ていない", pageErrors.length === 0, pageErrors.join(" / "));
 

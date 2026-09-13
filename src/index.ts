@@ -2,6 +2,8 @@ import { CharacterState, SPECIES_LABELS, MEETING_COOLDOWN_MS, MeetingLogEntry, S
 import { deriveSpeechStyle } from "./ai/speechStyle";
 import { PersonalityTraits, TRAIT_KEYS } from "./ai/personality";
 import { handleCallStream } from "./call";
+import { handleTalk } from "./talk";
+import { deriveVoiceProfile } from "./ai/voiceProfile";
 import { handleHealth } from "./health";
 import { handleTranscribe, handleSpeak } from "./voice";
 import { issueTransferCode, claimTransferCode } from "./transfer";
@@ -23,6 +25,11 @@ export interface Env {
   ENVIRONMENT?: string;
   /** ステージングの合言葉。設定されているときだけ入口で要求する（secretで設定）。 */
   STAGING_PASSCODE?: string;
+  /**
+   * 会話モデルの上書き。コードを変えずに品質評価やロールバックができるようにするための逃げ道。
+   * 未設定なら src/ai/modelPolicy.ts の既定の連鎖を使う。
+   */
+  CHAT_MODEL?: string;
 }
 
 /**
@@ -69,6 +76,16 @@ export default {
     if (url.pathname === "/api/call/stream" && request.method === "POST") {
       const body = await request.json<Record<string, unknown>>();
       return handleCallStream(env, body, { ...log, characterId: typeof body.characterId === "string" ? body.characterId : undefined });
+    }
+
+    // --- かざして話す（カメラ映像を出したまま声で会話する） ---
+    // 通話と違い、こちらは通常の会話と同じく保存され、性格も育つ。詳しい設計は src/talk.ts を参照。
+    if (url.pathname === "/api/talk" && request.method === "POST") {
+      const body = await request.json<Record<string, unknown>>();
+      return handleTalk(env, body, {
+        ...log,
+        characterId: typeof body.characterId === "string" ? body.characterId : undefined,
+      });
     }
 
     // --- 音声入力の文字起こし ---
@@ -148,11 +165,26 @@ export default {
       const stub = env.CHARACTER.getByName(characterId);
       const state = await stub.getState();
       if (!state) return json({ error: "not found" }, { status: 404 });
-      // ownerToken は「持ち主だけが知っている秘密」が前提の値。cid自体はチャットページのURLに
-      // 乗って共有されうるため、この公開GET APIのレスポンスに含めてしまうと持ち主保護の意味が無くなる。
-      // よって明示的に除外してから返す。
-      const { ownerToken: _ownerToken, ...publicState } = state;
-      return json({ ...publicState, speechStyleLabel: deriveSpeechStyle(state.personality).label });
+      // このAPIは cid さえ知っていれば誰でも叩ける。cid はチャットページのURLに乗って
+      // 共有されうるので、ここから漏れてよいのは「見た目と育ち具合」までに限る。
+      //
+      // - ownerToken: 持ち主だけが知っている前提の値。含めたら持ち主保護の意味が無くなる。
+      // - memorySummary / recentTurns / profileNotes: **会話の中身そのもの**。
+      //   URLを知られただけで過去の会話が読めてしまうのは、記憶を厚く持つようにした以上、
+      //   最も避けなければならない事故なので、この入口では必ず落とす。
+      const {
+        ownerToken: _ownerToken,
+        memorySummary: _memorySummary,
+        recentTurns: _recentTurns,
+        profileNotes: _profileNotes,
+        ...publicState
+      } = state;
+      return json({
+        ...publicState,
+        speechStyleLabel: deriveSpeechStyle(state.personality).label,
+        // 読み上げに使う「この子の声」。保存はせず、characterIdと性格から毎回導出する。
+        voice: deriveVoiceProfile(characterId, state.personality),
+      });
     }
 
     // --- 性格変遷（成長グラフ）取得API ---

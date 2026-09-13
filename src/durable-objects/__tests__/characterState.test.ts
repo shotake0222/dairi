@@ -1,4 +1,4 @@
-import { env } from "cloudflare:workers";
+import { env, runInDurableObject } from "cloudflare:test";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { CharacterData, PersonalityPackageV1 } from "../characterState";
 import { EXPORT_FORMAT_VERSION } from "../characterState";
@@ -386,5 +386,232 @@ describe("CharacterState.deleteData (owner-token protected, right-to-be-forgotte
     const result = await stub.deleteData(undefined);
     expect(result).toEqual({ ok: true });
     expect(await stub.getState()).toBeNull();
+  });
+});
+
+/**
+ * 会話の文脈保持（今回の品質改善の中心）。
+ *
+ * 直したかった不具合はこれ: 以前は毎回「システムプロンプト＋今回の1発言」しかAIに渡しておらず、
+ * モデルから見ると常に初対面だった。会話が噛み合わないのは口調やモデルの問題ではなく、
+ * そもそも文脈を渡していなかったことが原因だったので、ここが崩れたら品質は元に戻る。
+ */
+describe("CharacterState.chat (conversation context)", () => {
+  /** AI.run の呼び出しのうち、会話生成（messagesを渡しているもの）だけを拾う。 */
+  function chatCalls(spy: { mock: { calls: unknown[][] } }) {
+    return spy.mock.calls
+      .map((call) => call[1] as { messages?: Array<{ role: string; content: string }> })
+      .filter((input) => Array.isArray(input?.messages));
+  }
+
+  it("sends the recent exchanges as real user/assistant messages, not as summarized text", async () => {
+    const aiSpy = vi.spyOn(env.AI, "run").mockResolvedValue({ response: "うん、覚えてるよ" } as never);
+
+    const cid = freshCid("chat-context");
+    const stub = getStub(cid);
+    await stub.init("きおくこ");
+
+    // 直近のやり取りを直接仕込む（レート制限に触れずに「会話が続いている状態」を作るため）
+    await runInDurableObject(stub, async (_instance, state) => {
+      const data = await state.storage.get<CharacterData>("data");
+      data!.recentTurns = [
+        { role: "user", text: "北海道に引っ越したんだ", t: Date.now() - 5000 },
+        { role: "character", text: "そうなんだ、寒くない？", t: Date.now() - 4000 },
+      ];
+      data!.interactionCount = 3;
+      await state.storage.put("data", data);
+    });
+
+    await stub.chat("さっきの話の続きなんだけど");
+
+    const messages = chatCalls(aiSpy)[0].messages!;
+    expect(messages[0].role).toBe("system");
+    // 直近のやり取りが、要約ではなく原文のまま user/assistant として積まれていること
+    expect(messages.some((m) => m.role === "user" && m.content === "北海道に引っ越したんだ")).toBe(true);
+    expect(messages.some((m) => m.role === "assistant" && m.content === "そうなんだ、寒くない？")).toBe(true);
+    // 今回の発言は最後
+    expect(messages[messages.length - 1]).toEqual({ role: "user", content: "さっきの話の続きなんだけど" });
+  });
+
+  it("stores the new exchange verbatim so the next turn has the context", async () => {
+    vi.spyOn(env.AI, "run").mockResolvedValue({ response: "いいね、行ってみたい" } as never);
+
+    const stub = getStub(freshCid("chat-store-turns"));
+    await stub.init("つづきこ");
+    await stub.chat("今度、海を見に行くんだ");
+
+    await runInDurableObject(stub, async (_instance, state) => {
+      const data = await state.storage.get<CharacterData>("data");
+      expect(data!.recentTurns).toHaveLength(2);
+      expect(data!.recentTurns![0]).toMatchObject({ role: "user", text: "今度、海を見に行くんだ" });
+      expect(data!.recentTurns![1]).toMatchObject({ role: "character", text: "いいね、行ってみたい" });
+    });
+  });
+
+  it("keeps only the most recent exchanges (storage cannot grow forever)", async () => {
+    vi.spyOn(env.AI, "run").mockResolvedValue({ response: "うん" } as never);
+
+    const stub = getStub(freshCid("chat-turn-cap"));
+    await stub.init("うわがきこ");
+
+    await runInDurableObject(stub, async (_instance, state) => {
+      const data = await state.storage.get<CharacterData>("data");
+      data!.recentTurns = Array.from({ length: 40 }, (_, i) => ({
+        role: (i % 2 === 0 ? "user" : "character") as "user" | "character",
+        text: `発言${i}`,
+        t: Date.now() - (40 - i) * 1000,
+      }));
+      await state.storage.put("data", data);
+    });
+
+    await stub.chat("最新の発言");
+
+    await runInDurableObject(stub, async (_instance, state) => {
+      const data = await state.storage.get<CharacterData>("data");
+      expect(data!.recentTurns!.length).toBeLessThanOrEqual(24);
+      // 捨てるのは常に古い方から
+      expect(data!.recentTurns![data!.recentTurns!.length - 1].text).toBe("うん");
+      expect(data!.recentTurns!.some((t) => t.text === "発言0")).toBe(false);
+    });
+  });
+
+  it("puts the accumulated notes about the user into the system prompt", async () => {
+    const aiSpy = vi.spyOn(env.AI, "run").mockResolvedValue({ response: "そうだったね" } as never);
+
+    const stub = getStub(freshCid("chat-notes"));
+    await stub.init("おぼえこ");
+    await runInDurableObject(stub, async (_instance, state) => {
+      const data = await state.storage.get<CharacterData>("data");
+      data!.profileNotes = "・柴犬のコタロウを飼っている\n・夜勤の仕事をしている";
+      await state.storage.put("data", data);
+    });
+
+    await stub.chat("ただいま");
+
+    const system = chatCalls(aiSpy)[0].messages![0].content;
+    expect(system).toContain("柴犬のコタロウを飼っている");
+    expect(system).toContain("夜勤の仕事をしている");
+  });
+
+  it("switches to the face-to-face prompt in かざして話す mode, and only mentions what it was shown", async () => {
+    const aiSpy = vi.spyOn(env.AI, "run").mockResolvedValue({ response: "みかんだね" } as never);
+
+    const stub = getStub(freshCid("chat-talk-mode"));
+    await stub.init("かざしこ");
+
+    await stub.chat("これ見て", { mode: "talk", sceneDescription: "机の上にみかんが写っている" });
+    const withScene = chatCalls(aiSpy)[0].messages![0].content;
+    expect(withScene).toContain("カメラをかざしていて");
+    expect(withScene).toContain("机の上にみかんが写っている");
+  });
+
+  it("forbids talking about the surroundings when no image was shown", async () => {
+    const aiSpy = vi.spyOn(env.AI, "run").mockResolvedValue({ response: "うん" } as never);
+
+    const stub = getStub(freshCid("chat-talk-noscene"));
+    await stub.init("みえないこ");
+
+    await stub.chat("そこにいる？", { mode: "talk" });
+
+    const system = chatCalls(aiSpy)[0].messages![0].content;
+    // 見てもいないのに見たふりをするのが、この体験でいちばん興ざめする失敗なので明示的に止める
+    expect(system).toContain("見えていないものを見たことにしないでください");
+  });
+
+  it("reflectNow distills the notes and remembers when it last ran", async () => {
+    const stub = getStub(freshCid("reflect"));
+    await stub.init("ふりかえりこ");
+    await runInDurableObject(stub, async (_instance, state) => {
+      const data = await state.storage.get<CharacterData>("data");
+      data!.interactionCount = 6;
+      data!.recentTurns = [
+        { role: "user", text: "パン屋で働き始めたよ", t: Date.now() },
+        { role: "character", text: "すごいね", t: Date.now() },
+      ];
+      await state.storage.put("data", data);
+    });
+
+    vi.spyOn(env.AI, "run").mockResolvedValue({ response: "・パン屋で働いている" } as never);
+    const result = await stub.reflectNow();
+
+    expect(result).toEqual({ updated: true });
+    await runInDurableObject(stub, async (_instance, state) => {
+      const data = await state.storage.get<CharacterData>("data");
+      expect(data!.profileNotes).toBe("・パン屋で働いている");
+      expect(data!.lastReflectedAt).toBe(6);
+    });
+  });
+
+  it("keeps the previous notes when the distillation fails", async () => {
+    const stub = getStub(freshCid("reflect-failure"));
+    await stub.init("まもりこ");
+    await runInDurableObject(stub, async (_instance, state) => {
+      const data = await state.storage.get<CharacterData>("data");
+      data!.profileNotes = "・大事な事実";
+      data!.recentTurns = [{ role: "user", text: "やあ", t: Date.now() }];
+      await state.storage.put("data", data);
+    });
+
+    vi.spyOn(env.AI, "run").mockRejectedValue(new Error("AI down"));
+    expect(await stub.reflectNow()).toEqual({ updated: false });
+
+    await runInDurableObject(stub, async (_instance, state) => {
+      const data = await state.storage.get<CharacterData>("data");
+      expect(data!.profileNotes).toBe("・大事な事実");
+    });
+  });
+});
+
+describe("Personality package v1.1 (notes and verbatim turns travel with the character)", () => {
+  it("exports the notes and the recent turns", async () => {
+    const stub = getStub(freshCid("export-1-1"));
+    const created = await stub.init("もちだしこ");
+    await runInDurableObject(stub, async (_instance, state) => {
+      const data = await state.storage.get<CharacterData>("data");
+      data!.profileNotes = "・猫を飼っている";
+      data!.recentTurns = [{ role: "user", text: "こんにちは", t: 123 }];
+      await state.storage.put("data", data);
+    });
+
+    const result = await stub.exportPackage(created.ownerToken);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.package.formatVersion).toBe("1.1");
+    expect(result.package.memory.profileNotes).toBe("・猫を飼っている");
+    expect(result.package.memory.recentTurns).toEqual([{ role: "user", text: "こんにちは", t: 123 }]);
+  });
+
+  it("still accepts a package exported in the old 1.0 format", async () => {
+    const stub = getStub(freshCid("import-1-0"));
+    const legacy = {
+      formatVersion: "1.0",
+      exportedAt: Date.now(),
+      character: {
+        id: "old",
+        name: "むかしこ",
+        species: "punikoro",
+        color: "coral",
+        createdAt: Date.now() - 100000,
+        growthStage: "成長期",
+        interactionCount: 25,
+      },
+      personality: { warmth: 60, curiosity: 55, cheerfulness: 50, caution: 45, independence: 50, humor: 52 },
+      personalityHistory: [],
+      memory: { shortTerm: "・むかしの記録", longTerm: [] },
+      meta: { generator: "sodatsukake", note: "" },
+    } as unknown as PersonalityPackageV1;
+
+    const result = await stub.importPackage(legacy);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.name).toBe("むかしこ");
+
+    await runInDurableObject(stub, async (_instance, state) => {
+      const data = await state.storage.get<CharacterData>("data");
+      // 1.0には無い項目は空から始まる（壊れずに読めることが大事）
+      expect(data!.profileNotes).toBe("");
+      expect(data!.recentTurns).toEqual([]);
+      expect(data!.memorySummary).toBe("・むかしの記録");
+    });
   });
 });

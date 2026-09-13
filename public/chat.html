@@ -51,13 +51,15 @@
   @media (max-width: 560px) {
     .headerActions { flex: 1 1 100%; justify-content: flex-start; }
   }
-  #toggleTraits, #historyLink, #infoBtn, #toggleExport, #toggleSocial, #homeLink, #callLink {
+  #toggleTraits, #historyLink, #infoBtn, #toggleExport, #toggleSocial, #homeLink, #callLink, #talkLink {
     border: 1px solid #ddd; background: #fff; color: #7c5cff; font-size: 12px;
     padding: 6px 10px; border-radius: 999px; white-space: nowrap; text-decoration: none;
   }
   #infoBtn { padding: 6px 10px; font-weight: 700; }
   /* 通話は「記録が残らない」特別なモードなので、他の導線と色を分けて気づけるようにする */
   #callLink { border-color: #c8bcff; background: #f0ecff; font-weight: 700; }
+  /* 「かざして話す」はこのサービスの主役の体験なので、いちばん目を引く見た目にしている */
+  #talkLink { border-color: transparent; background: #7c5cff; color: #fff; font-weight: 700; }
   #homeLink { padding: 6px 10px; display: inline-flex; align-items: center; }
   #toggleSocial { position: relative; }
   /* 留守番エージェントが自動で見つけてきた「新しい出会い」があることを知らせるバッジ */
@@ -238,6 +240,7 @@
     <div class="headerActions">
       <a id="homeLink" href="/home" title="あなたの分身">🏠</a>
       <button id="infoBtn" type="button" title="わけたまとは？">?</button>
+      <a id="talkLink" href="#" title="カメラをかざして話す">📷 かざして話す</a>
       <a id="callLink" href="#" title="その場限りの通話">📞 通話</a>
       <a id="historyLink" href="#">📈 成長</a>
       <button id="toggleSocial" type="button">🤝 交流</button>
@@ -348,6 +351,9 @@
       将来はメタバースのアバターや、ロボットのようなフィジカルAIの姿になって、あなたの代わりに動き出す日を目指しています。<br /><br />
       これまでの性格の変化は「📈 成長」から、いつでも振り返れます。
     </p>
+    <p style="font-size:12px">
+      データの扱いについては<a href="/privacy" style="color:#7c5cff">プライバシーポリシー</a>をご覧ください。
+    </p>
     <button id="conceptModalClose" type="button">とじる</button>
   </div>
 </div>
@@ -416,6 +422,7 @@
   historyLink.href = `/history?cid=${encodeURIComponent(cid || "")}`;
   document.getElementById("friendsLink").href = `/friends?cid=${encodeURIComponent(cid || "")}`;
   document.getElementById("callLink").href = `/call?cid=${encodeURIComponent(cid || "")}`;
+  document.getElementById("talkLink").href = `/talk?cid=${encodeURIComponent(cid || "")}`;
 
   // --- 人格パッケージの書き出し/復元（フィジカルAI・メタバース移植やバックアップの土台） ---
   toggleExportBtn.addEventListener("click", () => {

@@ -5,16 +5,22 @@ import {
   updatePersonality,
 } from "../ai/personality";
 import { analyzeMessage } from "../ai/signalExtractor";
-import { buildSystemPrompt } from "../ai/promptBuilder";
+import { buildSystemPrompt, buildTalkPrompt } from "../ai/promptBuilder";
 import { deriveSpeechStyle } from "../ai/speechStyle";
 import { retrieveRelevantMemories, storeMemory, exportAllMemories, importMemories, deleteAllMemories, ExportedMemory } from "../ai/memory";
 import { buildMeetingPrompt } from "../ai/promptBuilder";
 import { RateLimiter } from "../lib/rateLimit";
+import { ChatMessage, contextBudgetFor, primaryChatModel, runChat } from "../ai/modelPolicy";
+import { distillProfileNotes, shouldReflect } from "../ai/reflection";
+import { deriveVoiceProfile, VoiceProfile } from "../ai/voiceProfile";
+import { logDetachedWarn } from "../lib/log";
 
 export interface Env {
   AI: Ai;
   MEMORY_INDEX: VectorizeIndex;
   DB: D1Database;
+  /** 会話モデルの上書き（src/ai/modelPolicy.ts 参照）。未設定なら既定の連鎖を使う。 */
+  CHAT_MODEL?: string;
 }
 
 // 5種族×6色=30種類。実ファイルは public/characters/{species}_{color}.png / .glb
@@ -59,10 +65,21 @@ export const MEETING_COOLDOWN_MS = 20 * 60 * 60 * 1000; // 20時間
  * これは将来的な「フィジカルAI/メタバースへの人格の持ち出し」や、この形式自体をBtoBでライセンスする
  * 事業（人格ポータビリティAPI）の基礎データ契約として設計している。
  */
-export const EXPORT_FORMAT_VERSION = "1.0";
+/**
+ * 現在書き出す版。1.1で「覚え書き（profileNotes）」と「直近の会話ログ（recentTurns）」を追加した。
+ * 追加はどちらも任意フィールドなので、1.0の読み手が1.1のファイルを読んでも壊れない。
+ */
+export const EXPORT_FORMAT_VERSION = "1.1";
+
+/**
+ * 読み込みを受け付ける版。
+ * 1.0で書き出された既存のバックアップを、今後も永続的に読めるようにしておく
+ * （「人格は持ち出せる」と言っておきながら、自分の過去の書き出しを読めなくするのは筋が通らない）。
+ */
+export const SUPPORTED_IMPORT_VERSIONS = ["1.0", "1.1"] as const;
 
 export interface PersonalityPackageV1 {
-  formatVersion: "1.0";
+  formatVersion: "1.0" | "1.1";
   exportedAt: number; // epoch ms
   character: {
     id: string;
@@ -78,11 +95,22 @@ export interface PersonalityPackageV1 {
   memory: {
     shortTerm: string;
     longTerm: ExportedMemory[];
+    /** 1.1で追加。相手について長く覚えておくべき事実の箇条書き。 */
+    profileNotes?: string;
+    /** 1.1で追加。直近のやり取りを切り詰めずに持つ（移植先で会話の流れをそのまま継げるように）。 */
+    recentTurns?: DialogueTurn[];
   };
   meta: {
     generator: "sodatsukake" | "waketama";
     note: string;
   };
+}
+
+/** 直近の会話1発言。要約せず原文のまま持つ（要約すると文脈が壊れることが分かったため）。 */
+export interface DialogueTurn {
+  role: "user" | "character";
+  text: string;
+  t: number; // epoch ms
 }
 
 /** 性格変遷の可視化（成長グラフ）用の1スナップショット。 */
@@ -109,6 +137,27 @@ export interface CharacterData {
   lastMeeting?: MeetingRecord; // 直近の交流ログ（UI表示の後方互換のため引き続き保持）
   meetingHistory?: MeetingRecord[]; // これまで出会った分身の記録（「図鑑」機能用）。既存データには無いのでoptional
   ownerToken?: string; // 「持ち主」判定用の簡易トークン（下記参照）。既存データには無いのでoptional
+
+  /**
+   * 直近のやり取りを原文のまま保持する（会話品質改善の中心）。
+   *
+   * 以前は memorySummary（各発言40文字に切り詰めた1行要約）しか持っておらず、
+   * しかもAIには「システムプロンプトの一部」としてしか渡していなかった。
+   * その状態ではモデルは会話の流れを復元できず、毎ターン初対面のような応答になっていた。
+   * ここに原文を持ち、messages配列として正しく積み直すのが正しい形。
+   * 既存データには無いのでoptional（無ければ memorySummary を参考情報として使う）。
+   */
+  recentTurns?: DialogueTurn[];
+
+  /**
+   * 「覚え書き」。相手について長く覚えておくべき事実だけを蒸留した箇条書き。
+   * 数ターンごとに src/ai/reflection.ts が更新する。会話を重ねるほど厚くなるので、
+   * これが「育てるほど話が通じるようになる」の実体になる。
+   */
+  profileNotes?: string;
+
+  /** 覚え書きを最後に更新したときの interactionCount（更新間隔の判定に使う）。 */
+  lastReflectedAt?: number;
 }
 
 // 「図鑑」機能用の出会いの記録は、無制限に貯めるとストレージを圧迫するため、
@@ -143,6 +192,14 @@ const MAX_MESSAGE_LENGTH = 400;
 // 上限を超えたら間引く（＝古いほど記録の密度が粗くなっていく、成長アルバムのような扱い）。
 const MAX_HISTORY_ENTRIES = 120;
 
+/**
+ * 保存しておく直近の会話の発言数（ユーザー＋分身の合計）。
+ * プロンプトに載せるのはこの一部（成長段階に応じた分だけ）で、ここは「持っておく量」。
+ * 1発言あたりの長さも切っておかないと、長文を貼られたときにストレージが膨らむ。
+ */
+const MAX_RECENT_TURNS = 24;
+const MAX_TURN_CHARS = 500;
+
 function randomSpecies(): SpeciesKey {
   return SPECIES_KEYS[Math.floor(Math.random() * SPECIES_KEYS.length)];
 }
@@ -151,7 +208,12 @@ function randomColor(): ColorKey {
   return COLOR_KEYS[Math.floor(Math.random() * COLOR_KEYS.length)];
 }
 
-export const CHAT_MODEL = "@cf/meta/llama-3.2-3b-instruct"; // 序盤運用の軽量モデル。品質次第で差し替え可能
+/**
+ * 後方互換のための再輸出。モデルの選定と呼び出しは src/ai/modelPolicy.ts に移した。
+ * 以前は「このDOの中に埋まった1つの定数」がサービス全体の会話品質を決めていたが、
+ * 用途ごとの使い分けもフォールバックもできず、品質改善の手が入れづらかった。
+ */
+export { primaryChatModel } from "../ai/modelPolicy";
 
 /**
  * キャラクター1体 = Durable Object 1インスタンス。
@@ -175,7 +237,17 @@ export class CharacterState extends DurableObject<Env> {
    * 併せてレート制限の判定もここで行う（判定自体はメモリ上の操作なので書き込みは発生しない）。
    */
   async beginEphemeralTurn(userMessage: string): Promise<
-    | { ok: true; name: string; personality: PersonalityTraits; growthStage: string; species: SpeciesKey; color: ColorKey; memorySummary: string }
+    | {
+        ok: true;
+        name: string;
+        personality: PersonalityTraits;
+        growthStage: string;
+        species: SpeciesKey;
+        color: ColorKey;
+        memorySummary: string;
+        profileNotes: string;
+        interactionCount: number;
+      }
     | { ok: false; error: string }
   > {
     const data = await this.ctx.storage.get<CharacterData>("data");
@@ -198,6 +270,9 @@ export class CharacterState extends DurableObject<Env> {
       species: data.species,
       color: data.color,
       memorySummary: data.memorySummary,
+      // 通話でも「覚えていること」は使う。読み取りだけなので“何も残さない”約束とは矛盾しない。
+      profileNotes: data.profileNotes ?? "",
+      interactionCount: data.interactionCount,
     };
   }
 
@@ -293,7 +368,17 @@ export class CharacterState extends DurableObject<Env> {
     return existing;
   }
 
-  async chat(userMessage: string): Promise<{
+  /**
+   * 会話の1ターン。文字チャットと「かざして話す」の両方がここを通る。
+   *
+   * options で状況（モード）と、見えているものの説明を渡せる。
+   * 保存する内容・性格の更新のしかたはどちらのモードでも同じなので、
+   * 「その場限りの通話」のように入口を分ける必要はない（分けるべきなのは保存の有無であって、話し方ではない）。
+   */
+  async chat(
+    userMessage: string,
+    options?: { mode?: "chat" | "talk"; sceneDescription?: string }
+  ): Promise<{
     reply?: string;
     personality: PersonalityTraits;
     growthStage: string;
@@ -303,6 +388,7 @@ export class CharacterState extends DurableObject<Env> {
     color: ColorKey;
     socialOptIn: boolean;
     lastMeeting?: MeetingRecord;
+    voice?: VoiceProfile;
     error?: string;
   }> {
     let data = await this.ctx.storage.get<CharacterData>("data");
@@ -358,30 +444,54 @@ export class CharacterState extends DurableObject<Env> {
       await this.syncDirectory(characterId, data);
     }
 
-    const relevantMemories = await retrieveRelevantMemories(this.env, characterId, trimmed);
+    // 成長段階に応じて「どれだけ思い出し、どれだけ長く話すか」を決める。
+    // 育つほど文脈が厚くなるので、同じモデルでも会話が噛み合うようになっていく。
+    const budget = contextBudgetFor(data.interactionCount);
+    const relevantMemories = await retrieveRelevantMemories(this.env, characterId, trimmed, budget.recallTopK);
 
-    const systemPrompt = buildSystemPrompt({
+    const promptParams = {
       name: data.name,
       personality: data.personality,
-      memorySummary: data.memorySummary,
       growthStage: data.growthStage,
+      profileNotes: data.profileNotes,
+      // recentTurns を持たない古い分身のためだけの保険。新しい会話では messages 側が文脈を持つ。
+      legacySummary: data.recentTurns && data.recentTurns.length > 0 ? undefined : data.memorySummary,
       relevantMemories,
+      replyLengthHint: budget.replyLengthHint,
+    };
+
+    const systemPrompt =
+      options?.mode === "talk"
+        ? buildTalkPrompt({ ...promptParams, sceneDescription: options.sceneDescription })
+        : buildSystemPrompt(promptParams);
+
+    // ここが今回いちばん効く変更。
+    // 直近のやり取りを user / assistant のロール付きで積み直すことで、
+    // モデルが「いま何の話をしているか」を復元できるようにする。
+    const messages: ChatMessage[] = [
+      { role: "system", content: systemPrompt },
+      ...toChatMessages(data.recentTurns, budget.historyTurns),
+      { role: "user", content: trimmed },
+    ];
+
+    const result = await runChat(this.env, messages, {
+      maxTokens: budget.maxTokens,
+      onFailure: (model, err) =>
+        logDetachedWarn("chat.model_failed", {
+          characterId,
+          model,
+          error: err instanceof Error ? err.message : String(err),
+        }),
     });
+    const reply =
+      result?.text || "（今はうまく考えがまとまらないみたい。少し時間をおいてもう一度話しかけてね）";
 
-    let reply: string;
-    try {
-      const aiResponse = (await this.env.AI.run(CHAT_MODEL, {
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: trimmed },
-        ],
-      })) as { response?: string };
-      reply = aiResponse.response?.trim() || "……（うまく言葉が出てこなかったみたい）";
-    } catch (err) {
-      // Workers AIの呼び出し失敗時のフォールバック（開発初期はモデルIDの変更等で起きやすい）
-      reply = "（今はうまく考えがまとまらないみたい。少し時間をおいてもう一度話しかけてね）";
-    }
-
+    // 直近のやり取りを原文のまま積む（これがプロンプトの文脈になる）。
+    data.recentTurns = appendTurns(data.recentTurns, [
+      { role: "user", text: trimmed, t: now },
+      { role: "character", text: reply, t: now },
+    ]);
+    // memorySummary は 1.0 形式のエクスポート互換のために残している（プロンプトの主役ではなくなった）。
     data.memorySummary = updateMemorySummary(data.memorySummary, trimmed, reply);
     await this.ctx.storage.put("data", data);
 
@@ -389,7 +499,45 @@ export class CharacterState extends DurableObject<Env> {
     // ただしDurable Object内なので、レスポンスを返す前に await して確実に実行させておく。
     await storeMemory(this.env, characterId, trimmed, reply);
 
+    // 「覚え書き」の更新は数ターンに1回で足りるうえ、返答を待たせる理由が無い。
+    // waitUntil で応答後に走らせ、ユーザーから見た待ち時間を増やさないようにする。
+    if (result && shouldReflect(data.interactionCount, data.lastReflectedAt)) {
+      try {
+        this.ctx.waitUntil(this.reflectNow());
+      } catch (err) {
+        // waitUntil が使えない実行環境（テスト等）では、次のターンに持ち越すだけでよい
+      }
+    }
+
     return { reply, ...this.toSummary(data) };
+  }
+
+  /**
+   * 「覚え書き」を更新する。
+   *
+   * 通常は chat() から waitUntil 経由で呼ばれるが、テストや手動実行のために公開メソッドにしてある
+   * （バックグラウンド処理を外から起動できないと、正しく育っているかを検証できないため）。
+   */
+  async reflectNow(): Promise<{ updated: boolean }> {
+    const data = await this.ctx.storage.get<CharacterData>("data");
+    if (!data) return { updated: false };
+
+    const turns = data.recentTurns ?? [];
+    if (turns.length === 0) return { updated: false };
+
+    const notes = await distillProfileNotes(this.env, {
+      name: data.name,
+      previousNotes: data.profileNotes ?? "",
+      turns: turns.map((t) => ({ role: t.role, text: t.text })),
+    });
+    if (!notes) return { updated: false };
+
+    // 蒸留中に別のターンが進んでいる可能性があるため、最新のデータを読み直してから書く。
+    const latest = (await this.ctx.storage.get<CharacterData>("data")) ?? data;
+    latest.profileNotes = notes;
+    latest.lastReflectedAt = latest.interactionCount;
+    await this.ctx.storage.put("data", latest);
+    return { updated: true };
   }
 
   /** ガード節でreplyなしの応答を返すための共通フィールドまとめ */
@@ -403,6 +551,8 @@ export class CharacterState extends DurableObject<Env> {
       color: data.color,
       socialOptIn: data.socialOptIn ?? false,
       lastMeeting: data.lastMeeting,
+      // 読み上げに使う「この子の声」。characterIdから決まるので、いつどの端末で聞いても同じ声になる。
+      voice: deriveVoiceProfile(this.ctx.id.name ?? "unknown", data.personality),
     };
   }
 
@@ -515,17 +665,15 @@ export class CharacterState extends DurableObject<Env> {
       ? `「${otherName}」（${otherSpeciesLabel}の姿をした別の分身）がこう言いました:「${lastLine}」。それに短く返事をしてください。`
       : `「${otherName}」（${otherSpeciesLabel}の姿をした別の分身）に、今ちょうど出会いました。ひとこと挨拶してみてください。`;
 
-    try {
-      const aiResponse = (await this.env.AI.run(CHAT_MODEL, {
-        messages: [
-          { role: "system", content: prompt },
-          { role: "user", content: userMessage },
-        ],
-      })) as { response?: string };
-      return aiResponse.response?.trim() || "……（うまく言葉が出てこなかったみたい）";
-    } catch (err) {
-      return "（今はうまく話せないみたい）";
-    }
+    const result = await runChat(
+      this.env,
+      [
+        { role: "system", content: prompt },
+        { role: "user", content: userMessage },
+      ],
+      { maxTokens: 160 }
+    );
+    return result?.text || "……（うまく言葉が出てこなかったみたい）";
   }
 
   /**
@@ -577,6 +725,8 @@ export class CharacterState extends DurableObject<Env> {
       memory: {
         shortTerm: data.memorySummary,
         longTerm,
+        profileNotes: data.profileNotes ?? "",
+        recentTurns: data.recentTurns ?? [],
       },
       meta: {
         generator: "waketama",
@@ -603,7 +753,7 @@ export class CharacterState extends DurableObject<Env> {
     if (existing && !isOwner(existing, ownerToken)) {
       return { ok: false, error: "この操作は分身の持ち主だけが行えます" };
     }
-    if (!pkg || pkg.formatVersion !== EXPORT_FORMAT_VERSION) {
+    if (!pkg || !SUPPORTED_IMPORT_VERSIONS.includes(pkg.formatVersion)) {
       return { ok: false, error: `対応していない形式です（formatVersion: ${pkg?.formatVersion ?? "不明"}）` };
     }
     if (!pkg.character || !SPECIES_KEYS.includes(pkg.character.species) || !COLOR_KEYS.includes(pkg.character.color)) {
@@ -638,6 +788,9 @@ export class CharacterState extends DurableObject<Env> {
       personalityHistory: pkg.personalityHistory ?? [],
       socialOptIn: false,
       ownerToken: resolvedOwnerToken,
+      // 1.1で追加した項目。1.0のパッケージには入っていないので、無ければ空から始める。
+      profileNotes: pkg.memory?.profileNotes ?? "",
+      recentTurns: sanitizeTurns(pkg.memory?.recentTurns),
     };
     await this.ctx.storage.put("data", data);
 
@@ -683,4 +836,49 @@ function updateMemorySummary(prev: string, userMessage: string, reply: string): 
 
 function truncate(s: string, n: number): string {
   return s.length > n ? s.slice(0, n) + "…" : s;
+}
+
+/**
+ * 直近のやり取りに新しい発言を積み、上限を超えた分を古い方から捨てる。
+ * 1発言の長さもここで切る（長文を貼られたときにストレージとプロンプトが膨らむのを防ぐ）。
+ */
+export function appendTurns(prev: DialogueTurn[] | undefined, added: DialogueTurn[]): DialogueTurn[] {
+  const base = Array.isArray(prev) ? prev : [];
+  const next = [...base, ...added.map((t) => ({ ...t, text: truncate(t.text, MAX_TURN_CHARS) }))];
+  return next.length > MAX_RECENT_TURNS ? next.slice(-MAX_RECENT_TURNS) : next;
+}
+
+/**
+ * 保持している直近のやり取りを、AIに渡す messages 形式へ変換する。
+ *
+ * exchanges は「往復数」。ユーザーの発言から始まるように調整してから返す
+ * （assistantの発言から始まる履歴は、モデルから見ると文脈が欠けて見える）。
+ */
+export function toChatMessages(
+  turns: DialogueTurn[] | undefined,
+  exchanges: number
+): ChatMessage[] {
+  if (!Array.isArray(turns) || turns.length === 0 || exchanges <= 0) return [];
+  let slice = turns.slice(-exchanges * 2);
+  if (slice.length > 0 && slice[0].role === "character") slice = slice.slice(1);
+  return slice
+    .filter((t) => typeof t.text === "string" && t.text.trim().length > 0)
+    .map((t) => ({ role: t.role === "user" ? ("user" as const) : ("assistant" as const), content: t.text }));
+}
+
+/** インポートされた（＝信用できない）会話ログを、こちらの形式に整えてから受け入れる。 */
+export function sanitizeTurns(raw: unknown): DialogueTurn[] {
+  if (!Array.isArray(raw)) return [];
+  const turns: DialogueTurn[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const role = (item as { role?: unknown }).role;
+    const text = (item as { text?: unknown }).text;
+    const t = (item as { t?: unknown }).t;
+    if ((role !== "user" && role !== "character") || typeof text !== "string") continue;
+    const trimmed = text.trim();
+    if (!trimmed) continue;
+    turns.push({ role, text: truncate(trimmed, MAX_TURN_CHARS), t: typeof t === "number" ? t : Date.now() });
+  }
+  return turns.length > MAX_RECENT_TURNS ? turns.slice(-MAX_RECENT_TURNS) : turns;
 }

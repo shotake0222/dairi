@@ -18,9 +18,10 @@
  * 4. **応答はストリーミング**。待ち時間が沈黙になるのを避けるため、生成された端から流す。
  */
 
-import { CHAT_MODEL, CharacterState } from "./durable-objects/characterState";
+import { CharacterState } from "./durable-objects/characterState";
 import { buildCallPrompt } from "./ai/promptBuilder";
 import { retrieveRelevantMemories } from "./ai/memory";
+import { chatModelChain, contextBudgetFor } from "./ai/modelPolicy";
 import { LogContext, logInfo, logWarn, tolerate } from "./lib/log";
 
 export interface CallTurn {
@@ -36,6 +37,8 @@ export interface CallEnv {
   AI: Ai;
   MEMORY_INDEX: VectorizeIndex;
   CHARACTER: DurableObjectNamespace<CharacterState>;
+  /** 会話モデルの上書き（src/ai/modelPolicy.ts 参照）。 */
+  CHAT_MODEL?: string;
 }
 
 /** クライアントから届いた履歴を、信用せずに切り詰める。 */
@@ -180,12 +183,15 @@ export async function handleCallStream(
     return sseError(turn.error);
   }
 
+  // 育っているほど、通話でも思い出せる量が増える（文字チャットと同じ方針）。
+  const budget = contextBudgetFor(turn.interactionCount);
+
   // 長期記憶の参照。失敗しても通話は続ける（記憶が薄いだけで会話は成立するため）。
   const relevantMemories =
     body.recall === false
       ? []
       : await tolerate(log, "call.recall", [] as string[], () =>
-          retrieveRelevantMemories(env, characterId, message)
+          retrieveRelevantMemories(env, characterId, message, budget.recallTopK)
         );
 
   const history = sanitizeHistory(body.history);
@@ -196,7 +202,8 @@ export async function handleCallStream(
         name: turn.name,
         personality: turn.personality,
         growthStage: turn.growthStage,
-        memorySummary: turn.memorySummary,
+        profileNotes: turn.profileNotes,
+        legacySummary: turn.profileNotes ? undefined : turn.memorySummary,
         relevantMemories,
       }),
     },
@@ -204,17 +211,31 @@ export async function handleCallStream(
     { role: "user", content: message },
   ];
 
-  try {
-    // 型定義上 run() の戻りはオブジェクトだが、stream:true のときは実際にはSSEのReadableStreamが返る。
-    const aiStream = (await env.AI.run(CHAT_MODEL, { messages, stream: true })) as unknown as ReadableStream<Uint8Array>;
-    if (!aiStream || typeof (aiStream as ReadableStream).getReader !== "function") {
-      logWarn(log, "call.stream_unavailable");
-      return sseError("いまは通話がつながりにくいみたい。少し待ってからかけ直してね");
+  // ストリーミングは1モデルずつしか試せないので、連鎖を順に当たる。
+  // 上位モデルが一時的に落ちているだけで通話が成立しなくなるのは避けたい。
+  for (const model of chatModelChain(env)) {
+    try {
+      // 型定義上 run() の戻りはオブジェクトだが、stream:true のときは実際にはSSEのReadableStreamが返る。
+      const aiStream = (await env.AI.run(model, {
+        messages,
+        stream: true,
+        max_tokens: budget.maxTokens,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any)) as unknown as ReadableStream<Uint8Array>;
+      if (!aiStream || typeof (aiStream as ReadableStream).getReader !== "function") {
+        logWarn(log, "call.stream_unavailable", { model });
+        continue;
+      }
+      logInfo(log, "call.stream_started", {
+        model,
+        historyTurns: history.length,
+        recalled: relevantMemories.length,
+      });
+      return sseResponse(transformAiStream(aiStream));
+    } catch (err) {
+      logWarn(log, "call.ai_failed", { model, error: err instanceof Error ? err.message : String(err) });
     }
-    logInfo(log, "call.stream_started", { historyTurns: history.length, recalled: relevantMemories.length });
-    return sseResponse(transformAiStream(aiStream));
-  } catch (err) {
-    logWarn(log, "call.ai_failed", { error: err instanceof Error ? err.message : String(err) });
-    return sseError("いまは通話がつながりにくいみたい。少し待ってからかけ直してね");
   }
+
+  return sseError("いまは通話がつながりにくいみたい。少し待ってからかけ直してね");
 }

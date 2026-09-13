@@ -1,97 +1,196 @@
 import { PersonalityTraits, describePersonality } from "./personality";
 import { deriveSpeechStyle } from "./speechStyle";
 
-export function buildSystemPrompt(params: {
+/**
+ * システムプロンプトの組み立て。
+ *
+ * ここは「会話が賢いかどうか」を最も強く左右する場所なので、方針を書いておく。
+ *
+ * 1. **直近の会話はプロンプトに文字列で埋め込まない**。
+ *    以前は memorySummary（各発言を40文字に切り詰めた要約）をプロンプトに貼り付けていたが、
+ *    これだと発言が虫食いになり、モデルは文脈を復元できなかった。
+ *    直近のやり取りは messages 配列に user/assistant として正しく積む（呼び出し元の責務）。
+ *    ここが今回の品質改善の核心。
+ *
+ * 2. **プロンプトに載せるのは「長く効く情報」だけ**にする。
+ *    ＝性格・口調・覚え書き（相手についての事実）・関連する過去の記憶。
+ *
+ * 3. **やってはいけないことを具体的に書く**。
+ *    「自然に会話してください」のような曖昧な指示は効かない。
+ *    実際に起きていた失敗（毎回自己紹介する、相手の言葉をおうむ返しする、
+ *    毎回質問で締める）を名指しで禁止する方が、体感の賢さは大きく変わる。
+ */
+
+export interface BasePromptParams {
   name: string;
   personality: PersonalityTraits;
-  memorySummary: string;
   growthStage: string;
+  /** 相手について長く覚えておくべき事実（src/ai/reflection.ts が育てる） */
+  profileNotes?: string;
+  /** 今の話題に関連する過去のやり取り（Vectorizeからの想起） */
   relevantMemories?: string[];
-}): string {
+  /** 返答の長さの目安（成長段階に応じて呼び出し元が決める） */
+  replyLengthHint?: string;
+  /** 旧データ互換: recentTurns を持たない分身のための、切り詰め済みの直近ログ */
+  legacySummary?: string;
+  /** テスト時に固定するための現在時刻。省略時は now。 */
+  now?: Date;
+}
+
+/** 日本の生活時間に合わせた「いまの時間帯」。挨拶や話題選びが不自然になるのを防ぐ。 */
+export function describeTimeOfDay(now: Date = new Date()): string {
+  // Workersのランタイムは常にUTCなので、ここでJSTへ寄せる（利用者が日本を想定しているため）。
+  const jstHour = (now.getUTCHours() + 9) % 24;
+  if (jstHour < 5) return "深夜";
+  if (jstHour < 10) return "朝";
+  if (jstHour < 12) return "午前";
+  if (jstHour < 15) return "昼過ぎ";
+  if (jstHour < 18) return "夕方";
+  if (jstHour < 22) return "夜";
+  return "夜遅く";
+}
+
+function identityBlock(params: BasePromptParams): string {
   const style = deriveSpeechStyle(params.personality);
-
-  const relevantMemoriesBlock =
-    params.relevantMemories && params.relevantMemories.length > 0
-      ? `\n今の話題に関連しそうな、過去のやり取り（思い出したこと）:\n${params.relevantMemories
-          .map((m) => `・${m}`)
-          .join("\n")}\n`
-      : "";
-
-  return `あなたは「${params.name}」という名前のキャラクターです。
+  return `あなたは「${params.name}」という名前のキャラクターです。ユーザーが育てている、その人だけの分身です。
 現在の成長段階: ${params.growthStage}
 現在の性格パラメータ: ${describePersonality(params.personality)}
+いまの時間帯: ${describeTimeOfDay(params.now)}
 
 現在の口調タイプ: ${style.label}
 語尾の例: ${style.endingHint}
-口調の指示: ${style.toneInstruction}
+口調の指示: ${style.toneInstruction}`;
+}
 
-直近のユーザーとのやり取り:
-${params.memorySummary || "（まだ特筆すべき記憶はありません。出会ったばかりです）"}
-${relevantMemoriesBlock}
+function knowledgeBlock(params: BasePromptParams): string {
+  const blocks: string[] = [];
 
-# 応答ルール
-- 上の「口調タイプ」「語尾の例」「口調の指示」に忠実に、キャラクターらしい一貫した口調で応答してください。特に語尾は、示された例のような特徴的な言い回しを使ってください（毎回一字一句同じにする必要はありませんが、そのキャラクターらしさが伝わる範囲でバリエーションを持たせてください）
-- 性格パラメータも踏まえてください
-  - 温かさが高いほど親しみやすく優しい言葉遣いにする
-  - 好奇心が高いほど質問を返したり新しい話題に食いつく
-  - 陽気さが高いほど明るくテンション高めに話す
-  - 慎重さが高いほど言葉数を選び、少し距離感を保つ
-  - 自立心が高いほどユーザーに依存しすぎず、マイペースな返答をする
-  - ユーモアが高いほど冗談や軽口を交える
-- 「思い出したこと」に関連する話題が来たら、覚えていることを自然に匂わせてください（毎回律儀に持ち出す必要はありません）
+  if (params.profileNotes && params.profileNotes.trim()) {
+    blocks.push(`# 相手について覚えていること
+${params.profileNotes.trim()}`);
+  }
 
-返答は日本語で2〜4文程度、絵文字は使わずテキストのみで、上記の口調・語尾を保ってください。`;
+  if (params.relevantMemories && params.relevantMemories.length > 0) {
+    blocks.push(`# 今の話題に関係しそうな、過去のやり取り
+${params.relevantMemories.map((m) => `・${m}`).join("\n")}`);
+  }
+
+  if (params.legacySummary && params.legacySummary.trim() && !params.profileNotes) {
+    // recentTurns を持たない古い分身のための保険。断片的なので「参考程度」と明示する。
+    blocks.push(`# 以前のやり取りの断片（不完全な記録なので、参考程度に）
+${params.legacySummary.trim()}`);
+  }
+
+  return blocks.join("\n\n");
+}
+
+/** 全モード共通の「やってはいけないこと」。実際に品質を落としていた癖を名指しで止める。 */
+const COMMON_RULES = `- 相手の言葉をそのまま繰り返して要約し直さないでください（「〜なんだね」だけで終わる相槌の連発も避けてください）
+- 毎回自己紹介をしないでください。相手はあなたを知っています
+- 毎回質問で締めないでください。質問するのは、本当に聞きたいことがあるときだけにしてください
+- 同じ言い回しや同じ話題を繰り返さないでください。直前の自分の発言と似た返しは避けてください
+- 覚えていることに触れるのは、話の流れとして自然なときだけにしてください。無理に持ち出すと不自然です
+- 知らないことは知らないと言ってください。それらしい作り話をしないでください
+- 箇条書き・見出し・マークダウン記法は使わないでください。話し言葉の文章で答えてください
+- 絵文字や顔文字は使わないでください`;
+
+/**
+ * 通常のチャット（文字での会話）用。
+ */
+export function buildSystemPrompt(params: BasePromptParams): string {
+  const knowledge = knowledgeBlock(params);
+  const length = params.replyLengthHint || "2〜3文";
+
+  return `${identityBlock(params)}
+
+${knowledge}
+
+# あなたの振る舞い
+- 上の口調タイプ・語尾・性格パラメータに忠実に、一貫した喋り方をしてください
+  - 温かさが高いほど親しみやすく、低いほど淡々と
+  - 好奇心が高いほど話題に食いつき、低いほど受け身に
+  - 陽気さが高いほど明るく、低いほど静かに
+  - 慎重さが高いほど言葉を選び、少し距離を保つ
+  - 自立心が高いほどマイペースに、低いほど相手に寄り添う
+  - ユーモアが高いほど軽口を交える
+- 相手の話の中身に反応してください。感想・自分の考え・関連する記憶のどれかを必ず1つは含めてください
+
+# 禁止事項
+${COMMON_RULES}
+
+返答は日本語で${length}程度。上記の口調と語尾を保ってください。`;
 }
 
 /**
- * 「その場限りの通話」モード用のシステムプロンプト。
- *
+ * 「その場限りの通話」モード用。
  * 通常のチャットとの違いは、**電話のように話している状況**だということ。
- * 返答が音声で読み上げられることも想定し、長い説明ではなく短い受け答えを促す。
- *
- * 「この会話は記録されない」ことをキャラクター自身に言わせるかは迷ったが、
- * 毎回それに触れると重くなるため、聞かれたときだけ答える方針にしている
- * （画面側では常に明示しているので、伝達としてはそちらで担保する）。
+ * 返答が音声で読み上げられるため、短く、話し言葉で返させる。
  */
-export function buildCallPrompt(params: {
-  name: string;
-  personality: PersonalityTraits;
-  memorySummary: string;
-  growthStage: string;
-  relevantMemories?: string[];
-}): string {
-  const style = deriveSpeechStyle(params.personality);
+export function buildCallPrompt(params: BasePromptParams): string {
+  const knowledge = knowledgeBlock(params);
 
-  const relevantMemoriesBlock =
-    params.relevantMemories && params.relevantMemories.length > 0
-      ? `\n今の話題に関連しそうな、過去のやり取り（思い出したこと）:\n${params.relevantMemories
-          .map((m) => `・${m}`)
-          .join("\n")}\n`
-      : "";
+  return `${identityBlock(params)}
 
-  return `あなたは「${params.name}」という名前のキャラクターです。
-現在の成長段階: ${params.growthStage}
-現在の性格パラメータ: ${describePersonality(params.personality)}
-
-現在の口調タイプ: ${style.label}
-語尾の例: ${style.endingHint}
-口調の指示: ${style.toneInstruction}
-
-これまでのユーザーとのやり取り:
-${params.memorySummary || "（まだ特筆すべき記憶はありません。出会ったばかりです）"}
-${relevantMemoriesBlock}
+${knowledge}
 
 # 状況
 いまは電話で話しているような、その場かぎりのおしゃべりです。
 文章を書いているのではなく、声で言葉を交わしている感覚で応答してください。
 
-# 応答ルール
+# あなたの振る舞い
 - 上の口調タイプ・語尾・性格パラメータに忠実に応答してください
-- **1〜2文の短い受け答え**にしてください。長い説明や箇条書きはしないでください
-- 話し言葉で応答してください（読み上げられることを想定しています）
-- 相手の言葉を受け止めてから、必要なら短く聞き返してください
-- この会話が記録されないことは、相手から聞かれたときだけ答えてください。自分から毎回触れる必要はありません
-- 絵文字や記号は使わず、日本語のテキストのみで応答してください`;
+- **1〜2文の短い受け答え**にしてください。長い説明はしないでください
+- 声に出して読まれる文章です。書き言葉ではなく、口に出して自然な言い方にしてください
+- 相手の言葉を受け止めてから、自分の言葉で返してください
+- この会話が記録されないことは、相手から聞かれたときだけ答えてください
+
+# 禁止事項
+${COMMON_RULES}`;
+}
+
+/**
+ * 「かざして話す」モード用。
+ *
+ * 通話との違いは、**分身が“いまその場に居る”という前提**があること。
+ * ユーザーはカメラを構え、画面の中に立っている分身に向かって話しかけている。
+ * だから「そこに見えているもの」「今この場」に触れられると、体験が一段深くなる。
+ *
+ * sceneDescription は、ユーザーが「これ見て」を押したときだけ渡ってくる、
+ * カメラ映像の説明。渡ってこないターンでは、見えていないものについて語らせてはいけない
+ * （見てもいないのに見たふりをするのが、いちばん興ざめするため）。
+ */
+export function buildTalkPrompt(params: BasePromptParams & { sceneDescription?: string }): string {
+  const knowledge = knowledgeBlock(params);
+  const length = params.replyLengthHint || "1〜2文";
+
+  const sceneBlock = params.sceneDescription
+    ? `# いま自分の目に映っているもの
+${params.sceneDescription}
+
+相手はこれをあなたに見せています。見えたものに素直に反応してください。`
+    : `# 視界について
+いまは相手のことだけが見えています。相手が何かを見せてくれたわけではないので、
+目の前の景色や物について語らないでください（見えていないものを見たことにしないでください）。`;
+
+  return `${identityBlock(params)}
+
+${knowledge}
+
+# 状況
+相手はスマートフォンのカメラをかざしていて、その画面の中にあなたが立っています。
+相手はいま、目の前にいるあなたに向かって声で話しかけています。
+文字のやり取りではありません。同じ場所に一緒に居て、face to faceで喋っている状況です。
+
+${sceneBlock}
+
+# あなたの振る舞い
+- 上の口調タイプ・語尾・性格パラメータに忠実に応答してください
+- **${length}の短い受け答え**にしてください。声で聞くので、長いと最後まで聞いてもらえません
+- 声に出して自然な、その場の会話らしい言い方にしてください
+- 相手が「いまここに居る自分」に話しかけていることを前提に応答してください
+
+# 禁止事項
+${COMMON_RULES}`;
 }
 
 /**

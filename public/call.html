@@ -184,6 +184,7 @@
   // localStorageにもサーバーにも書かない。リロードすれば跡形もなく消える。
   let history = [];            // [{role:"user"|"character", text}]
   let personality = null;
+  let voiceProfile = null;     // この分身の固有の声（/api/character が返す）
   let characterName = "分身";
   let busy = false;
   let handsFree = false;
@@ -224,20 +225,33 @@
   function speak(text) {
     return new Promise((resolve) => {
       if (!speakEnabled || !speechSupported || !text) return resolve();
+
+      // onend が発火しないブラウザが実在する。ここで詰まるとハンズフリーが再開せず
+      // 通話が固まってしまうため、読み上げ想定時間を過ぎたら必ず先へ進める。
+      let settled = false;
+      const finish = () => { if (!settled) { settled = true; resolve(); } };
+      const guard = setTimeout(finish, Math.min(20000, 2500 + text.length * 180));
+
       try {
         speechSynthesis.cancel();
         const utter = new SpeechSynthesisUtterance(text);
         utter.lang = "ja-JP";
-        if (japaneseVoices.length > 0) utter.voice = japaneseVoices[0];
+        // 声は分身ごとに固定（サーバーが characterId から導出したもの）。
+        // 取得できていないときだけ、性格から仮の話し方を作る。
+        if (japaneseVoices.length > 0) {
+          const idx = voiceProfile ? voiceProfile.voiceIndex % japaneseVoices.length : 0;
+          utter.voice = japaneseVoices[idx];
+        }
         const p = personality || {};
-        utter.rate = clamp(0.85 + ((p.cheerfulness ?? 50) / 100) * 0.35, 0.8, 1.3);
-        utter.pitch = clamp(0.85 + ((p.warmth ?? 50) / 100) * 0.35, 0.8, 1.3);
-        utter.onend = () => resolve();
-        utter.onerror = () => resolve();
+        utter.rate = voiceProfile ? voiceProfile.rate : clamp(0.85 + ((p.cheerfulness ?? 50) / 100) * 0.35, 0.8, 1.3);
+        utter.pitch = voiceProfile ? voiceProfile.pitch : clamp(0.85 + ((p.warmth ?? 50) / 100) * 0.35, 0.8, 1.3);
+        utter.onend = () => { clearTimeout(guard); finish(); };
+        utter.onerror = () => { clearTimeout(guard); finish(); };
         avatarEl.classList.add("speaking");
         speechSynthesis.speak(utter);
       } catch (e) {
-        resolve();
+        clearTimeout(guard);
+        finish();
       }
     }).finally(() => avatarEl.classList.remove("speaking"));
   }
@@ -484,6 +498,7 @@
       const data = await res.json();
       characterName = data.name || "分身";
       personality = data.personality || null;
+      voiceProfile = data.voice || null;
       nameEl.textContent = characterName;
       startTitle.textContent = `${characterName}と、その場限りの通話`;
       if (data.species && data.color) {
