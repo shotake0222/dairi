@@ -231,6 +231,107 @@ const privacyHtml = await (await fetch(`${BASE}/privacy`)).text();
 check("プライバシーポリシーが配信される", privacyHtml.includes("プライバシーポリシー"));
 check("カメラ映像の扱いが書かれている", privacyHtml.includes("カメラ映像の扱い"));
 
+console.log("\n[11] LP・マーケット・管理画面");
+const lpHtml = await (await fetch(`${BASE}/lp`)).text();
+check("LPが配信される", lpHtml.includes("もうひとりの自分"));
+// LPは一般向けの入口。人格データの売買の話は表に出さない方針にしている
+check("LPに人格データ販売の話が出ていない", !lpHtml.includes("販売") && !lpHtml.includes("マーケット"));
+
+const marketHtml = await (await fetch(`${BASE}/market`)).text();
+check("マーケットが配信される", marketHtml.includes("人格マーケット"));
+
+const adminRes = await fetch(`${BASE}/admin`);
+// 合言葉(ADMIN_PASSCODE)を設定していない状態が既定。素通しになっていないこと
+check("管理画面は合言葉なしでは開かない", adminRes.status === 404 || adminRes.status === 401, String(adminRes.status));
+const adminApi = await fetch(`${BASE}/api/admin/overview`);
+check("管理APIも閉じている", adminApi.status === 404 || adminApi.status === 401, String(adminApi.status));
+
+console.log("\n[12] 同意と属性（既定はすべてオフ）");
+// [8]の引き継ぎで持ち主トークンが差し替わっているため、端末に残っている古い値ではなく
+// 引き継ぎで発行された新しいトークンを使う（古い方は、もう持ち主として通らない）
+const profileToken = claimed.ownerToken || (await page.evaluate((c) => localStorage.getItem(`sodatsukake_token_${c}`), newCid));
+const ownerView = await (await fetch(`${BASE}/api/profile?cid=${newCid}&token=${profileToken}`)).json();
+check("初期状態では何にも同意していない", ownerView.consent === null, JSON.stringify(ownerView.consent));
+
+const noAuth = await fetch(`${BASE}/api/profile?cid=${newCid}`);
+check("持ち主トークンなしでは属性を読めない", noAuth.status === 403, String(noAuth.status));
+
+const beforeConsent = await fetch(`${BASE}/api/profile`, {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ characterId: newCid, token: profileToken, answers: { ageBand: ["30代"] } }),
+});
+check("同意前は属性を保存できない", beforeConsent.status === 403, String(beforeConsent.status));
+
+await fetch(`${BASE}/api/consent`, {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ characterId: newCid, token: profileToken, consent: { profile: true } }),
+});
+await fetch(`${BASE}/api/profile`, {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({
+    characterId: newCid,
+    token: profileToken,
+    answers: { ageBand: ["30代"], realName: "山田太郎" },
+  }),
+});
+const afterConsent = await (await fetch(`${BASE}/api/profile?cid=${newCid}&token=${profileToken}`)).text();
+check("同意後は答えた属性が保存される", afterConsent.includes("30代"));
+check("定義していない項目は捨てられる", !afterConsent.includes("山田太郎"));
+
+const publicView = await (await fetch(`${BASE}/api/character?cid=${newCid}`)).text();
+check("属性は公開APIから読めない", !publicView.includes("30代"));
+
+console.log("\n[13] 人格カードの書き出し");
+const cardRes = await fetch(`${BASE}/api/persona/card?cid=${newCid}&token=${profileToken}`);
+const card = await cardRes.json();
+check("人格カードが書き出せる", card.format === "waketama.persona-card", JSON.stringify(card).slice(0, 80));
+check("そのまま使えるシステムプロンプトが入っている", (card.runtime?.systemPrompt || "").length > 100);
+const modelfile = await (await fetch(`${BASE}/api/persona/card?cid=${newCid}&token=${profileToken}&format=modelfile`)).text();
+check("Ollama Modelfile として書き出せる", modelfile.includes("FROM ") && modelfile.includes("SYSTEM "));
+const cardNoAuth = await fetch(`${BASE}/api/persona/card?cid=${newCid}`);
+check("人格カードは持ち主以外には渡さない", cardNoAuth.status === 403, String(cardNoAuth.status));
+
+console.log("\n[14] 統計（k-匿名性）");
+const insights = await (await fetch(`${BASE}/api/market/insights`)).json();
+check("最小人数の下限が設定されている", insights.minCohortSize >= 10, String(insights.minCohortSize));
+check("人数の少ないグループは出力されない", (insights.insights || []).every((i) => i.count >= insights.minCohortSize));
+
+console.log("\n[15] 視線・スイッチ入力");
+// このページは読み込み後も待ち受け続ける（スキャンのタイマー等）ため、networkidle は使わない
+await page.goto(`${BASE}/eyes?cid=${newCid}`, { waitUntil: "domcontentloaded" });
+await page.waitForTimeout(1200);
+check("カメラが無くてもスイッチ操作で始められる", await page.isVisible("#startScan"));
+await page.click("#startScan");
+await page.waitForTimeout(400);
+check("選択盤が8面ある", (await page.locator("#board .zone").count()) === 8);
+
+// キーボードの1〜8でも同じ木をたどれること（スイッチ機器の多くはキー入力として届く）
+await page.keyboard.press("1");   // あ・か行へ
+await page.waitForTimeout(200);
+await page.keyboard.press("1");   // 「あ」
+await page.waitForTimeout(200);
+await page.keyboard.press("2");   // さ・た行へ
+await page.waitForTimeout(200);
+await page.keyboard.press("1");   // 「さ」
+await page.waitForTimeout(200);
+const typed = (await page.textContent("#composer")) || "";
+check("キー操作で文字が入る", typed.includes("あ") && typed.includes("さ"), typed);
+
+const eyesLayout = await page.evaluate(() => ({
+  overflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+}));
+check("視線入力の画面が横に溢れていない", eyesLayout.overflowX === false);
+await page.screenshot({ path: path.join(OUT_DIR, "eyes.png") });
+
+console.log("\n[16] プライバシーポリシーの更新");
+const privacy2 = await (await fetch(`${BASE}/privacy`)).text();
+check("3つの同意が説明されている", privacy2.includes("あなたが選ぶ3つの同意"));
+check("統計に含まれないものが列挙されている", privacy2.includes("統計として提供されるもの"));
+check("運営が会話を読めないことが書かれている", privacy2.includes("運営からも見えない"));
+
 check("JavaScriptエラーが出ていない", pageErrors.length === 0, pageErrors.join(" / "));
 
 await browser.close();

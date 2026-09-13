@@ -1,0 +1,550 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>わけたま｜あなたと、分身の記録</title>
+<meta name="description" content="分身があなたについて覚えていること、答えた内容、データの使い道の設定。" />
+
+<link rel="manifest" href="/manifest.webmanifest" />
+<meta name="theme-color" content="#7c5cff" />
+<link rel="icon" href="/icons/favicon-64.png" sizes="64x64" type="image/png" />
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="わけたま" />
+<meta property="og:title" content="わけたま｜あなたと、分身の記録" />
+<meta property="og:description" content="分身があなたについて覚えていること、答えた内容、データの使い道の設定。" />
+<meta property="og:image" content="/icons/ogp.png" />
+<meta property="og:url" content="/" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="わけたま｜あなたと、分身の記録" />
+<meta name="twitter:description" content="分身があなたについて覚えていること、答えた内容、データの使い道の設定。" />
+<meta name="twitter:image" content="/icons/ogp.png" />
+<style>
+  :root { color-scheme: light; --brand:#7c5cff; --ink:#1c1630; --muted:#6f668f; --line:#e9e5f7; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: #f7f5ff; color: var(--ink); line-height: 1.8;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+  }
+  header { background: #fff; border-bottom: 1px solid var(--line); padding: 16px; position: sticky; top: 0; z-index: 5; }
+  header .brand { font-size: 10px; letter-spacing: 0.08em; color: #a78bfa; font-weight: 700; }
+  header h1 { margin: 2px 0 0; font-size: 17px; }
+  header .back { font-size: 12px; color: var(--muted); text-decoration: none; }
+  main { max-width: 640px; margin: 0 auto; padding: 16px 16px 72px; }
+
+  section { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 18px; margin-bottom: 14px; }
+  section h2 { margin: 0 0 6px; font-size: 15px; }
+  section .lead { margin: 0 0 14px; font-size: 13px; color: var(--muted); }
+
+  .consentItem { border-top: 1px solid var(--line); padding: 14px 0; }
+  .consentItem:first-of-type { border-top: none; }
+  .consentHead { display: flex; align-items: flex-start; gap: 12px; }
+  .consentHead h3 { margin: 0; font-size: 14px; flex: 1; }
+  .consentItem p { margin: 6px 0 0; font-size: 12.5px; color: var(--muted); }
+  .consentItem .note { color: #9a90c0; font-size: 12px; }
+
+  /* トグル */
+  .toggle { position: relative; width: 46px; height: 26px; flex-shrink: 0; }
+  .toggle input { opacity: 0; width: 0; height: 0; }
+  .toggle .track {
+    position: absolute; inset: 0; background: #ddd6f5; border-radius: 999px; transition: background .2s; cursor: pointer;
+  }
+  .toggle .track::after {
+    content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 999px;
+    background: #fff; transition: transform .2s; box-shadow: 0 1px 3px rgba(0,0,0,.2);
+  }
+  .toggle input:checked + .track { background: var(--brand); }
+  .toggle input:checked + .track::after { transform: translateX(20px); }
+
+  .group { border-top: 1px solid var(--line); padding-top: 14px; margin-top: 14px; }
+  .group:first-of-type { border-top: none; padding-top: 0; margin-top: 0; }
+  .group h3 { margin: 0 0 2px; font-size: 14px; }
+  .group .glead { margin: 0 0 12px; font-size: 12.5px; color: var(--muted); }
+  .field { margin-bottom: 16px; }
+  .field .flabel { font-size: 13px; font-weight: 700; }
+  .field .fwhy { font-size: 11.5px; color: #9a90c0; margin-bottom: 8px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 7px; }
+  .chip {
+    border: 1px solid var(--line); background: #fff; color: #4c3a99; font-size: 12.5px;
+    padding: 7px 13px; border-radius: 999px; cursor: pointer; font-family: inherit;
+  }
+  .chip.on { background: var(--brand); color: #fff; border-color: transparent; }
+  .chip:disabled { opacity: .45; cursor: not-allowed; }
+
+  .meter { height: 7px; background: #eee9fb; border-radius: 999px; overflow: hidden; margin: 6px 0 4px; }
+  .meter > div { height: 100%; background: var(--brand); width: 0; transition: width .3s; }
+
+  .notes { background: #f7f5ff; border-radius: 12px; padding: 12px 14px; font-size: 13px; white-space: pre-wrap; }
+  .empty { color: #9a90c0; font-size: 13px; }
+
+  .kv { display: flex; flex-wrap: wrap; gap: 8px; }
+  .tag { background: #f0ecff; color: #4c3a99; border-radius: 999px; padding: 5px 12px; font-size: 12px; }
+
+  .bars { display: grid; gap: 6px; margin-top: 8px; }
+  .bar { display: grid; grid-template-columns: 5.5em 1fr 2.4em; gap: 8px; align-items: center; font-size: 12px; }
+  .bar .track { height: 8px; background: #eee9fb; border-radius: 999px; overflow: hidden; }
+  .bar .fill { height: 100%; background: #a78bfa; }
+
+  button.action {
+    border: none; background: var(--brand); color: #fff; font-weight: 700; font-size: 14px;
+    padding: 11px 20px; border-radius: 999px; cursor: pointer; font-family: inherit;
+  }
+  button.action.ghost { background: #fff; color: var(--brand); border: 1px solid var(--line); }
+  button.action:disabled { opacity: .45; cursor: not-allowed; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+  select, input[type="range"] { font-family: inherit; font-size: 14px; }
+  select { padding: 8px 12px; border-radius: 10px; border: 1px solid var(--line); background: #fff; }
+  label.inline { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-bottom: 10px; }
+
+  #status { font-size: 12px; color: var(--muted); min-height: 18px; margin-top: 8px; }
+  .locked { opacity: .5; pointer-events: none; }
+  a.link { color: var(--brand); font-size: 13px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">わけたま</div>
+  <h1>あなたと、分身の記録</h1>
+  <a class="back" id="backLink" href="/home">← 会話にもどる</a>
+</header>
+
+<main>
+  <section id="consentSection">
+    <h2>データの使い道</h2>
+    <p class="lead">
+      それぞれ別々に選べます。<strong>すべてオフのままでも、分身とはこれまでどおり話せます。</strong>
+    </p>
+    <div id="consentList"></div>
+    <div id="status"></div>
+  </section>
+
+  <section id="memorySection">
+    <h2>分身があなたについて覚えていること</h2>
+    <p class="lead">会話から分身が自分で書き留めたものです。事実と違うところがあれば、会話の中で伝えると直っていきます。</p>
+    <div id="notes" class="empty">まだ何も覚えていません。</div>
+  </section>
+
+  <section id="profileSection">
+    <h2>あなたのこと</h2>
+    <p class="lead">
+      答えるほど、分身の話が合うようになります。<strong>ひとつも答えなくて構いません。</strong>
+      いつでも消せます。
+    </p>
+    <div class="meter"><div id="meterFill"></div></div>
+    <div style="font-size:12px;color:var(--muted)"><span id="completion">0</span>% 回答済み</div>
+    <div id="profileLocked" class="empty" style="margin-top:14px">
+      上の「あなたのことを分身に覚えさせる」をオンにすると、ここに質問が出ます。
+    </div>
+    <div id="groups" style="margin-top:16px"></div>
+    <div class="row" style="margin-top:8px">
+      <button class="action ghost" id="clearProfileBtn" type="button">答えた内容をすべて消す</button>
+    </div>
+  </section>
+
+  <section id="insightSection">
+    <h2>いまの人物像</h2>
+    <p class="lead">会話から推し量ったものなので、外れていることもあります。分身が話し方を合わせるために使っています。</p>
+    <div id="segment" class="empty">まだ判断できるほど話していません。</div>
+    <div id="interests" class="kv" style="margin-top:10px"></div>
+    <div id="values" class="bars"></div>
+  </section>
+
+  <section>
+    <h2>入力しやすさの設定</h2>
+    <p class="lead">
+      この設定は<strong>統計にも販売にも一切使われません</strong>。あなたの端末での使い勝手のためだけのものです。
+    </p>
+    <label class="inline">
+      主に使う入力方法
+      <select id="inputMode">
+        <option value="text">文字</option>
+        <option value="voice">声</option>
+        <option value="gaze">視線</option>
+        <option value="switch">スイッチ</option>
+      </select>
+    </label>
+    <label class="inline">
+      決定までの時間 <input type="range" id="dwellMs" min="400" max="3000" step="100" />
+      <span id="dwellLabel">1000ms</span>
+    </label>
+    <label class="inline"><input type="checkbox" id="highContrast" /> 高コントラスト表示</label>
+    <label class="inline"><input type="checkbox" id="reduceMotion" /> アニメーションを減らす</label>
+    <label class="inline"><input type="checkbox" id="autoSpeak" /> 返事を自動で読み上げる</label>
+    <div class="row">
+      <button class="action" id="saveA11yBtn" type="button">保存する</button>
+      <a class="link" id="eyesLink" href="/eyes">視線で話しかける画面をひらく →</a>
+    </div>
+  </section>
+
+  <section>
+    <h2>この子を、外へ連れ出す</h2>
+    <p class="lead">
+      育った性格・記憶・口調を、わけたまの外のAIでも動かせる形で書き出します。
+      手元のパソコンで動かす小さなモデルや、ロボットに載せることを想定した形式です。
+    </p>
+    <div class="row">
+      <button class="action ghost" data-card="json" type="button">人格カード（JSON）</button>
+      <button class="action ghost" data-card="prompt" type="button">システムプロンプト</button>
+      <button class="action ghost" data-card="modelfile" type="button">Ollama Modelfile</button>
+      <button class="action ghost" data-card="readme" type="button">説明書</button>
+    </div>
+    <p class="lead" style="margin:12px 0 0">
+      記憶には生活に関わる内容が含まれます。人に渡す前に中身を確認してください。
+    </p>
+  </section>
+
+  <section id="marketSection">
+    <h2>マーケットに出す</h2>
+    <p class="lead">育てた分身を、他の人が使えるように出品できます。</p>
+    <div id="marketLocked" class="empty">
+      上の「育てた分身を出品する」をオンにすると、出品ページへ進めます。
+    </div>
+    <a class="action" id="marketLink" href="/market" style="display:none; text-decoration:none">出品ページへ →</a>
+  </section>
+
+  <p style="text-align:center;font-size:12px"><a class="link" href="/privacy">プライバシーポリシー</a></p>
+</main>
+
+<script>
+  // ============================================================
+  // 属性・同意・アクセシビリティの画面。
+  //
+  // 質問の項目も同意の文面も、このページには書かない。すべて /api/profile/schema から取る。
+  // 説明文を画面とサーバーの2箇所に置くと、片方だけ直したときに
+  // 「同意した文面」と「実際の扱い」が食い違う。それは最も避けたい種類の事故なので、
+  // 定義元をサーバーに一本化してある。
+  // ============================================================
+
+  const params = new URLSearchParams(location.search);
+  const cid = params.get("cid");
+
+  function token() {
+    if (!cid) return "";
+    try { return localStorage.getItem(`sodatsukake_token_${cid}`) || ""; } catch (e) { return ""; }
+  }
+
+  const statusEl = document.getElementById("status");
+  const consentList = document.getElementById("consentList");
+  const groupsEl = document.getElementById("groups");
+  const profileLocked = document.getElementById("profileLocked");
+  const marketLocked = document.getElementById("marketLocked");
+  const marketLink = document.getElementById("marketLink");
+  const notesEl = document.getElementById("notes");
+  const segmentEl = document.getElementById("segment");
+  const interestsEl = document.getElementById("interests");
+  const valuesEl = document.getElementById("values");
+  const meterFill = document.getElementById("meterFill");
+  const completionEl = document.getElementById("completion");
+
+  document.getElementById("backLink").href = cid ? `/chat?cid=${encodeURIComponent(cid)}` : "/home";
+  document.getElementById("eyesLink").href = cid ? `/eyes?cid=${encodeURIComponent(cid)}` : "/eyes";
+  marketLink.href = cid ? `/market?cid=${encodeURIComponent(cid)}` : "/market";
+
+  let schema = null;
+  let state = null;
+  let saveTimer = null;
+
+  function setStatus(text) {
+    statusEl.textContent = text || "";
+    if (text) setTimeout(() => { if (statusEl.textContent === text) statusEl.textContent = ""; }, 2600);
+  }
+
+  async function api(path, options) {
+    const res = await fetch(path, options);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "うまくいきませんでした");
+    return data;
+  }
+
+  // ---- 同意 ----
+  function renderConsent() {
+    const consent = state.consent || {};
+    consentList.innerHTML = "";
+    for (const [key, texts] of Object.entries(schema.consentTexts)) {
+      const item = document.createElement("div");
+      item.className = "consentItem";
+      const on = consent.version === schema.consentVersion && consent[key] === true;
+      item.innerHTML = `
+        <div class="consentHead">
+          <h3></h3>
+          <label class="toggle"><input type="checkbox" data-consent="${key}" ${on ? "checked" : ""} /><span class="track"></span></label>
+        </div>
+        <p class="body"></p>
+        <p class="note"></p>`;
+      item.querySelector("h3").textContent = texts.title;
+      item.querySelector(".body").textContent = texts.body;
+      item.querySelector(".note").textContent = texts.note;
+      consentList.appendChild(item);
+    }
+
+    consentList.querySelectorAll("input[data-consent]").forEach((input) => {
+      input.addEventListener("change", async () => {
+        const next = {};
+        consentList.querySelectorAll("input[data-consent]").forEach((el) => {
+          next[el.dataset.consent] = el.checked;
+        });
+        try {
+          const data = await api("/api/consent", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ characterId: cid, token: token(), consent: next }),
+          });
+          state.consent = data.consent;
+          setStatus("保存しました");
+          // 属性の同意を外すと回答も消えるので、必ず読み直す
+          await load();
+        } catch (e) {
+          input.checked = !input.checked;
+          setStatus(e.message);
+        }
+      });
+    });
+  }
+
+  // ---- 属性 ----
+  function profileEnabled() {
+    const c = state.consent || {};
+    return c.version === schema.consentVersion && c.profile === true;
+  }
+
+  function renderGroups() {
+    const enabled = profileEnabled();
+    profileLocked.style.display = enabled ? "none" : "block";
+    groupsEl.style.display = enabled ? "block" : "none";
+    if (!enabled) { setCompletion(0); return; }
+
+    const answers = state.profile?.answers || {};
+    groupsEl.innerHTML = "";
+    for (const group of schema.groups) {
+      const wrap = document.createElement("div");
+      wrap.className = "group";
+      const h = document.createElement("h3");
+      h.textContent = group.title;
+      const lead = document.createElement("p");
+      lead.className = "glead";
+      lead.textContent = group.lead;
+      wrap.append(h, lead);
+
+      for (const field of group.fields) {
+        const fieldEl = document.createElement("div");
+        fieldEl.className = "field";
+        const label = document.createElement("div");
+        label.className = "flabel";
+        label.textContent = field.label + (field.type === "multi" ? "（いくつでも）" : "");
+        const why = document.createElement("div");
+        why.className = "fwhy";
+        why.textContent = field.why;
+        const chips = document.createElement("div");
+        chips.className = "chips";
+
+        for (const option of field.options) {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "chip";
+          btn.textContent = option;
+          if ((answers[field.key] || []).includes(option)) btn.classList.add("on");
+          btn.addEventListener("click", () => toggleAnswer(field, option, btn));
+          chips.appendChild(btn);
+        }
+
+        fieldEl.append(label, why, chips);
+        wrap.appendChild(fieldEl);
+      }
+      groupsEl.appendChild(wrap);
+    }
+    setCompletion(state.completion || 0);
+  }
+
+  function toggleAnswer(field, option, btn) {
+    const answers = state.profile.answers;
+    const current = answers[field.key] || [];
+    let next;
+    if (field.type === "single") {
+      next = current.includes(option) ? [] : [option];
+    } else {
+      next = current.includes(option) ? current.filter((v) => v !== option) : [...current, option];
+      const max = field.maxSelections || field.options.length;
+      if (next.length > max) {
+        setStatus(`${field.label}は${max}個までです`);
+        return;
+      }
+    }
+    answers[field.key] = next;
+
+    // 単一選択は、同じ質問の他のボタンを消す
+    if (field.type === "single") {
+      btn.parentElement.querySelectorAll(".chip").forEach((el) => el.classList.remove("on"));
+    }
+    btn.classList.toggle("on", next.includes(option));
+
+    // 1問ごとに送るとリクエストが増えるので、少しまとめてから送る
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveProfile, 600);
+  }
+
+  async function saveProfile() {
+    try {
+      const data = await api("/api/profile", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ characterId: cid, token: token(), answers: state.profile.answers, replace: true }),
+      });
+      state.completion = data.completion;
+      setCompletion(data.completion);
+      setStatus("保存しました");
+    } catch (e) {
+      setStatus(e.message);
+    }
+  }
+
+  function setCompletion(value) {
+    meterFill.style.width = `${value}%`;
+    completionEl.textContent = value;
+  }
+
+  document.getElementById("clearProfileBtn").addEventListener("click", async () => {
+    if (!profileEnabled()) { setStatus("まだ何も保存されていません"); return; }
+    try {
+      await api("/api/profile", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ characterId: cid, token: token(), answers: {}, replace: true }),
+      });
+      setStatus("消しました");
+      await load();
+    } catch (e) {
+      setStatus(e.message);
+    }
+  });
+
+  // ---- 人物像 ----
+  function renderInsight() {
+    const seg = state.segment;
+    if (seg && seg.confidence > 0) {
+      segmentEl.className = "";
+      segmentEl.textContent = `${seg.label}（確からしさ ${seg.confidence}%）`;
+    }
+
+    const interests = state.psychographics?.interests || {};
+    const sorted = Object.entries(interests).sort((a, b) => b[1] - a[1]).slice(0, 6);
+    interestsEl.innerHTML = "";
+    for (const [topic, weight] of sorted) {
+      const tag = document.createElement("span");
+      tag.className = "tag";
+      tag.textContent = `${topic} ${weight}`;
+      interestsEl.appendChild(tag);
+    }
+
+    const values = state.psychographics?.values || {};
+    const labels = {
+      achievement: "達成", benevolence: "思いやり", hedonism: "楽しさ", security: "安定",
+      stimulation: "刺激", selfDirection: "自律", tradition: "伝統", power: "影響力",
+    };
+    valuesEl.innerHTML = "";
+    for (const [key, label] of Object.entries(labels)) {
+      const v = Math.round(values[key] ?? 50);
+      const row = document.createElement("div");
+      row.className = "bar";
+      row.innerHTML = `<span></span><div class="track"><div class="fill" style="width:${v}%"></div></div><span>${v}</span>`;
+      row.firstElementChild.textContent = label;
+      valuesEl.appendChild(row);
+    }
+  }
+
+  // ---- アクセシビリティ ----
+  const inputMode = document.getElementById("inputMode");
+  const dwellMs = document.getElementById("dwellMs");
+  const dwellLabel = document.getElementById("dwellLabel");
+  const highContrast = document.getElementById("highContrast");
+  const reduceMotion = document.getElementById("reduceMotion");
+  const autoSpeak = document.getElementById("autoSpeak");
+
+  dwellMs.addEventListener("input", () => { dwellLabel.textContent = `${dwellMs.value}ms`; });
+
+  function renderA11y() {
+    const a = state.accessibility || {};
+    inputMode.value = a.inputMode || "text";
+    dwellMs.value = a.dwellMs || 1000;
+    dwellLabel.textContent = `${dwellMs.value}ms`;
+    highContrast.checked = Boolean(a.highContrast);
+    reduceMotion.checked = Boolean(a.reduceMotion);
+    autoSpeak.checked = Boolean(a.autoSpeak);
+  }
+
+  document.getElementById("saveA11yBtn").addEventListener("click", async () => {
+    try {
+      const data = await api("/api/accessibility", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          characterId: cid,
+          token: token(),
+          prefs: {
+            inputMode: inputMode.value,
+            dwellMs: Number(dwellMs.value),
+            highContrast: highContrast.checked,
+            reduceMotion: reduceMotion.checked,
+            autoSpeak: autoSpeak.checked,
+          },
+        }),
+      });
+      state.accessibility = data.accessibility;
+      setStatus("保存しました");
+    } catch (e) {
+      setStatus(e.message);
+    }
+  });
+
+  // ---- 人格カードの書き出し ----
+  document.querySelectorAll("[data-card]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const format = btn.dataset.card;
+      location.href = `/api/persona/card?cid=${encodeURIComponent(cid || "")}&token=${encodeURIComponent(token())}&format=${format}`;
+    });
+  });
+
+  // ---- 読み込み ----
+  async function load() {
+    if (!cid) {
+      document.querySelector("main").innerHTML =
+        '<section><h2>分身が指定されていません</h2><p class="lead">チャット画面から開き直してください。</p></section>';
+      return;
+    }
+    if (!schema) schema = await api("/api/profile/schema");
+    state = await api(`/api/profile?cid=${encodeURIComponent(cid)}&token=${encodeURIComponent(token())}`);
+    if (!state.profile) state.profile = { answers: {} };
+    if (!state.profile.answers) state.profile.answers = {};
+
+    renderConsent();
+    renderGroups();
+    renderInsight();
+    renderA11y();
+
+    notesEl.textContent = state.notes || "まだ何も覚えていません。";
+    notesEl.className = state.notes ? "notes" : "empty";
+
+    const c = state.consent || {};
+    const canMarket = c.version === schema.consentVersion && c.marketplace === true;
+    marketLocked.style.display = canMarket ? "none" : "block";
+    marketLink.style.display = canMarket ? "inline-block" : "none";
+  }
+
+  load().catch((e) => {
+    document.querySelector("main").innerHTML =
+      `<section><h2>開けませんでした</h2><p class="lead"></p></section>`;
+    document.querySelector("main .lead").textContent = e.message;
+  });
+</script>
+
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    });
+  }
+</script>
+</body>
+</html>

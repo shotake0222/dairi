@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>わけたま｜会話で育てる、もうひとりの自分</title>
+<meta name="description" content="キーホルダーにスマホをかざすと、あなたの分身が現れる。話すほど性格が変わり、いつかロボットやアバターの身体に宿っていく——わけたまは、将来の相棒をいまから育てておくサービスです。" />
+
+<link rel="manifest" href="/manifest.webmanifest" />
+<meta name="theme-color" content="#7c5cff" />
+<link rel="icon" href="/icons/favicon-64.png" sizes="64x64" type="image/png" />
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="わけたま" />
+<meta property="og:title" content="わけたま｜会話で育てる、もうひとりの自分" />
+<meta property="og:description" content="話すほど性格が変わる分身を、いまから育てておく。いつかロボットやアバターの身体に宿る日のために。" />
+<meta property="og:image" content="/icons/ogp.png" />
+<meta property="og:url" content="/" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="わけたま｜会話で育てる、もうひとりの自分" />
+<meta name="twitter:description" content="話すほど性格が変わる分身を、いまから育てておく。いつかロボットやアバターの身体に宿る日のために。" />
+<meta name="twitter:image" content="/icons/ogp.png" />
+<style>
+  :root {
+    color-scheme: light;
+    --ink: #1c1630;
+    --muted: #6f668f;
+    --brand: #7c5cff;
+    --brand-soft: #f0ecff;
+    --line: #e9e5f7;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: #fbfaff; color: var(--ink); line-height: 1.85;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  img { max-width: 100%; }
+  a { color: var(--brand); }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 0 20px; }
+
+  /* --- ヘッダー --- */
+  header.site {
+    position: sticky; top: 0; z-index: 10; background: rgba(251,250,255,0.92);
+    backdrop-filter: blur(10px); border-bottom: 1px solid var(--line);
+  }
+  header.site .wrap { display: flex; align-items: center; gap: 12px; padding-block: 12px; }
+  .logo { font-weight: 800; letter-spacing: 0.06em; font-size: 15px; }
+  .logo span { color: var(--brand); }
+  header.site .spacer { flex: 1; }
+  .navBtn {
+    font-size: 13px; text-decoration: none; padding: 8px 16px; border-radius: 999px;
+    background: var(--brand); color: #fff; font-weight: 700; white-space: nowrap;
+  }
+  .navLink { font-size: 13px; text-decoration: none; color: var(--muted); white-space: nowrap; }
+
+  /* --- ヒーロー --- */
+  .hero { padding: 56px 0 44px; text-align: center; }
+  .hero .eyebrow {
+    display: inline-block; font-size: 11px; letter-spacing: 0.14em; font-weight: 700;
+    color: var(--brand); background: var(--brand-soft); padding: 6px 14px; border-radius: 999px;
+  }
+  /* 日本語は語の途中でも改行されるため、狭い画面で見出しが割れて読みにくくなる。
+     少し小さめに寄せたうえで、行の分かれ方を整えてもらう。 */
+  .hero h1 {
+    font-size: clamp(23px, 6vw, 40px); line-height: 1.45; margin: 20px 0 14px;
+    letter-spacing: -0.01em; text-wrap: balance;
+  }
+  .hero h1 em { font-style: normal; color: var(--brand); }
+  .hero p { font-size: 15px; color: var(--muted); margin: 0 auto 28px; max-width: 30em; }
+  .heroArt {
+    width: min(260px, 62vw); aspect-ratio: 1; margin: 0 auto 26px; border-radius: 40px;
+    background: radial-gradient(circle at 50% 38%, #fff 0%, #efe9ff 55%, #e2d9ff 100%);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 22px 60px rgba(124,92,255,0.18);
+  }
+  .heroArt img { width: 74%; animation: float 4.2s ease-in-out infinite; }
+  @keyframes float { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-9px) } }
+  @media (prefers-reduced-motion: reduce) { .heroArt img { animation: none } }
+
+  .cta {
+    display: inline-block; background: var(--brand); color: #fff; text-decoration: none;
+    font-weight: 700; font-size: 16px; padding: 15px 38px; border-radius: 999px;
+    box-shadow: 0 10px 26px rgba(124,92,255,0.32);
+  }
+  .ctaNote { display: block; font-size: 12px; color: var(--muted); margin-top: 12px; }
+
+  /* --- セクション --- */
+  section { padding: 44px 0; border-top: 1px solid var(--line); }
+  section h2 { font-size: 20px; margin: 0 0 8px; letter-spacing: -0.01em; }
+  section .lead { color: var(--muted); font-size: 14px; margin: 0 0 24px; }
+
+  .steps { display: grid; gap: 14px; }
+  .step {
+    background: #fff; border: 1px solid var(--line); border-radius: 18px; padding: 18px 20px;
+    display: grid; grid-template-columns: 34px 1fr; gap: 14px; align-items: start;
+  }
+  .step .num {
+    width: 34px; height: 34px; border-radius: 999px; background: var(--brand-soft); color: var(--brand);
+    display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 14px;
+  }
+  .step h3 { margin: 4px 0 4px; font-size: 15px; }
+  .step p { margin: 0; font-size: 13.5px; color: var(--muted); }
+
+  .cards { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 18px; padding: 20px; }
+  .card .icon { font-size: 22px; }
+  .card h3 { margin: 10px 0 6px; font-size: 15px; }
+  .card p { margin: 0; font-size: 13.5px; color: var(--muted); }
+
+  /* --- 将来の話 --- */
+  .future { background: linear-gradient(160deg, #221a44 0%, #14102a 100%); color: #efeaff; border-top: none; }
+  .future h2 { color: #fff; }
+  .future .lead { color: #b5a9e6; }
+  .future .bodies { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-top: 8px; }
+  .body {
+    border: 1px solid rgba(255,255,255,0.14); border-radius: 16px; padding: 16px;
+    background: rgba(255,255,255,0.05);
+  }
+  .body .icon { font-size: 20px; }
+  .body h3 { margin: 8px 0 4px; font-size: 14px; color: #fff; }
+  .body p { margin: 0; font-size: 12.5px; color: #b5a9e6; line-height: 1.8; }
+  .future .closing { margin-top: 26px; font-size: 14px; color: #d8cffb; }
+
+  /* --- よくある質問 --- */
+  details {
+    background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 14px 18px; margin-bottom: 10px;
+  }
+  details summary { cursor: pointer; font-weight: 700; font-size: 14px; list-style: none; }
+  details summary::-webkit-details-marker { display: none; }
+  details summary::after { content: " ＋"; color: var(--brand); }
+  details[open] summary::after { content: " －"; }
+  details p { font-size: 13.5px; color: var(--muted); margin: 10px 0 0; }
+
+  .finalCta { text-align: center; padding: 52px 0 60px; }
+  .finalCta h2 { font-size: 22px; margin-bottom: 6px; }
+
+  footer.site { border-top: 1px solid var(--line); padding: 26px 0 40px; font-size: 12px; color: var(--muted); }
+  footer.site .row { display: flex; gap: 16px; flex-wrap: wrap; }
+  footer.site a { color: var(--muted); text-decoration: none; }
+</style>
+</head>
+<body>
+
+<header class="site">
+  <div class="wrap">
+    <div class="logo">わけ<span>たま</span></div>
+    <div class="spacer"></div>
+    <a class="navLink" href="/home">分身に会う</a>
+    <a class="navBtn" href="/home">はじめる</a>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="hero">
+    <span class="eyebrow">NFCキーホルダー × 育成AI</span>
+    <h1>話すほど、<em>あなたに似ていく</em>。<br />もうひとりの自分を育てる。</h1>
+    <div class="heroArt">
+      <img src="/characters/punikoro_lavender.png" alt="わけたまのキャラクター" />
+    </div>
+    <p>
+      キーホルダーにスマホをかざすと、そこに小さな相棒が現れます。
+      話しかけるたびに性格が少しずつ変わり、あなただけの一体になっていきます。
+    </p>
+    <a class="cta" href="/home">分身に会いに行く</a>
+    <span class="ctaNote">アカウント登録は不要です。今すぐはじめられます。</span>
+  </div>
+</div>
+
+<section>
+  <div class="wrap">
+    <h2>はじめかた</h2>
+    <p class="lead">やることは3つだけです。</p>
+    <div class="steps">
+      <div class="step">
+        <div class="num">1</div>
+        <div>
+          <h3>キーホルダーにかざす</h3>
+          <p>スマホを近づけるだけでページが開きます。アプリのインストールも、会員登録も要りません。</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="num">2</div>
+        <div>
+          <h3>名前をつける</h3>
+          <p>生まれたての分身に名前を贈ります。姿と声は、その子だけのものが決まります。</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="num">3</div>
+        <div>
+          <h3>話す。ただ、それだけ</h3>
+          <p>文字でも、声でも。カメラをかざせば、目の前にいるその子と face to face で話せます。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>育つ、というのは</h2>
+    <p class="lead">見た目が変わるのではありません。中身が変わります。</p>
+    <div class="cards">
+      <div class="card">
+        <div class="icon">🌱</div>
+        <h3>性格が動く</h3>
+        <p>優しく話しかければ人懐こく、そっけなくすればマイペースに。育て方がそのまま性格になります。</p>
+      </div>
+      <div class="card">
+        <div class="icon">🧠</div>
+        <h3>あなたを覚える</h3>
+        <p>好きなもの、続けていること、大事な予定。会話を重ねるほど、話が通じるようになります。</p>
+      </div>
+      <div class="card">
+        <div class="icon">🗣️</div>
+        <h3>口調が定まる</h3>
+        <p>語尾も距離感も、育つうちにその子らしさへ固まっていきます。同じ子はふたつとありません。</p>
+      </div>
+      <div class="card">
+        <div class="icon">📈</div>
+        <h3>変化が見える</h3>
+        <p>これまでどう育ってきたかを、グラフでいつでも振り返れます。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="future">
+  <div class="wrap">
+    <h2>いつか、身体を持つ日のために</h2>
+    <p class="lead">
+      いま分身が住んでいるのは画面の中です。でも、それは今だけの話だと考えています。
+    </p>
+    <div class="bodies">
+      <div class="body">
+        <div class="icon">🤖</div>
+        <h3>ロボットの中へ</h3>
+        <p>家にいる小さな相棒として、育った性格のまま動き出す日を目指しています。</p>
+      </div>
+      <div class="body">
+        <div class="icon">🕶️</div>
+        <h3>アバターとして</h3>
+        <p>メタバースやARの中で、あなたの代わりにそこに居られるように。</p>
+      </div>
+      <div class="body">
+        <div class="icon">🔌</div>
+        <h3>持ち出せる人格</h3>
+        <p>育てた性格と記憶は、いつでも1つのファイルとして書き出せます。特定の会社に閉じ込めません。</p>
+      </div>
+    </div>
+    <p class="closing">
+      身体は、これから作られます。<br />
+      けれど<strong>中身は、いまから育てておかないと間に合いません</strong>。<br />
+      わけたまは、その時間を先に積んでおくためのサービスです。
+    </p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>よくある質問</h2>
+    <details>
+      <summary>お金はかかりますか？</summary>
+      <p>いまのところ、分身と話すのに費用はかかりません。キーホルダーをお持ちの方はそのままお使いいただけます。</p>
+    </details>
+    <details>
+      <summary>会員登録やログインは必要ですか？</summary>
+      <p>不要です。氏名・メールアドレス・電話番号はお預かりしていません。分身はあなたの端末とキーホルダーに紐づいています。</p>
+    </details>
+    <details>
+      <summary>会話の内容はどうなりますか？</summary>
+      <p>分身が覚えているための記録として保存されます。何が保存されるか、どうすれば消せるかは<a href="/privacy">プライバシーポリシー</a>に具体的に書いています。記録を残したくないときのために、何も保存しない「その場限りの通話」も用意しています。</p>
+    </details>
+    <details>
+      <summary>機種変更したら消えますか？</summary>
+      <p>消えません。引き継ぎコードを発行して、新しい端末で入力すればそのまま連れて行けます。</p>
+    </details>
+    <details>
+      <summary>キーホルダーを無くしたら？</summary>
+      <p>ホーム画面に追加しておけば、キーホルダーが手元になくても分身に会えます。</p>
+    </details>
+    <details>
+      <summary>手が使えない・声が出しにくいのですが</summary>
+      <p>視線で文字を選んで話しかけられる入力方法を用意しています。スイッチ入力やキーボードでも同じように操作できます。</p>
+    </details>
+  </div>
+</section>
+
+<div class="wrap finalCta">
+  <h2>その子は、まだ名前を持っていません。</h2>
+  <p class="lead">会いに行くところから始まります。</p>
+  <a class="cta" href="/home">分身に会いに行く</a>
+</div>
+
+<footer class="site">
+  <div class="wrap">
+    <div class="row">
+      <a href="/home">分身に会う</a>
+      <a href="/privacy">プライバシーポリシー</a>
+    </div>
+    <div style="margin-top:10px">わけたま</div>
+  </div>
+</footer>
+
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    });
+  }
+</script>
+</body>
+</html>

@@ -8,6 +8,24 @@ import { handleHealth } from "./health";
 import { handleTranscribe, handleSpeak } from "./voice";
 import { issueTransferCode, claimTransferCode } from "./transfer";
 import { stagingGate, applyStagingHeaders } from "./stagingGuard";
+import { adminGate, applyAdminHeaders, handleAdminOverview, handleAdminPersonas, handleAdminRequests } from "./admin";
+import {
+  handleGetOwnerView,
+  handlePersonaCard,
+  handleProfileSchema,
+  handleSetAccessibility,
+  handleSetConsent,
+  handleSetProfile,
+} from "./personaRoutes";
+import {
+  handleBrowseListings,
+  handleInsights,
+  handleMyListing,
+  handlePurchaseRequest,
+  handleSaveListing,
+} from "./market";
+import { handleIme } from "./ime";
+import { countMetric } from "./persona/registry";
 import { LogContext, newRequestId } from "./lib/log";
 
 export { CharacterState };
@@ -30,6 +48,8 @@ export interface Env {
    * 未設定なら src/ai/modelPolicy.ts の既定の連鎖を使う。
    */
   CHAT_MODEL?: string;
+  /** 管理画面の合言葉。未設定なら管理画面は開かない（secretで設定）。 */
+  ADMIN_PASSCODE?: string;
 }
 
 /**
@@ -49,13 +69,17 @@ function json(data: unknown, init?: ResponseInit): Response {
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     const log: LogContext = { requestId: newRequestId(), route: url.pathname };
 
     // 検証環境に合言葉が設定されている場合、ここで止める（本番では何もしない）
     const gated = stagingGate(request, url, env);
     if (gated) return gated;
+
+    // 管理画面は合言葉で閉じる。未設定なら開かない（設定漏れが情報公開になるのを防ぐ）
+    const adminBlocked = adminGate(request, url, env);
+    if (adminBlocked) return adminBlocked;
 
     // --- トップページ ---
     // public/ に index.html を置いていないため、素のドメインを開くと404になってしまう。
@@ -75,13 +99,71 @@ export default {
     // 応答はSSEで流す。詳しい設計方針は src/call.ts の冒頭コメントを参照。
     if (url.pathname === "/api/call/stream" && request.method === "POST") {
       const body = await request.json<Record<string, unknown>>();
+      ctx.waitUntil(countMetric(env, "call"));
       return handleCallStream(env, body, { ...log, characterId: typeof body.characterId === "string" ? body.characterId : undefined });
+    }
+
+    // --- 管理画面のAPI（adminGate を通過したリクエストだけがここに来る） ---
+    if (url.pathname === "/api/admin/overview" && request.method === "GET") {
+      return handleAdminOverview(env, log);
+    }
+    if (url.pathname === "/api/admin/personas" && request.method === "GET") {
+      return handleAdminPersonas(env, url);
+    }
+    if (url.pathname === "/api/admin/requests") {
+      return handleAdminRequests(env, request, url);
+    }
+
+    // --- 属性・同意・アクセシビリティ（すべて持ち主トークンで保護） ---
+    if (url.pathname === "/api/profile/schema" && request.method === "GET") {
+      return handleProfileSchema();
+    }
+    if (url.pathname === "/api/profile" && request.method === "GET") {
+      return handleGetOwnerView(env, url);
+    }
+    if (url.pathname === "/api/profile" && request.method === "POST") {
+      return handleSetProfile(env, await request.json());
+    }
+    if (url.pathname === "/api/consent" && request.method === "POST") {
+      return handleSetConsent(env, await request.json(), log);
+    }
+    if (url.pathname === "/api/accessibility" && request.method === "POST") {
+      return handleSetAccessibility(env, await request.json());
+    }
+
+    // --- 人格カード（エッジAI・別ランタイムへの持ち出し） ---
+    if (url.pathname === "/api/persona/card" && request.method === "GET") {
+      return handlePersonaCard(env, url, log);
+    }
+
+    // --- マーケット ---
+    if (url.pathname === "/api/market/listing" && request.method === "POST") {
+      return handleSaveListing(env, await request.json(), log);
+    }
+    if (url.pathname === "/api/market/listing" && request.method === "GET") {
+      return handleMyListing(env, url);
+    }
+    if (url.pathname === "/api/market/listings" && request.method === "GET") {
+      return handleBrowseListings(env, url);
+    }
+    if (url.pathname === "/api/market/request" && request.method === "POST") {
+      return handlePurchaseRequest(env, await request.json(), log);
+    }
+    if (url.pathname === "/api/market/insights" && request.method === "GET") {
+      return handleInsights(env, log);
+    }
+
+    // --- かな漢字変換（視線入力・スイッチ入力の補助） ---
+    if (url.pathname === "/api/ime" && request.method === "POST") {
+      return handleIme(env, await request.json(), log);
     }
 
     // --- かざして話す（カメラ映像を出したまま声で会話する） ---
     // 通話と違い、こちらは通常の会話と同じく保存され、性格も育つ。詳しい設計は src/talk.ts を参照。
     if (url.pathname === "/api/talk" && request.method === "POST") {
       const body = await request.json<Record<string, unknown>>();
+      // 利用状況のカウントは応答を待たせない。1件欠けることより、返事が遅れる方が損失が大きい。
+      ctx.waitUntil(countMetric(env, "talk"));
       return handleTalk(env, body, {
         ...log,
         characterId: typeof body.characterId === "string" ? body.characterId : undefined,
@@ -101,6 +183,7 @@ export default {
     // --- NFCタグ読み取り: /t/:tagId ---
     // NFCタグにはこのURL（例: https://<your-domain>/t/xxxxxx）を書き込む想定。
     if (url.pathname.startsWith("/t/")) {
+      ctx.waitUntil(countMetric(env, "tap"));
       const tagId = decodeURIComponent(url.pathname.split("/")[2] || "");
       if (!tagId) {
         return new Response("invalid tag", { status: 400 });
@@ -131,6 +214,7 @@ export default {
         const stub = env.CHARACTER.getByName(characterId);
         const initData = await stub.init("名もなきキャラクター");
         ownerToken = initData.ownerToken;
+        ctx.waitUntil(countMetric(env, "new_character"));
       }
 
       const redirectUrl = new URL("/summon", url.origin);
@@ -152,6 +236,7 @@ export default {
         return json({ error: "characterId and message are required" }, { status: 400 });
       }
       const stub = env.CHARACTER.getByName(body.characterId);
+      ctx.waitUntil(countMetric(env, "chat"));
       const result = await stub.chat(body.message);
       return json(result);
     }
@@ -166,21 +251,31 @@ export default {
       const state = await stub.getState();
       if (!state) return json({ error: "not found" }, { status: 404 });
       // このAPIは cid さえ知っていれば誰でも叩ける。cid はチャットページのURLに乗って
-      // 共有されうるので、ここから漏れてよいのは「見た目と育ち具合」までに限る。
+      // 共有されうるので、ここから出てよいのは「見た目と育ち具合」までに限る。
       //
-      // - ownerToken: 持ち主だけが知っている前提の値。含めたら持ち主保護の意味が無くなる。
-      // - memorySummary / recentTurns / profileNotes: **会話の中身そのもの**。
-      //   URLを知られただけで過去の会話が読めてしまうのは、記憶を厚く持つようにした以上、
-      //   最も避けなければならない事故なので、この入口では必ず落とす。
-      const {
-        ownerToken: _ownerToken,
-        memorySummary: _memorySummary,
-        recentTurns: _recentTurns,
-        profileNotes: _profileNotes,
-        ...publicState
-      } = state;
+      // **返す項目を並べる方式（許可制）にしてあることが重要。**
+      // 以前は「危ないものを除く」除外方式だったが、CharacterData に項目を足すたびに
+      // 除外を書き足す必要があり、実際に属性・同意状態・入力設定が漏れる状態になっていた
+      // （E2Eの「属性は公開APIから読めない」で気づいた）。許可制なら、新しい項目は既定で外に出ない。
+      //
+      // ここに項目を足すときは「cidを知っているだけの他人に見えてよいか」だけで判断すること。
+      // 会話の本文・記憶・覚え書き・属性・価値観・同意状態・入力設定・持ち主トークンは、いずれも該当しない。
       return json({
-        ...publicState,
+        name: state.name,
+        species: state.species,
+        color: state.color,
+        personality: state.personality,
+        growthStage: state.growthStage,
+        interactionCount: state.interactionCount,
+        lastVisit: state.lastVisit,
+        createdAt: state.createdAt,
+        personalityHistory: state.personalityHistory,
+        socialOptIn: state.socialOptIn ?? false,
+        // 分身同士の立ち話の記録。オプトインした人だけが持ち、ユーザー本人との会話は含まれない
+        // （src/ai/promptBuilder.ts の buildMeetingPrompt を参照）。
+        lastMeeting: state.lastMeeting,
+        lastMeetingAt: state.lastMeetingAt,
+        meetingHistory: state.meetingHistory,
         speechStyleLabel: deriveSpeechStyle(state.personality).label,
         // 読み上げに使う「この子の声」。保存はせず、characterIdと性格から毎回導出する。
         voice: deriveVoiceProfile(characterId, state.personality),
@@ -372,7 +467,7 @@ async function serveAsset(request: Request, url: URL, env: Env): Promise<Respons
 
   // 版数ヘッダを載せる。実機で「いま掴んでいるのはどの版か」を確認するための手がかり。
   // 検証環境なら、あわせて検索避け（noindex）も付ける。
-  const withVersion = applyStagingHeaders(new Response(assetResponse.body, assetResponse), env);
+  const withVersion = applyAdminHeaders(applyStagingHeaders(new Response(assetResponse.body, assetResponse), env), url);
   for (const [key, value] of Object.entries(versionHeaders(env))) {
     withVersion.headers.set(key, value);
   }

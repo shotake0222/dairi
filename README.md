@@ -81,6 +81,10 @@ src/
   call.ts                     # その場限りの通話（何も保存しない会話経路・SSEストリーミング）
   talk.ts                     # かざして話す（カメラ映像を出したまま声で会話。保存され、育つ）
   vision.ts                   # 「これ見て」— 見せられた1枚を言葉に変える（保存しない）
+  ime.ts                      # かな漢字変換（視線・スイッチ入力の補助）
+  personaRoutes.ts            # 同意・属性・アクセシビリティ設定・人格カードの書き出し（持ち主のみ）
+  market.ts                   # 人格マーケット（本人出品／匿名集約セグメント統計）
+  admin.ts                    # 管理画面の入口と集計API（合言葉で保護。未設定なら開かない）
   voice.ts                    # 音声の文字起こし（Whisper）と読み上げ（MeloTTS）
   transfer.ts                 # 引き継ぎコード（端末をまたいだ所有権の移動）
   health.ts                   # 自己診断（D1・Vectorizeの疎通と版数）
@@ -94,14 +98,29 @@ src/
     signalExtractor.ts        # ユーザーのメッセージから「育て方の傾向」を抽出する簡易ヒューリスティック
     promptBuilder.ts          # 性格パラメータ→SLMへのシステムプロンプト生成
     memory.ts                 # 長期記憶（Vectorize）の保存・検索・書き出し・削除
+  persona/
+    consent.ts                # 用途ごとの同意（既定オフ・版付き）。すべての取得と提供の入口
+    profile.ts                # 属性の質問票（選択肢式・全て任意・段階的に聞く）
+    accessibility.ts          # 入力方法などの設定。販売・集約からは構造的に外してある
+    personaCard.ts            # エッジAI向けの人格カード（JSON / プロンプト / Modelfile）
+    registry.ts               # 集計用レジストリ（D1）への写しと、日次カウンタ
+  analysis/
+    textMining.ts             # 会話からの語の抽出と話題カテゴリ化（AIを使わない層）
+    psychographics.ts         # 価値観・関心の推定と、人格データへの緩やかなマージ
+    segments.ts               # 性格＋価値観＋関心からのセグメント分類
   db/schema.sql               # D1スキーマ（参考。実際の適用はmigrations/を使用）
-migrations/                   # D1マイグレーション（nfc_tags / character_directory / transfer_codes）
+migrations/                   # D1マイグレーション（nfc_tags / character_directory / transfer_codes / persona_registry ほか）
 public/
   summon.html                 # NFCタップ直後のAR召喚演出ページ
   chat.html                   # テキストチャットページ
   call.html                   # その場限りの通話ページ（記録が残らないモード）
   talk.html                   # かざして話すページ（カメラ＋音声。撮像画像の表示中に応答する）
   privacy.html                # プライバシーポリシー
+  profile.html                # 同意・属性・人物像・アクセシビリティ設定・人格カードの書き出し
+  eyes.html                   # 視線／スイッチによる文字入力
+  market.html                 # 人格マーケット（さがす・傾向・出品）
+  admin.html                  # 管理画面
+  lp.html                     # toC向けランディングページ
   home.html                   # あなたの分身（NFCタグが手元にないときの入口）
   friends.html                # 出会いの図鑑
   history.html                # 成長グラフ
@@ -121,7 +140,13 @@ tools/
 | `POST /api/voice/transcribe` | 音声の文字起こし（ブラウザ標準の音声認識が使えないとき用） |
 | `POST /api/voice/speak` | 読み上げ音声の生成（既定はブラウザ標準を使うので任意） |
 | `POST /api/character/transfer/issue` / `claim` | 引き継ぎコードの発行・使用 |
-| `GET /api/health` | D1・Vectorizeの疎通と版数（既定ではAIを呼ばない） |
+| `GET /api/health` | D1・Vectorize・会話モデルの疎通と版数（既定ではAIを呼ばない） |
+| `GET /api/profile/schema` | 属性の質問票と同意文面の定義（唯一の定義元。画面側は書き写さない） |
+| `GET/POST /api/profile`, `POST /api/consent`, `POST /api/accessibility` | 持ち主のみ。同意・属性・入力設定 |
+| `GET /api/persona/card` | 人格カードの書き出し（`format=json\|prompt\|modelfile\|readme`） |
+| `POST /api/ime` | ひらがな→漢字かな交じりの変換（視線・スイッチ入力の補助） |
+| `GET/POST /api/market/*` | マーケット（一覧・出品・問い合わせ・集約セグメント統計） |
+| `GET /api/admin/*` | 管理画面用。`ADMIN_PASSCODE` を設定していなければ 404 |
 
 ## テスト
 
@@ -144,6 +169,19 @@ npm run test:e2e    # Playwrightで実際に画面を操作して検証（要 np
 ```
 
 ブランド画像（PWAアイコン・OGP画像）は `npm run brand:assets` で再生成できます（要 Pillow）。
+
+## 管理画面
+
+`/admin` にあります。**合言葉を設定するまで開きません**（未設定は 404）。
+
+```bash
+npx wrangler secret put ADMIN_PASSCODE
+# 開くとき: https://app.waketama.com/admin?key=合言葉
+#   → 合言葉はCookieへ移され、URLからは消えます（12時間有効）
+```
+
+表示されるのは、集約に同意した分身の数値と、日次の利用状況までです。
+会話の本文・記憶・覚え書きは、管理画面からも見えません。
 
 ## 実装上の注意点（ハマりどころ）
 
@@ -172,6 +210,25 @@ npm run test:e2e    # Playwrightで実際に画面を操作して検証（要 np
 - **カメラ映像はサーバーへ送らない**: `talk.html` の映像表示は端末内で完結します。送るのは
   「👁 これ見て」を押した瞬間の1枚だけで、画像もその説明文も保存しません。
   変更するときは `public/privacy.html` の記述も必ず合わせてください。
+- **公開APIは許可制で返すこと**: `GET /api/character` は返す項目を列挙する方式にしてあります。
+  「危ないものを除く」除外方式に戻さないでください。`CharacterData` に項目を足すたびに
+  除外を書き足す必要があり、実際にそれで属性・同意状態が漏れていました（E2Eで検出）。
+  許可制なら、新しい項目は既定で外に出ません。
+- **同意していないデータは、どこにも出さない**: `src/persona/consent.ts` が唯一の判定元です。
+  既定はすべてオフ、同意文面を変えたら `CONSENT_VERSION` を上げて取り直し、というのが前提。
+  集計用レジストリ（D1）には**同意した分身しか行が存在しません**。同意を外したら値を空にするのではなく
+  行ごと削除します（`syncRegistry`）。「オプトアウトできます」ではなく「オプトインしない限り出ない」を守ること。
+- **属性は選択肢式のまま保つこと**: `src/persona/profile.ts` に自由記述の欄を足さないでください。
+  自由記述は、氏名・勤務先・病名のような、こちらが取るつもりのない情報が入ってきます。
+  `sanitizeAnswers()` は定義済みの選択肢以外を黙って捨てます。ここを緩めると、選択肢式にした意味が無くなります。
+- **アクセシビリティ設定を統計に混ぜないこと**: 入力方法や滞留時間は、事実上その人の身体の状態を示します。
+  だから `persona/profile.ts`（集約対象）ではなく `persona/accessibility.ts`（対象外）に分けてあります。
+  集約処理は profile 側しか見に行きません。この分離を崩さないでください。
+- **統計には人数の下限がある**: `src/market.ts` の `MIN_COHORT_SIZE` を下回るグループは出力しません。
+  数字を下げたくなったときは、下げるのではなく集計の条件を粗くしてください。
+- **管理画面は閉じているのが既定**: `ADMIN_PASSCODE` が未設定なら 404 を返します。
+  「未設定なら素通し」にすると、設定を忘れた瞬間に全データが公開されます。
+  なお管理者からも、会話の本文・記憶・覚え書きは見えません（レジストリに入っていないため）。
 
 ## 今後の拡張ポイント（優先度順の目安）
 

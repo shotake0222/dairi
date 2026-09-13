@@ -38,7 +38,7 @@ binding = "ASSETS"
 # 既定では静的ファイルはWorkerに届く前にアセット層が直接返してしまい、
 # src/index.ts の HTMLRewriter（OGPのURL絶対化）が動かないため。
 # 画像や3Dモデルまで対象にするとリクエストごとにWorker呼び出しが増えるので、ページのパスだけに限定する。
-run_worker_first = ["/", "/home", "/chat", "/call", "/talk", "/summon", "/friends", "/history", "/privacy", "/offline"]
+run_worker_first = ["/", "/home", "/chat", "/call", "/talk", "/eyes", "/summon", "/friends", "/history", "/profile", "/market", "/admin", "/lp", "/privacy", "/offline"]
 
 # --- Workers AI（序盤はSLMで運用） ---
 [ai]
@@ -103,7 +103,7 @@ head_sampling_rate = 1
 [env.staging.assets]
 directory = "./public"
 binding = "ASSETS"
-run_worker_first = ["/", "/home", "/chat", "/call", "/talk", "/summon", "/friends", "/history", "/privacy", "/offline"]
+run_worker_first = ["/", "/home", "/chat", "/call", "/talk", "/eyes", "/summon", "/friends", "/history", "/profile", "/market", "/admin", "/lp", "/privacy", "/offline"]
 
 [env.staging.ai]
 binding = "AI"

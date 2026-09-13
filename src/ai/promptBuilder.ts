@@ -27,6 +27,10 @@ export interface BasePromptParams {
   growthStage: string;
   /** 相手について長く覚えておくべき事実（src/ai/reflection.ts が育てる） */
   profileNotes?: string;
+  /** 相手が自分で答えてくれた属性（src/persona/profile.ts）。同意して入力があるときだけ渡ってくる */
+  ownerProfile?: string;
+  /** 会話から推定した価値観の傾向（src/analysis/psychographics.ts） */
+  ownerValues?: string;
   /** 今の話題に関連する過去のやり取り（Vectorizeからの想起） */
   relevantMemories?: string[];
   /** 返答の長さの目安（成長段階に応じて呼び出し元が決める） */
@@ -68,6 +72,18 @@ function knowledgeBlock(params: BasePromptParams): string {
   if (params.profileNotes && params.profileNotes.trim()) {
     blocks.push(`# 相手について覚えていること
 ${params.profileNotes.trim()}`);
+  }
+
+  // 本人が自分で教えてくれたこと。会話から推測した内容（覚え書き）より確かなので、先に置く。
+  if (params.ownerProfile && params.ownerProfile.trim()) {
+    blocks.push(`# 相手が教えてくれたこと
+${params.ownerProfile.trim()}`);
+  }
+
+  if (params.ownerValues && params.ownerValues.trim()) {
+    // 推定なので、断定させないための一言を添える（「あなたは達成志向ですね」と言い出すと気味が悪い）
+    blocks.push(`# 相手の傾向（会話から推し量ったもの。本人に言い当てて聞かせないこと）
+${params.ownerValues.trim()}`);
   }
 
   if (params.relevantMemories && params.relevantMemories.length > 0) {

@@ -1,0 +1,953 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>わけたま｜視線で話しかける</title>
+<meta name="description" content="視線やスイッチで文字を選んで、分身に話しかけられる入力画面。" />
+
+<link rel="manifest" href="/manifest.webmanifest" />
+<meta name="theme-color" content="#0f0d1a" />
+<link rel="icon" href="/icons/favicon-64.png" sizes="64x64" type="image/png" />
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="わけたま" />
+<meta property="og:title" content="わけたま｜視線で話しかける" />
+<meta property="og:description" content="視線やスイッチで文字を選んで、分身に話しかけられる入力画面。" />
+<meta property="og:image" content="/icons/ogp.png" />
+<meta property="og:url" content="/" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="わけたま｜視線で話しかける" />
+<meta name="twitter:description" content="視線やスイッチで文字を選んで、分身に話しかけられる入力画面。" />
+<meta name="twitter:image" content="/icons/ogp.png" />
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0f0d1a; --panel: #1a1630; --line: #2e2750; --ink: #efeaff; --muted: #9a8fc4;
+    --brand: #8b6cff; --accent: #7ae7b7; --scale: 1;
+  }
+  /* 高コントラストは設定で切り替える。目の疲れ方が人によって大きく違うため、
+     見た目の好みではなく必要な機能として扱う。 */
+  body.contrast {
+    --bg: #000; --panel: #000; --line: #fff; --ink: #fff; --muted: #ddd; --brand: #ffd400; --accent: #00ff9c;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink); overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    font-size: calc(16px * var(--scale));
+    display: flex; flex-direction: column;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+
+  /* --- 上段: 入力中の文と、分身の返事 --- */
+  #top { flex-shrink: 0; padding: 10px 14px 6px; }
+  .bar { display: flex; align-items: center; gap: 10px; font-size: 0.72em; color: var(--muted); }
+  .bar .brand { font-weight: 700; letter-spacing: 0.08em; }
+  .bar .spacer { flex: 1; }
+  .bar button {
+    background: transparent; border: 1px solid var(--line); color: var(--muted);
+    border-radius: 999px; padding: 5px 12px; font-size: 0.95em; cursor: pointer; font-family: inherit;
+  }
+
+  #composer {
+    margin-top: 8px; min-height: 2.6em; padding: 12px 16px; border-radius: 14px;
+    background: var(--panel); border: 2px solid var(--line);
+    font-size: 1.35em; line-height: 1.5; word-break: break-all;
+  }
+  #composer:empty::before { content: "ここに文字が入ります"; color: var(--muted); font-size: 0.7em; }
+  #composer .caret { color: var(--brand); animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0 } }
+
+  #reply {
+    margin-top: 8px; padding: 10px 16px; border-radius: 14px; background: rgba(139,108,255,0.14);
+    border: 1px solid var(--line); font-size: 0.9em; line-height: 1.7; display: none;
+  }
+  #reply.show { display: block; }
+  #reply .who { font-size: 0.75em; color: var(--brand); font-weight: 700; display: block; }
+
+  #hint { font-size: 0.72em; color: var(--muted); text-align: center; min-height: 1.4em; padding: 4px 12px; }
+
+  /* --- 中段: 選択盤（4列×2行） --- */
+  #board {
+    flex: 1; min-height: 0; display: grid; gap: 10px; padding: 4px 12px 12px;
+    grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(2, 1fr);
+  }
+  /* 縦持ちのスマホでは4列だと1枠が細長くなりすぎる。枠の数は変えずに2列4段へ組み替える
+     （較正は実際の枠の位置から取るので、並びが変わっても作り直す必要はない）。 */
+  @media (max-width: 560px) and (orientation: portrait) {
+    #board { grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(4, 1fr); }
+  }
+  .zone {
+    position: relative; border-radius: 18px; border: 2px solid var(--line); background: var(--panel);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+    cursor: pointer; overflow: hidden; user-select: none; text-align: center; padding: 6px;
+    transition: border-color .12s, background .12s;
+  }
+  .zone .main { font-size: 1.9em; font-weight: 700; line-height: 1.15; }
+  .zone .sub { font-size: 0.68em; color: var(--muted); }
+  .zone.empty { border-style: dashed; opacity: .35; cursor: default; }
+  .zone.active { border-color: var(--brand); background: rgba(139,108,255,0.16); }
+  /* 滞留の進み具合。下から満ちる帯にしてあるのは、視線を動かさずに端で見えるため。 */
+  .zone .fill {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 0%; background: var(--brand);
+    opacity: .32; transition: height .08s linear;
+  }
+  .zone.picked { animation: pick .3s ease; }
+  @keyframes pick { 0% { transform: scale(1) } 45% { transform: scale(0.95) } 100% { transform: scale(1) } }
+  body.reduce .zone.picked { animation: none; }
+  body.reduce #composer .caret { animation: none; }
+
+  /* --- 下段: 状態表示 --- */
+  #foot {
+    flex-shrink: 0; padding: 0 14px calc(10px + env(safe-area-inset-bottom));
+    display: flex; align-items: center; gap: 10px; font-size: 0.7em; color: var(--muted);
+  }
+  #foot .spacer { flex: 1; }
+  #gazeDot {
+    width: 10px; height: 10px; border-radius: 999px; background: #444; flex-shrink: 0;
+  }
+  #gazeDot.on { background: var(--accent); }
+  #cam { position: fixed; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+
+  /* --- 設定・較正のオーバーレイ --- */
+  .overlay {
+    position: fixed; inset: 0; z-index: 30; background: rgba(15,13,26,0.97);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 14px; padding: 24px; text-align: center;
+  }
+  .overlay[hidden] { display: none; }
+  .overlay h2 { margin: 0; font-size: 1.25em; }
+  .overlay p { margin: 0; font-size: 0.85em; color: var(--muted); max-width: 34em; line-height: 1.9; }
+  .overlay .modes { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin-top: 6px; }
+  .overlay button {
+    background: var(--brand); color: #fff; border: none; border-radius: 999px;
+    padding: 14px 28px; font-size: 1em; font-weight: 700; cursor: pointer; font-family: inherit;
+  }
+  .overlay button.ghost { background: transparent; border: 1px solid var(--line); color: var(--ink); }
+  .overlay .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; justify-content: center; font-size: .85em; }
+  .overlay label { display: flex; align-items: center; gap: 8px; }
+  .overlay a { color: var(--brand); font-size: .8em; }
+
+  /* 較正の的 */
+  #calibTarget {
+    position: fixed; width: 74px; height: 74px; border-radius: 999px; border: 3px solid var(--brand);
+    display: flex; align-items: center; justify-content: center; font-size: 1.1em; font-weight: 700;
+    background: rgba(139,108,255,0.2); transform: translate(-50%, -50%); z-index: 31;
+  }
+  #calibTarget[hidden] { display: none; }
+</style>
+</head>
+<body>
+
+<video id="cam" autoplay playsinline muted></video>
+
+<div id="top">
+  <div class="bar">
+    <span class="brand">わけたま</span>
+    <span id="modeLabel">スイッチ</span>
+    <span class="spacer"></span>
+    <button id="settingsBtn" type="button">設定</button>
+    <button id="exitBtn" type="button">とじる</button>
+  </div>
+  <div id="composer"></div>
+  <div id="reply"><span class="who" id="replyWho"></span><span id="replyText"></span></div>
+</div>
+
+<div id="hint"></div>
+
+<div id="board"></div>
+
+<div id="foot">
+  <span id="gazeDot"></span>
+  <span id="gazeState">待機中</span>
+  <span class="spacer"></span>
+  <span id="dwellState"></span>
+</div>
+
+<!-- 開始画面 -->
+<div class="overlay" id="startOverlay">
+  <h2>視線で話しかける</h2>
+  <p>
+    画面を8つに分けて、見ている場所を選びます。<br />
+    視線が使えないときは、<strong>順番に光るところを、どれか1つのスイッチで選ぶ</strong>方法にも切り替えられます。
+    キーボードの <strong>1〜8</strong> でも直接選べます。
+  </p>
+  <div class="modes">
+    <button id="startGaze" type="button">視線ではじめる</button>
+    <button id="startScan" class="ghost" type="button">スイッチ・タップではじめる</button>
+  </div>
+  <p style="font-size:.75em">カメラ映像は端末の中だけで処理し、どこにも送りません。</p>
+</div>
+
+<!-- 較正 -->
+<div class="overlay" id="calibOverlay" hidden>
+  <h2 id="calibTitle">目の位置を覚えます</h2>
+  <p id="calibLead">光っている丸を見つめてください。順番に8回あります。</p>
+  <button id="calibStart" type="button">はじめる</button>
+  <button id="calibSkip" class="ghost" type="button">とばす（スイッチで操作する）</button>
+</div>
+<div id="calibTarget" hidden></div>
+
+<!-- 設定 -->
+<div class="overlay" id="settingsOverlay" hidden>
+  <h2>設定</h2>
+  <div class="row">
+    <label>決定までの時間
+      <input type="range" id="dwellRange" min="400" max="3000" step="100" />
+      <span id="dwellValue"></span>
+    </label>
+  </div>
+  <div class="row">
+    <label>文字の大きさ
+      <input type="range" id="scaleRange" min="0.8" max="2" step="0.1" />
+      <span id="scaleValue"></span>
+    </label>
+  </div>
+  <div class="row">
+    <label><input type="checkbox" id="contrastCheck" /> 高コントラスト</label>
+    <label><input type="checkbox" id="motionCheck" /> 動きを減らす</label>
+    <label><input type="checkbox" id="speakCheck" /> 返事を読み上げる</label>
+    <label><input type="checkbox" id="convertCheck" /> 送る前に漢字に直す</label>
+  </div>
+  <div class="row">
+    <button id="recalibBtn" class="ghost" type="button">目の位置を覚え直す</button>
+    <button id="toggleModeBtn" class="ghost" type="button">スイッチ操作に切り替える</button>
+  </div>
+  <button id="closeSettings" type="button">とじる</button>
+  <a id="profileLink" href="/profile">設定を分身に保存する →</a>
+</div>
+
+<script type="module">
+  // ============================================================
+  // 視線・スイッチによる文字入力。
+  //
+  // 設計の考え方:
+  //
+  // 1. **狙いを細かくしない**。ウェブカメラの視線推定は誤差が大きいので、
+  //    キーを50個並べて視線で当てさせるのは現実的でない。画面を6つに割り、
+  //    3階層たどって1文字にする。狙いを大きくする方が、速さでも結果的に勝つ。
+  //
+  // 2. **視線が使えなくても、同じ画面がそのまま使える**。
+  //    カメラが無い・顔が取れない・そもそも視線が動かせない場合に備えて、
+  //    順番に光る枠をスイッチ1つで選ぶ方式（スキャン）へ落ちる。
+  //    キーボードの1〜6でも直接選べる。入力手段が違うだけで、選ぶ木構造は同一。
+  //
+  // 3. **文字を打つ量を減らす**。1文字あたり2〜3回の選択がかかるので、
+  //    定型文を厚く用意し、かな漢字変換はサーバーのAIに任せる（/api/ime）。
+  //    変換候補を選ばせない（選択自体が高コストなので、1案を出して違えば直す）。
+  //
+  // 4. **選択の木は表に置く**。UIのコードではなくデータとして持ち、
+  //    並びを変えたい・語を足したいときに、ロジックを読まずに直せるようにする。
+  // ============================================================
+
+  const params = new URLSearchParams(location.search);
+  const cid = params.get("cid");
+  const ownerToken = (() => {
+    if (!cid) return "";
+    try { return localStorage.getItem(`sodatsukake_token_${cid}`) || ""; } catch (e) { return ""; }
+  })();
+
+  const ZONES = 8; // 4列 × 2行。横方向は視線の分解能が出やすいので、縦より多く割っている
+
+  // ---- 選択の木 ----
+  const KANA_ROWS = {
+    "あ": ["あ", "い", "う", "え", "お"],
+    "か": ["か", "き", "く", "け", "こ"],
+    "さ": ["さ", "し", "す", "せ", "そ"],
+    "た": ["た", "ち", "つ", "て", "と"],
+    "な": ["な", "に", "ぬ", "ね", "の"],
+    "は": ["は", "ひ", "ふ", "へ", "ほ"],
+    "ま": ["ま", "み", "む", "め", "も"],
+    "や": ["や", "ゆ", "よ", "ー", "っ"],
+    "ら": ["ら", "り", "る", "れ", "ろ"],
+    "わ": ["わ", "を", "ん", "、", "。"],
+  };
+
+  // 濁点・半濁点・小書きは、直前の1文字を変える操作として持つ（別の文字として並べると盤が足りない）
+  const DAKUTEN = {
+    "か":"が","き":"ぎ","く":"ぐ","け":"げ","こ":"ご","さ":"ざ","し":"じ","す":"ず","せ":"ぜ","そ":"ぞ",
+    "た":"だ","ち":"ぢ","つ":"づ","て":"で","と":"ど","は":"ば","ひ":"び","ふ":"ぶ","へ":"べ","ほ":"ぼ",
+  };
+  const HANDAKUTEN = { "は":"ぱ","ひ":"ぴ","ふ":"ぷ","へ":"ぺ","ほ":"ぽ" };
+  const SMALL = { "あ":"ぁ","い":"ぃ","う":"ぅ","え":"ぇ","お":"ぉ","つ":"っ","や":"ゃ","ゆ":"ゅ","よ":"ょ" };
+
+  // よく使う言葉。視線入力では、これがあるかどうかで体感が大きく変わる。
+  const PHRASES = [
+    ["はい", "いいえ", "ありがとう", "ごめんね", "うれしい"],
+    ["ちょっと待って", "しんどい", "痛い", "眠い", "おなかすいた"],
+    ["聞いて", "そうだね", "わからない", "もう一回言って", "また あとで"],
+    ["おはよう", "おやすみ", "ただいま", "いってきます", "だいすき"],
+  ];
+
+  /** 1画面ぶんの選択肢（最大6個）。type で選んだときの動きが決まる。 */
+  function rootMenu() {
+    // よく使うもの（消す・送る）は、階層を潜らずに届く位置に置く。
+    // 視線入力では1回の選択が高くつくので、頻度の高い操作ほど浅くする。
+    return [
+      { main: "あ か", sub: "あ行・か行", type: "group", rows: ["あ", "か"] },
+      { main: "さ た", sub: "さ行・た行", type: "group", rows: ["さ", "た"] },
+      { main: "な は", sub: "な行・は行", type: "group", rows: ["な", "は"] },
+      { main: "ま や", sub: "ま行・や行", type: "group", rows: ["ま", "や"] },
+      { main: "ら わ", sub: "ら行・わ行", type: "group", rows: ["ら", "わ"] },
+      { main: "⌫", sub: "1文字消す", type: "act", act: "backspace" },
+      { main: "送る", sub: "分身に伝える", type: "act", act: "send" },
+      { main: "もっと", sub: "定型文・変換ほか", type: "menu", menu: "ops" },
+    ];
+  }
+
+  function groupMenu(rows) {
+    // 1行目の5文字＋「もう一方の行へ」。よく使う あ行 側を先に出す。
+    const [first, second] = rows;
+    return rowMenu(first, second);
+  }
+
+  function rowMenu(row, otherRow) {
+    const chars = KANA_ROWS[row];
+    const items = chars.map((c) => ({ main: c, type: "char", value: c }));
+    items.push({ main: `${otherRow}行`, sub: "こちらへ", type: "row", row: otherRow, other: row });
+    // 入り間違えたときに、文字を打たずに戻れること。視線しか使えない人にはEscキーが無い。
+    items.push({ main: "もどる", type: "act", act: "root" });
+    return items;
+  }
+
+  function opsMenu() {
+    return [
+      { main: "定型文", sub: "よく使う言葉", type: "menu", menu: "phrase0" },
+      { main: "変換", sub: "漢字に直す", type: "act", act: "convert" },
+      { main: "␣", sub: "空白", type: "char", value: "　" },
+      { main: "゛゜小", sub: "直前を変える", type: "menu", menu: "modify" },
+      { main: "読み上げ", sub: "書いた文を聞く", type: "act", act: "speak" },
+      { main: "全消し", sub: "書いた文を消す", type: "act", act: "clear" },
+      { main: "⌫", sub: "1文字消す", type: "act", act: "backspace" },
+      { main: "もどる", type: "act", act: "root" },
+    ];
+  }
+
+  function modifyMenu() {
+    return [
+      { main: "゛", sub: "濁点", type: "act", act: "dakuten" },
+      { main: "゜", sub: "半濁点", type: "act", act: "handakuten" },
+      { main: "小", sub: "小さく", type: "act", act: "small" },
+      { main: "もどる", type: "act", act: "root" },
+    ];
+  }
+
+  function phraseMenu(page) {
+    const list = PHRASES[page] || [];
+    const items = list.map((p) => ({ main: p, type: "phrase", value: p }));
+    const next = (page + 1) % PHRASES.length;
+    items.push({ main: "つぎ", sub: `${next + 1}/${PHRASES.length}`, type: "menu", menu: `phrase${next}` });
+    items.push({ main: "もどる", type: "act", act: "root" });
+    return items;
+  }
+
+  function menuFor(id) {
+    if (id === "root") return rootMenu();
+    if (id === "ops") return opsMenu();
+    if (id === "modify") return modifyMenu();
+    if (id.startsWith("phrase")) return phraseMenu(Number(id.slice(6)) || 0);
+    if (id.startsWith("group:")) return groupMenu(id.slice(6).split(","));
+    if (id.startsWith("row:")) {
+      const [row, other] = id.slice(4).split(",");
+      return rowMenu(row, other);
+    }
+    return rootMenu();
+  }
+
+  // ---- 状態 ----
+  const state = {
+    mode: "scan",          // "gaze" | "scan"
+    menu: "root",
+    text: "",
+    dwellMs: 1000,
+    scale: 1,
+    contrast: false,
+    reduceMotion: false,
+    speak: true,
+    autoConvert: true,
+    calibrated: false,
+    busy: false,
+  };
+
+  const boardEl = document.getElementById("board");
+  const composerEl = document.getElementById("composer");
+  const hintEl = document.getElementById("hint");
+  const replyEl = document.getElementById("reply");
+  const replyWho = document.getElementById("replyWho");
+  const replyText = document.getElementById("replyText");
+  const modeLabel = document.getElementById("modeLabel");
+  const gazeDot = document.getElementById("gazeDot");
+  const gazeState = document.getElementById("gazeState");
+  const dwellState = document.getElementById("dwellState");
+  const camEl = document.getElementById("cam");
+
+  let zoneEls = [];
+  let items = [];
+  let hovered = -1;
+  let dwellStart = 0;
+  let scanIndex = 0;
+  let scanTimer = null;
+  let characterName = "分身";
+
+  function setHint(text) { hintEl.textContent = text || ""; }
+
+  function renderComposer() {
+    composerEl.innerHTML = "";
+    composerEl.append(document.createTextNode(state.text));
+    const caret = document.createElement("span");
+    caret.className = "caret";
+    caret.textContent = "|";
+    composerEl.appendChild(caret);
+  }
+
+  function renderBoard() {
+    items = menuFor(state.menu);
+    boardEl.innerHTML = "";
+    zoneEls = [];
+    for (let i = 0; i < ZONES; i++) {
+      const item = items[i];
+      const zone = document.createElement("div");
+      zone.className = item ? "zone" : "zone empty";
+      if (item) {
+        const fill = document.createElement("div");
+        fill.className = "fill";
+        const main = document.createElement("div");
+        main.className = "main";
+        main.textContent = item.main;
+        zone.append(fill, main);
+        if (item.sub) {
+          const sub = document.createElement("div");
+          sub.className = "sub";
+          sub.textContent = item.sub;
+          zone.appendChild(sub);
+        }
+        // 触れる人はそのまま押せた方が早い（視線しか使えない人だけの画面にはしない）
+        zone.addEventListener("click", () => choose(i));
+      }
+      boardEl.appendChild(zone);
+      zoneEls.push(zone);
+    }
+    hovered = -1;
+    if (state.mode === "scan") restartScan();
+  }
+
+  function setActive(index, progress) {
+    zoneEls.forEach((zone, i) => {
+      zone.classList.toggle("active", i === index);
+      const fill = zone.querySelector(".fill");
+      if (fill) fill.style.height = i === index ? `${Math.round((progress || 0) * 100)}%` : "0%";
+    });
+  }
+
+  // ---- 選択の実行 ----
+  function choose(index) {
+    const item = items[index];
+    if (!item || state.busy) return;
+
+    const zone = zoneEls[index];
+    if (zone) { zone.classList.add("picked"); setTimeout(() => zone.classList.remove("picked"), 320); }
+
+    if (item.type === "group") { state.menu = `group:${item.rows.join(",")}`; renderBoard(); return; }
+    if (item.type === "row") { state.menu = `row:${item.row},${item.other}`; renderBoard(); return; }
+    if (item.type === "menu") { state.menu = item.menu; renderBoard(); return; }
+
+    if (item.type === "char") {
+      state.text += item.value;
+      renderComposer();
+      state.menu = "root";
+      renderBoard();
+      return;
+    }
+    if (item.type === "phrase") {
+      state.text += item.value;
+      renderComposer();
+      state.menu = "root";
+      renderBoard();
+      return;
+    }
+    if (item.type === "act") runAction(item.act);
+  }
+
+  function modifyLast(table) {
+    const last = state.text.slice(-1);
+    const replaced = table[last];
+    if (!replaced) { setHint("直前の文字は変えられません"); return; }
+    state.text = state.text.slice(0, -1) + replaced;
+    renderComposer();
+  }
+
+  async function runAction(act) {
+    if (act === "backspace") { state.text = state.text.slice(0, -1); renderComposer(); return; }
+    if (act === "clear") { state.text = ""; renderComposer(); state.menu = "root"; renderBoard(); return; }
+    if (act === "root") { state.menu = "root"; renderBoard(); return; }
+    if (act === "dakuten") { modifyLast(DAKUTEN); return; }
+    if (act === "handakuten") { modifyLast(HANDAKUTEN); return; }
+    if (act === "small") { modifyLast(SMALL); return; }
+    if (act === "speak") { speak(state.text); return; }
+    if (act === "convert") { await convert(); return; }
+    if (act === "send") { await send(); return; }
+  }
+
+  async function convert() {
+    const text = state.text.trim();
+    if (!text) return;
+    setHint("漢字に直しています…");
+    try {
+      const res = await fetch("/api/ime", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      const data = await res.json();
+      if (data.text) { state.text = data.text; renderComposer(); }
+      setHint(data.converted ? "直しました。違っていたら消して打ち直せます" : "そのまま送れます");
+    } catch (e) {
+      setHint("変換できませんでした。そのまま送れます");
+    }
+  }
+
+  async function send() {
+    const raw = state.text.trim();
+    if (!raw || !cid) { setHint(cid ? "先に文字を入力してください" : "分身が指定されていません"); return; }
+
+    state.busy = true;
+    setHint("送っています…");
+
+    let message = raw;
+    // 送る前の変換は、ひらがなのままだと分身が読み違えることがあるため既定でオン。
+    // 失敗しても、ひらがなのまま送る（送れないより、そのまま届く方がよい）。
+    if (state.autoConvert) {
+      try {
+        const res = await fetch("/api/ime", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ text: raw }),
+        });
+        const data = await res.json();
+        if (data.text) message = data.text;
+      } catch (e) { /* そのまま送る */ }
+    }
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ characterId: cid, message }),
+      });
+      const data = await res.json();
+      const reply = data.reply || data.error || "……";
+      replyWho.textContent = characterName;
+      replyText.textContent = reply;
+      replyEl.classList.add("show");
+      state.text = "";
+      renderComposer();
+      setHint(`送りました: ${message}`);
+      speak(reply);
+    } catch (e) {
+      setHint("送れませんでした。もう一度お試しください");
+    } finally {
+      state.busy = false;
+      state.menu = "root";
+      renderBoard();
+    }
+  }
+
+  // ---- 読み上げ ----
+  const speechOk = typeof speechSynthesis !== "undefined" && typeof SpeechSynthesisUtterance !== "undefined";
+  function speak(text) {
+    if (!state.speak || !speechOk || !text) return;
+    try {
+      speechSynthesis.cancel();
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.lang = "ja-JP";
+      speechSynthesis.speak(utter);
+    } catch (e) { /* 読み上げできなくても入力はできる */ }
+  }
+
+  // ---- スイッチ・スキャン方式 ----
+  // 枠が順番に光り、どれか1つのスイッチ（キー・タップ・クリック）で決定する。
+  // 視線が使えない場合の受け皿であり、視線の較正が終わるまでの操作手段でもある。
+  function restartScan() {
+    clearInterval(scanTimer);
+    if (state.mode !== "scan") return;
+    scanIndex = 0;
+    const step = () => {
+      // 空の枠は飛ばす（待たされるだけなので）
+      let guard = 0;
+      while (!items[scanIndex] && guard++ < ZONES) scanIndex = (scanIndex + 1) % ZONES;
+      setActive(scanIndex, 1);
+      dwellState.textContent = `${scanIndex + 1} / ${ZONES}`;
+      scanIndex = (scanIndex + 1) % ZONES;
+    };
+    step();
+    scanTimer = setInterval(step, Math.max(600, state.dwellMs));
+  }
+
+  function scanSelect() {
+    // いま光っている枠は、次に進めた1つ前
+    const current = (scanIndex - 1 + ZONES) % ZONES;
+    choose(current);
+  }
+
+  // ---- 入力（キーボード・タップ） ----
+  window.addEventListener("keydown", (e) => {
+    if (!document.getElementById("startOverlay").hidden) return;
+    if (e.key >= "1" && e.key <= "8") { e.preventDefault(); choose(Number(e.key) - 1); return; }
+    if (e.key === " " || e.key === "Enter") {
+      e.preventDefault();
+      if (state.mode === "scan") scanSelect();
+      else if (hovered >= 0) choose(hovered);
+      return;
+    }
+    if (e.key === "Escape") { state.menu = "root"; renderBoard(); }
+  });
+
+  // スイッチ機器の多くは、画面のどこかのタップかキー入力として届く
+  document.addEventListener("pointerdown", (e) => {
+    if (state.mode !== "scan") return;
+    if (e.target.closest(".zone") || e.target.closest("button") || e.target.closest(".overlay")) return;
+    scanSelect();
+  });
+
+  // ---- 視線 ----
+  let landmarker = null;
+  let gazeLoop = null;
+  const calibration = []; // 各ゾーンの平均 (x, y)
+  let lastBlink = 0;
+
+  function zoneCenter(index) {
+    const rect = zoneEls[index].getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  }
+
+  /** ブレンドシェイプから、視線の向きを (x, y) に落とす。x: 右が正、y: 下が正。 */
+  function gazeFromBlendshapes(shapes) {
+    const get = (name) => shapes.find((s) => s.categoryName === name)?.score ?? 0;
+    const left = (get("eyeLookOutLeft") + get("eyeLookInRight")) / 2;
+    const right = (get("eyeLookInLeft") + get("eyeLookOutRight")) / 2;
+    const up = (get("eyeLookUpLeft") + get("eyeLookUpRight")) / 2;
+    const down = (get("eyeLookDownLeft") + get("eyeLookDownRight")) / 2;
+    const blink = (get("eyeBlinkLeft") + get("eyeBlinkRight")) / 2;
+    return { x: right - left, y: down - up, blink };
+  }
+
+  /** 較正済みの6点のうち、いちばん近いものを選ぶ（固定のしきい値より個人差に強い）。 */
+  function nearestZone(point) {
+    let best = -1;
+    let bestDist = Infinity;
+    for (let i = 0; i < calibration.length; i++) {
+      const c = calibration[i];
+      if (!c) continue;
+      const d = (c.x - point.x) ** 2 + (c.y - point.y) ** 2;
+      if (d < bestDist) { bestDist = d; best = i; }
+    }
+    return best;
+  }
+
+  async function startGaze() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: false });
+      camEl.srcObject = stream;
+      await camEl.play();
+
+      const vision = await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs");
+      const fileset = await vision.FilesetResolver.forVisionTasks(
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+      );
+      landmarker = await vision.FaceLandmarker.createFromOptions(fileset, {
+        baseOptions: {
+          modelAssetPath:
+            "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+        },
+        outputFaceBlendshapes: true,
+        runningMode: "VIDEO",
+        numFaces: 1,
+      });
+
+      state.mode = "gaze";
+      modeLabel.textContent = "視線";
+      clearInterval(scanTimer);
+      runGazeLoop();
+      return true;
+    } catch (e) {
+      // カメラが無い・読み込めない・許可されない。どの場合もスキャンで使えるようにして続行する。
+      setHint("視線を使えませんでした。スイッチ操作でお使いいただけます");
+      fallbackToScan();
+      return false;
+    }
+  }
+
+  function fallbackToScan() {
+    state.mode = "scan";
+    modeLabel.textContent = "スイッチ";
+    gazeDot.classList.remove("on");
+    gazeState.textContent = "視線オフ";
+    restartScan();
+  }
+
+  function runGazeLoop() {
+    let lastVideoTime = -1;
+    let smoothed = null;
+
+    const tick = () => {
+      gazeLoop = requestAnimationFrame(tick);
+      if (!landmarker || camEl.readyState < 2) return;
+      if (camEl.currentTime === lastVideoTime) return;
+      lastVideoTime = camEl.currentTime;
+
+      let result;
+      try {
+        result = landmarker.detectForVideo(camEl, performance.now());
+      } catch (e) { return; }
+
+      const shapes = result?.faceBlendshapes?.[0]?.categories;
+      if (!shapes) {
+        gazeDot.classList.remove("on");
+        gazeState.textContent = "顔が見つかりません";
+        setActive(-1, 0);
+        return;
+      }
+      gazeDot.classList.add("on");
+
+      const point = gazeFromBlendshapes(shapes);
+      // 生の値は細かく震えるので、指数移動平均で均す（震えたまま使うと選択が定まらない）
+      smoothed = smoothed
+        ? { x: smoothed.x * 0.7 + point.x * 0.3, y: smoothed.y * 0.7 + point.y * 0.3 }
+        : { x: point.x, y: point.y };
+
+      // 目を閉じている間は視線が読めないので判定しない。長く閉じたら決定として扱う。
+      if (point.blink > 0.5) {
+        gazeState.textContent = "目を閉じています";
+        if (!lastBlink) lastBlink = performance.now();
+        // 自然なまばたきは0.15秒程度。意図した長い閉眼だけを決定にする
+        else if (performance.now() - lastBlink > 600 && hovered >= 0) {
+          lastBlink = 0;
+          choose(hovered);
+        }
+        return;
+      }
+      lastBlink = 0;
+
+      if (!state.calibrated) { gazeState.textContent = "較正がまだです"; return; }
+
+      const zone = nearestZone(smoothed);
+      gazeState.textContent = zone >= 0 ? `見ている場所: ${zone + 1}` : "判定中";
+
+      if (zone !== hovered) {
+        hovered = zone;
+        dwellStart = performance.now();
+      }
+      const held = performance.now() - dwellStart;
+      const progress = Math.min(1, held / state.dwellMs);
+      setActive(hovered, progress);
+      dwellState.textContent = `${Math.round(progress * 100)}%`;
+
+      if (progress >= 1 && items[hovered]) {
+        dwellStart = performance.now() + 400; // 連続で決定しないよう、少し間を置く
+        choose(hovered);
+      }
+    };
+    tick();
+  }
+
+  // ---- 較正 ----
+  const calibOverlay = document.getElementById("calibOverlay");
+  const calibTarget = document.getElementById("calibTarget");
+
+  async function runCalibration() {
+    calibOverlay.hidden = true;
+    calibration.length = 0;
+
+    for (let i = 0; i < ZONES; i++) {
+      const center = zoneCenter(i);
+      calibTarget.style.left = `${center.x}px`;
+      calibTarget.style.top = `${center.y}px`;
+      calibTarget.textContent = String(i + 1);
+      calibTarget.hidden = false;
+
+      // 見始めるまでの間を置いてから、1秒ぶんの平均を取る
+      await wait(700);
+      const samples = [];
+      const until = performance.now() + 1000;
+      while (performance.now() < until) {
+        const shapes = readShapes();
+        if (shapes) {
+          const p = gazeFromBlendshapes(shapes);
+          if (p.blink < 0.5) samples.push(p);
+        }
+        await wait(40);
+      }
+      if (samples.length === 0) { calibration[i] = null; continue; }
+      calibration[i] = {
+        x: samples.reduce((a, s) => a + s.x, 0) / samples.length,
+        y: samples.reduce((a, s) => a + s.y, 0) / samples.length,
+      };
+    }
+
+    calibTarget.hidden = true;
+    const usable = calibration.filter(Boolean).length;
+    if (usable < ZONES) {
+      setHint("うまく覚えられませんでした。スイッチ操作に切り替えます");
+      fallbackToScan();
+      return;
+    }
+    state.calibrated = true;
+    setHint("覚えました。見つめると選べます");
+  }
+
+  function readShapes() {
+    if (!landmarker || camEl.readyState < 2) return null;
+    try {
+      return landmarker.detectForVideo(camEl, performance.now())?.faceBlendshapes?.[0]?.categories ?? null;
+    } catch (e) { return null; }
+  }
+
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  // ---- 設定 ----
+  const settingsOverlay = document.getElementById("settingsOverlay");
+  const dwellRange = document.getElementById("dwellRange");
+  const dwellValue = document.getElementById("dwellValue");
+  const scaleRange = document.getElementById("scaleRange");
+  const scaleValue = document.getElementById("scaleValue");
+  const contrastCheck = document.getElementById("contrastCheck");
+  const motionCheck = document.getElementById("motionCheck");
+  const speakCheck = document.getElementById("speakCheck");
+  const convertCheck = document.getElementById("convertCheck");
+
+  function applySettings() {
+    document.documentElement.style.setProperty("--scale", state.scale);
+    document.body.classList.toggle("contrast", state.contrast);
+    document.body.classList.toggle("reduce", state.reduceMotion);
+    dwellRange.value = state.dwellMs;
+    dwellValue.textContent = `${state.dwellMs}ms`;
+    scaleRange.value = state.scale;
+    scaleValue.textContent = `${state.scale.toFixed(1)}倍`;
+    contrastCheck.checked = state.contrast;
+    motionCheck.checked = state.reduceMotion;
+    speakCheck.checked = state.speak;
+    convertCheck.checked = state.autoConvert;
+    if (state.mode === "scan") restartScan();
+  }
+
+  dwellRange.addEventListener("input", () => { state.dwellMs = Number(dwellRange.value); applySettings(); });
+  scaleRange.addEventListener("input", () => { state.scale = Number(scaleRange.value); applySettings(); });
+  contrastCheck.addEventListener("change", () => { state.contrast = contrastCheck.checked; applySettings(); });
+  motionCheck.addEventListener("change", () => { state.reduceMotion = motionCheck.checked; applySettings(); });
+  speakCheck.addEventListener("change", () => { state.speak = speakCheck.checked; });
+  convertCheck.addEventListener("change", () => { state.autoConvert = convertCheck.checked; });
+
+  document.getElementById("settingsBtn").addEventListener("click", () => { settingsOverlay.hidden = false; });
+  document.getElementById("closeSettings").addEventListener("click", async () => {
+    settingsOverlay.hidden = true;
+    await saveAccessibility();
+  });
+  document.getElementById("toggleModeBtn").addEventListener("click", () => {
+    settingsOverlay.hidden = true;
+    if (state.mode === "gaze") fallbackToScan();
+    else { calibOverlay.hidden = false; }
+  });
+  document.getElementById("recalibBtn").addEventListener("click", () => {
+    settingsOverlay.hidden = true;
+    calibOverlay.hidden = false;
+  });
+  document.getElementById("exitBtn").addEventListener("click", () => {
+    location.href = cid ? `/chat?cid=${encodeURIComponent(cid)}` : "/home";
+  });
+  document.getElementById("profileLink").href = cid ? `/profile?cid=${encodeURIComponent(cid)}` : "/profile";
+
+  /** 設定は分身に紐づけて保存する（端末を変えても同じ使い勝手で始められるように）。 */
+  async function saveAccessibility() {
+    if (!cid || !ownerToken) return;
+    try {
+      await fetch("/api/accessibility", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          characterId: cid,
+          token: ownerToken,
+          prefs: {
+            inputMode: state.mode === "gaze" ? "gaze" : "switch",
+            dwellMs: state.dwellMs,
+            fontScale: state.scale,
+            highContrast: state.contrast,
+            reduceMotion: state.reduceMotion,
+            autoSpeak: state.speak,
+          },
+        }),
+      });
+    } catch (e) { /* 保存できなくても、この場では使い続けられる */ }
+  }
+
+  async function loadSettings() {
+    if (!cid) return;
+    try {
+      const res = await fetch(`/api/character?cid=${encodeURIComponent(cid)}`);
+      if (res.ok) {
+        const data = await res.json();
+        characterName = data.name || "分身";
+      }
+    } catch (e) { /* 名前が取れなくても入力はできる */ }
+
+    if (!ownerToken) return;
+    try {
+      const res = await fetch(`/api/profile?cid=${encodeURIComponent(cid)}&token=${encodeURIComponent(ownerToken)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const a = data.accessibility || {};
+      if (a.dwellMs) state.dwellMs = a.dwellMs;
+      if (a.fontScale) state.scale = a.fontScale;
+      if (typeof a.highContrast === "boolean") state.contrast = a.highContrast;
+      if (typeof a.reduceMotion === "boolean") state.reduceMotion = a.reduceMotion;
+      if (typeof a.autoSpeak === "boolean") state.speak = a.autoSpeak;
+      applySettings();
+    } catch (e) { /* 既定値のまま使う */ }
+  }
+
+  // ---- 開始 ----
+  const startOverlay = document.getElementById("startOverlay");
+
+  document.getElementById("startGaze").addEventListener("click", async () => {
+    startOverlay.hidden = true;
+    setHint("カメラを準備しています…");
+    const ok = await startGaze();
+    if (ok) calibOverlay.hidden = false;
+  });
+
+  document.getElementById("startScan").addEventListener("click", () => {
+    startOverlay.hidden = true;
+    fallbackToScan();
+    setHint("光っているところで、スイッチかタップで決定できます");
+  });
+
+  document.getElementById("calibStart").addEventListener("click", runCalibration);
+  document.getElementById("calibSkip").addEventListener("click", () => {
+    calibOverlay.hidden = true;
+    fallbackToScan();
+  });
+
+  window.addEventListener("pagehide", () => {
+    clearInterval(scanTimer);
+    if (gazeLoop) cancelAnimationFrame(gazeLoop);
+    const stream = camEl.srcObject;
+    if (stream) stream.getTracks().forEach((t) => t.stop());
+    if (speechOk) { try { speechSynthesis.cancel(); } catch (e) {} }
+  });
+
+  renderComposer();
+  renderBoard();
+  applySettings();
+  loadSettings();
+</script>
+
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    });
+  }
+</script>
+</body>
+</html>

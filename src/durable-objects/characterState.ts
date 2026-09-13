@@ -14,6 +14,25 @@ import { ChatMessage, contextBudgetFor, primaryChatModel, runChat } from "../ai/
 import { distillProfileNotes, shouldReflect } from "../ai/reflection";
 import { deriveVoiceProfile, VoiceProfile } from "../ai/voiceProfile";
 import { logDetachedWarn } from "../lib/log";
+import { ConsentState, hasConsent, normalizeConsent } from "../persona/consent";
+import {
+  DemographicProfile,
+  ProfileAnswers,
+  describeProfile,
+  nextFieldToAsk,
+  sanitizeAnswers,
+} from "../persona/profile";
+import { AccessibilityPrefs, sanitizeAccessibility } from "../persona/accessibility";
+import {
+  Psychographics,
+  describeValues,
+  emptyPsychographics,
+  mergeTermSignals,
+  mergeValueEstimate,
+} from "../analysis/psychographics";
+import { classifySegment, SegmentResult } from "../analysis/segments";
+import { removeFromRegistry, syncRegistry } from "../persona/registry";
+import { buildPersonaCard, PersonaCard } from "../persona/personaCard";
 
 export interface Env {
   AI: Ai;
@@ -100,6 +119,17 @@ export interface PersonalityPackageV1 {
     /** 1.1で追加。直近のやり取りを切り詰めずに持つ（移植先で会話の流れをそのまま継げるように）。 */
     recentTurns?: DialogueTurn[];
   };
+  /**
+   * 1.1で追加。育てた人自身に関する情報。
+   * 分身の性格（上の personality）とは別物で、こちらは「相手がどういう人か」の記録。
+   * 機種変更で持ち越せないと、また一から答え直しになるのでパッケージに含める。
+   */
+  owner?: {
+    consent?: ConsentState;
+    profile?: DemographicProfile;
+    psychographics?: Psychographics;
+    accessibility?: AccessibilityPrefs;
+  };
   meta: {
     generator: "sodatsukake" | "waketama";
     note: string;
@@ -158,6 +188,24 @@ export interface CharacterData {
 
   /** 覚え書きを最後に更新したときの interactionCount（更新間隔の判定に使う）。 */
   lastReflectedAt?: number;
+
+  /**
+   * 用途ごとの同意。既定は「何にも同意していない」。
+   * 未設定（undefined）は同意なしとして扱うので、既存の分身が勝手に統計へ載ることはない。
+   */
+  consent?: ConsentState;
+
+  /** 本人が任意で答えてくれた属性。すべて任意で、いつでも消せる。 */
+  profile?: DemographicProfile;
+
+  /**
+   * 入力方法や文字の大きさ。**販売・集約の対象にしない**（src/persona/accessibility.ts の冒頭参照）。
+   * ここを persona/profile と分けているのは、うっかり統計へ混ぜないようにするため。
+   */
+  accessibility?: AccessibilityPrefs;
+
+  /** 会話から積み上げた価値観・関心。人物像の記述であり、分身の演技指示ではない。 */
+  psychographics?: Psychographics;
 }
 
 // 「図鑑」機能用の出会いの記録は、無制限に貯めるとストレージを圧迫するため、
@@ -449,11 +497,20 @@ export class CharacterState extends DurableObject<Env> {
     const budget = contextBudgetFor(data.interactionCount);
     const relevantMemories = await retrieveRelevantMemories(this.env, characterId, trimmed, budget.recallTopK);
 
+    // 本人が答えてくれた属性は、同意がある場合だけ会話に持ち込む。
+    // 価値観の推定は分身自身の理解（覚え書きと同じ性質のもの）なので、
+    // 手元で使うぶんには同意の対象にしていない。外へ出すときだけ同意を見る（syncRegistry参照）。
+    const ownerProfile =
+      hasConsent(data.consent, "profile") && data.profile ? describeProfile(data.profile.answers) : "";
+    const ownerValues = data.psychographics ? describeValues(data.psychographics) : "";
+
     const promptParams = {
       name: data.name,
       personality: data.personality,
       growthStage: data.growthStage,
       profileNotes: data.profileNotes,
+      ownerProfile,
+      ownerValues,
       // recentTurns を持たない古い分身のためだけの保険。新しい会話では messages 側が文脈を持つ。
       legacySummary: data.recentTurns && data.recentTurns.length > 0 ? undefined : data.memorySummary,
       relevantMemories,
@@ -493,6 +550,11 @@ export class CharacterState extends DurableObject<Env> {
     ]);
     // memorySummary は 1.0 形式のエクスポート互換のために残している（プロンプトの主役ではなくなった）。
     data.memorySummary = updateMemorySummary(data.memorySummary, trimmed, reply);
+
+    // 語の出現から関心を更新する。AIを呼ばないので毎ターン回してよい。
+    // 価値観（値の重み）の方はAIが要るので、覚え書きと同じタイミング（数ターンに1回）に寄せてある。
+    data.psychographics = mergeTermSignals(data.psychographics ?? emptyPsychographics(), [trimmed]);
+
     await this.ctx.storage.put("data", data);
 
     // 長期記憶（Vectorize）への保存はチャット応答を待たせる必要がないため、失敗しても無視して継続する。
@@ -509,7 +571,35 @@ export class CharacterState extends DurableObject<Env> {
       }
     }
 
+    // 同意している分身だけ、集計用のレジストリを最新化する（同意が無ければ内部で削除される）。
+    await this.syncPersonaRegistry(data);
+
     return { reply, ...this.toSummary(data) };
+  }
+
+  /** いまの状態からセグメントを判定する（保存はしない。常に最新の値から出す）。 */
+  private segmentOf(data: CharacterData): SegmentResult {
+    return classifySegment({
+      personality: data.personality,
+      psychographics: data.psychographics ?? emptyPsychographics(),
+      interactionCount: data.interactionCount,
+    });
+  }
+
+  /** 集計用レジストリ（D1）を同期する。同意していなければ、この中で行が削除される。 */
+  private async syncPersonaRegistry(data: CharacterData): Promise<void> {
+    const characterId = this.ctx.id.name ?? "unknown";
+    await syncRegistry(this.env, {
+      characterId,
+      createdAt: data.createdAt,
+      growthStage: data.growthStage,
+      interactionCount: data.interactionCount,
+      personality: data.personality,
+      psychographics: data.psychographics ?? emptyPsychographics(),
+      segment: this.segmentOf(data),
+      profile: data.profile?.answers ?? {},
+      consent: data.consent,
+    });
   }
 
   /**
@@ -530,14 +620,198 @@ export class CharacterState extends DurableObject<Env> {
       previousNotes: data.profileNotes ?? "",
       turns: turns.map((t) => ({ role: t.role, text: t.text })),
     });
-    if (!notes) return { updated: false };
+
+    // 価値観の推定も、覚え書きと同じタイミングで行う。
+    // ここに寄せているのは、どちらも「数ターン分をまとめて読む」処理で、
+    // 別々のタイミングでAIを2回呼ぶ理由が無いため。
+    // 比較のために「渡した前の値そのもの」を持っておく。
+    // ここで毎回 emptyPsychographics() を作って渡すと、失敗して同じものが返ってきたときにも
+    // 別オブジェクトと比べることになり、「更新された」と誤判定する。
+    const previousPsychographics = data.psychographics ?? emptyPsychographics();
+    const psychographics = await mergeValueEstimate(
+      this.env,
+      previousPsychographics,
+      turns.filter((t) => t.role === "user").map((t) => t.text)
+    );
+
+    const notesUpdated = Boolean(notes);
+    const valuesUpdated = psychographics !== previousPsychographics;
+    if (!notesUpdated && !valuesUpdated) return { updated: false };
 
     // 蒸留中に別のターンが進んでいる可能性があるため、最新のデータを読み直してから書く。
     const latest = (await this.ctx.storage.get<CharacterData>("data")) ?? data;
-    latest.profileNotes = notes;
+    if (notes) latest.profileNotes = notes;
+    latest.psychographics = psychographics;
     latest.lastReflectedAt = latest.interactionCount;
     await this.ctx.storage.put("data", latest);
+
+    await this.syncPersonaRegistry(latest);
     return { updated: true };
+  }
+
+  /**
+   * 持ち主だけに見せる情報一式。
+   *
+   * 「分身が自分について何を覚えているか」を本人が確認できないのは、
+   * 覚えている量が増えるほど気持ちが悪い。ここを持ち主専用で開けておく。
+   * 同時に、次に聞いてよい属性の項目もここから返し、画面側が判断を持たないようにしている。
+   */
+  async getOwnerView(ownerToken?: string): Promise<
+    | {
+        ok: true;
+        consent: ConsentState | null;
+        profile: DemographicProfile;
+        accessibility: AccessibilityPrefs;
+        psychographics: Psychographics;
+        segment: SegmentResult;
+        profileNotes: string;
+        nextField: string | null;
+        interactionCount: number;
+      }
+    | { ok: false; error: string }
+  > {
+    const data = await this.ctx.storage.get<CharacterData>("data");
+    if (!data) return { ok: false, error: "not found" };
+    if (!isOwner(data, ownerToken)) return { ok: false, error: "この操作は分身の持ち主だけが行えます" };
+
+    const profile = data.profile ?? { answers: {}, updatedAt: 0 };
+    return {
+      ok: true,
+      consent: data.consent ?? null,
+      profile,
+      accessibility: data.accessibility ?? {},
+      psychographics: data.psychographics ?? emptyPsychographics(),
+      segment: this.segmentOf(data),
+      profileNotes: data.profileNotes ?? "",
+      nextField: nextFieldToAsk(profile, data.interactionCount)?.key ?? null,
+      interactionCount: data.interactionCount,
+    };
+  }
+
+  /** 同意を更新する。集約への同意を外したら、その場でレジストリから消す。 */
+  async setConsent(raw: unknown, ownerToken?: string): Promise<{ ok: true; consent: ConsentState } | { ok: false; error: string }> {
+    const data = await this.ctx.storage.get<CharacterData>("data");
+    if (!data) return { ok: false, error: "not found" };
+    if (!isOwner(data, ownerToken)) return { ok: false, error: "この操作は分身の持ち主だけが行えます" };
+
+    data.consent = normalizeConsent(raw, data.consent);
+
+    // 属性の保存に同意しなくなったら、既に入っている回答も消す。
+    // 「同意を外したのに手元には残っている」は、利用者の期待と食い違う。
+    if (!data.consent.profile) {
+      data.profile = { answers: {}, updatedAt: Date.now(), declinedAll: data.profile?.declinedAll };
+    }
+
+    await this.ctx.storage.put("data", data);
+    await this.syncPersonaRegistry(data);
+    return { ok: true, consent: data.consent };
+  }
+
+  /**
+   * 属性の回答を保存する。
+   * `replace` が false（既定）なら、渡ってきた項目だけを上書きする（1問ずつ答えられるようにするため）。
+   */
+  async setProfile(
+    raw: unknown,
+    ownerToken?: string,
+    options?: { replace?: boolean; declineAll?: boolean }
+  ): Promise<{ ok: true; profile: DemographicProfile } | { ok: false; error: string }> {
+    const data = await this.ctx.storage.get<CharacterData>("data");
+    if (!data) return { ok: false, error: "not found" };
+    if (!isOwner(data, ownerToken)) return { ok: false, error: "この操作は分身の持ち主だけが行えます" };
+    if (!hasConsent(data.consent, "profile")) {
+      return { ok: false, error: "先に「あなたのことを分身に覚えさせる」への同意が必要です" };
+    }
+
+    const incoming = sanitizeAnswers(raw);
+    const merged: ProfileAnswers = options?.replace ? incoming : { ...(data.profile?.answers ?? {}), ...incoming };
+
+    data.profile = {
+      answers: merged,
+      updatedAt: Date.now(),
+      declinedAll: options?.declineAll ?? data.profile?.declinedAll,
+    };
+    await this.ctx.storage.put("data", data);
+    await this.syncPersonaRegistry(data);
+    return { ok: true, profile: data.profile };
+  }
+
+  /** アクセシビリティ設定を保存する。同意の対象外（外へ出さないため、同意を取る意味が無い）。 */
+  async setAccessibility(
+    raw: unknown,
+    ownerToken?: string
+  ): Promise<{ ok: true; accessibility: AccessibilityPrefs } | { ok: false; error: string }> {
+    const data = await this.ctx.storage.get<CharacterData>("data");
+    if (!data) return { ok: false, error: "not found" };
+    if (!isOwner(data, ownerToken)) return { ok: false, error: "この操作は分身の持ち主だけが行えます" };
+
+    data.accessibility = sanitizeAccessibility(raw, data.accessibility);
+    await this.ctx.storage.put("data", data);
+    return { ok: true, accessibility: data.accessibility };
+  }
+
+  /**
+   * 人格カードを組み立てる（エッジAI・別ランタイムへの持ち出し用）。
+   * 記憶を平文で含むため、人格パッケージと同じく持ち主だけが取り出せる。
+   */
+  async buildCard(ownerToken?: string): Promise<{ ok: true; card: PersonaCard } | { ok: false; error: string }> {
+    const data = await this.ctx.storage.get<CharacterData>("data");
+    if (!data) return { ok: false, error: "not found" };
+    if (!isOwner(data, ownerToken)) return { ok: false, error: "この操作は分身の持ち主だけが行えます" };
+
+    const characterId = this.ctx.id.name ?? "unknown";
+    const memories = await exportAllMemories(this.env, characterId);
+
+    const card = buildPersonaCard({
+      characterId,
+      name: data.name,
+      species: data.species,
+      color: data.color,
+      createdAt: data.createdAt,
+      growthStage: data.growthStage,
+      interactionCount: data.interactionCount,
+      personality: data.personality,
+      psychographics: data.psychographics ?? emptyPsychographics(),
+      segment: this.segmentOf(data),
+      profileAnswers: data.profile?.answers ?? {},
+      profileNotes: data.profileNotes ?? "",
+      memories: memories.map((m) => ({ text: m.text, at: m.createdAt })),
+      recentTurns: (data.recentTurns ?? []).map((t) => ({ role: t.role, text: t.text })),
+      accessibility: data.accessibility,
+      // 本人の手元に返すものなので、属性・価値観も含めてよい
+      includeOwnerProfile: true,
+    });
+
+    return { ok: true, card };
+  }
+
+  /** マーケットに載せてよい範囲だけの要約（購入者に見せる情報。記憶や属性は含めない）。 */
+  async getListingSummary(): Promise<{
+    ok: boolean;
+    name: string;
+    species: SpeciesKey;
+    color: ColorKey;
+    growthStage: string;
+    interactionCount: number;
+    personality: PersonalityTraits;
+    speechStyleLabel: string;
+    segment: SegmentResult;
+    consented: boolean;
+  } | null> {
+    const data = await this.ctx.storage.get<CharacterData>("data");
+    if (!data) return null;
+    return {
+      ok: true,
+      name: data.name,
+      species: data.species,
+      color: data.color,
+      growthStage: data.growthStage,
+      interactionCount: data.interactionCount,
+      personality: data.personality,
+      speechStyleLabel: deriveSpeechStyle(data.personality).label,
+      segment: this.segmentOf(data),
+      consented: hasConsent(data.consent, "marketplace"),
+    };
   }
 
   /** ガード節でreplyなしの応答を返すための共通フィールドまとめ */
@@ -611,6 +885,8 @@ export class CharacterState extends DurableObject<Env> {
     } catch (err) {
       // ディレクトリ削除の失敗で本体の削除まで止めない
     }
+    // 集計用レジストリと出品も消す。片方だけ残ると「消したのに統計に残っている」ことになる。
+    await removeFromRegistry(this.env, characterId);
     await deleteAllMemories(this.env, characterId);
     await this.ctx.storage.deleteAll();
     return { ok: true };
@@ -728,6 +1004,12 @@ export class CharacterState extends DurableObject<Env> {
         profileNotes: data.profileNotes ?? "",
         recentTurns: data.recentTurns ?? [],
       },
+      owner: {
+        consent: data.consent,
+        profile: data.profile,
+        psychographics: data.psychographics,
+        accessibility: data.accessibility,
+      },
       meta: {
         generator: "waketama",
         note:
@@ -791,6 +1073,12 @@ export class CharacterState extends DurableObject<Env> {
       // 1.1で追加した項目。1.0のパッケージには入っていないので、無ければ空から始める。
       profileNotes: pkg.memory?.profileNotes ?? "",
       recentTurns: sanitizeTurns(pkg.memory?.recentTurns),
+      // 同意は復元しない（環境が変わったら取り直す、というsocialOptInと同じ方針）。
+      // 属性そのものは持ち越すが、同意が無い状態なので会話にも統計にも使われない。
+      consent: undefined,
+      profile: pkg.owner?.profile,
+      psychographics: pkg.owner?.psychographics,
+      accessibility: pkg.owner?.accessibility,
     };
     await this.ctx.storage.put("data", data);
 

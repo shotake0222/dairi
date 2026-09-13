@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>わけたま｜管理</title>
+<link rel="icon" href="/icons/favicon-64.png" sizes="64x64" type="image/png" />
+<style>
+  :root { color-scheme: light; --brand:#7c5cff; --ink:#1c1630; --muted:#6f668f; --line:#e6e2f2; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: #f4f3f8; color: var(--ink); line-height: 1.7;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+  }
+  header { background: #17131f; color: #fff; padding: 14px 18px; display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  header h1 { margin: 0; font-size: 15px; }
+  header .env { font-size: 11px; background: rgba(255,255,255,.14); padding: 3px 10px; border-radius: 999px; }
+  header .ver { font-size: 11px; color: #b5a9e6; font-family: ui-monospace, monospace; }
+  main { max-width: 1000px; margin: 0 auto; padding: 16px 16px 60px; }
+
+  .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-bottom: 16px; }
+  .stat { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+  .stat .k { font-size: 11.5px; color: var(--muted); }
+  .stat .v { font-size: 26px; font-weight: 800; line-height: 1.3; }
+  .stat .s { font-size: 11px; color: #9a90c0; }
+
+  section { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; margin-bottom: 14px; }
+  section h2 { margin: 0 0 4px; font-size: 14px; }
+  section .lead { margin: 0 0 12px; font-size: 12px; color: var(--muted); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 600; font-size: 11.5px; }
+  td.wrap { white-space: normal; }
+  .scroll { overflow-x: auto; }
+  code { font-family: ui-monospace, monospace; font-size: 11px; color: var(--muted); }
+
+  .bar { display: grid; grid-template-columns: 7em 1fr 3.5em; gap: 10px; align-items: center; font-size: 12px; margin-bottom: 5px; }
+  .bar .track { height: 9px; background: #eee9fb; border-radius: 999px; overflow: hidden; }
+  .bar .fill { height: 100%; background: var(--brand); }
+
+  button {
+    border: 1px solid var(--line); background: #fff; color: var(--brand); font-size: 12px;
+    padding: 6px 12px; border-radius: 999px; cursor: pointer; font-family: inherit;
+  }
+  .empty { color: #9a90c0; font-size: 12.5px; }
+  .note { background: #fff6e0; border: 1px solid #f0dfae; color: #7a5c17; border-radius: 10px; padding: 10px 12px; font-size: 12px; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+  .tab { border-radius: 999px; }
+  .tab.on { background: var(--brand); color: #fff; border-color: transparent; }
+  .panel[hidden] { display: none; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>わけたま 管理</h1>
+  <span class="env" id="env">…</span>
+  <span class="ver" id="ver"></span>
+</header>
+
+<main>
+  <div class="tabs">
+    <button class="tab on" data-panel="overview" type="button">概況</button>
+    <button class="tab" data-panel="personas" type="button">人格データ</button>
+    <button class="tab" data-panel="requests" type="button">問い合わせ</button>
+  </div>
+
+  <div class="panel" id="panel-overview">
+    <div class="grid" id="stats"></div>
+
+    <section>
+      <h2>セグメント分布</h2>
+      <p class="lead">同意した分身のみ。会話量が少ない分身は確からしさが低く出ます。</p>
+      <div id="segments" class="empty">読み込み中…</div>
+    </section>
+
+    <section>
+      <h2>平均値</h2>
+      <p class="lead">左が性格パラメータ、右が価値観です。</p>
+      <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(260px, 1fr))">
+        <div id="personalityAvg"></div>
+        <div id="valueAvg"></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>利用状況（日別）</h2>
+      <p class="lead">タップ数・会話数など。同意とは無関係の、サービス全体のカウンタです。</p>
+      <div class="scroll"><table id="dailyTable"></table></div>
+    </section>
+
+    <section>
+      <h2>出品の状況</h2>
+      <div class="scroll"><table id="listingTable"></table></div>
+    </section>
+  </div>
+
+  <div class="panel" id="panel-personas" hidden>
+    <section>
+      <h2>人格データ一覧</h2>
+      <p class="lead">
+        集約または出品に同意した分身だけが並びます。
+        <strong>会話の本文・記憶・覚え書きは、管理者からも見えません。</strong>
+      </p>
+      <div class="scroll"><table id="personaTable"></table></div>
+    </section>
+  </div>
+
+  <div class="panel" id="panel-requests" hidden>
+    <section>
+      <h2>購入の問い合わせ</h2>
+      <p class="lead">決済は繋がっていないため、ここに届いた連絡先へ個別に対応します。</p>
+      <div class="scroll"><table id="requestTable"></table></div>
+    </section>
+  </div>
+</main>
+
+<script>
+  async function api(path, options) {
+    const res = await fetch(path, options);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `失敗しました (${res.status})`);
+    return data;
+  }
+
+  function el(tag, text, attrs) {
+    const node = document.createElement(tag);
+    if (text !== undefined && text !== null) node.textContent = String(text);
+    for (const [k, v] of Object.entries(attrs || {})) node.setAttribute(k, v);
+    return node;
+  }
+
+  function table(target, columns, rows, renderRow) {
+    const t = document.getElementById(target);
+    t.innerHTML = "";
+    const thead = el("thead");
+    const tr = el("tr");
+    for (const c of columns) tr.appendChild(el("th", c));
+    thead.appendChild(tr);
+    t.appendChild(thead);
+    const tbody = el("tbody");
+    if (!rows || rows.length === 0) {
+      const empty = el("tr");
+      const td = el("td", "データがありません");
+      td.setAttribute("colspan", String(columns.length));
+      td.className = "empty";
+      empty.appendChild(td);
+      tbody.appendChild(empty);
+    } else {
+      for (const row of rows) tbody.appendChild(renderRow(row));
+    }
+    t.appendChild(tbody);
+  }
+
+  function bars(targetId, values, labels) {
+    const host = document.getElementById(targetId);
+    host.innerHTML = "";
+    for (const [key, raw] of Object.entries(values || {})) {
+      const v = Math.round(Number(raw) || 0);
+      const row = el("div");
+      row.className = "bar";
+      row.appendChild(el("span", (labels && labels[key]) || key));
+      const track = el("div");
+      track.className = "track";
+      const fill = el("div");
+      fill.className = "fill";
+      fill.style.width = `${Math.max(0, Math.min(100, v))}%`;
+      track.appendChild(fill);
+      row.appendChild(track);
+      row.appendChild(el("span", v));
+      host.appendChild(row);
+    }
+  }
+
+  document.querySelectorAll(".tab").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("on", t === tab));
+      document.querySelectorAll(".panel").forEach((p) => { p.hidden = p.id !== `panel-${tab.dataset.panel}`; });
+      if (tab.dataset.panel === "personas") loadPersonas();
+      if (tab.dataset.panel === "requests") loadRequests();
+    });
+  });
+
+  const PERSONALITY_LABELS = {
+    warmth: "温かさ", curiosity: "好奇心", cheerfulness: "陽気さ",
+    caution: "慎重さ", independence: "自立心", humor: "ユーモア",
+  };
+
+  async function loadOverview() {
+    const data = await api("/api/admin/overview");
+    document.getElementById("env").textContent = data.environment;
+    document.getElementById("ver").textContent = data.version;
+
+    const stats = document.getElementById("stats");
+    stats.innerHTML = "";
+    const consent = data.consent || {};
+    const profile = data.profile || {};
+    const cards = [
+      { k: "分身の総数", v: data.totals.characters, s: "NFCタグに紐づいた数" },
+      { k: "データ提供に同意", v: data.totals.registered, s: "集約または出品に同意" },
+      { k: "集約に同意", v: consent.aggregate || 0, s: "統計の母集団" },
+      { k: "出品に同意", v: consent.marketplace || 0, s: "マーケットに出せる" },
+      { k: "属性を回答", v: profile.answered || 0, s: `平均 ${Math.round(profile.avg_completion || 0)}% 回答` },
+    ];
+    for (const c of cards) {
+      const box = el("div");
+      box.className = "stat";
+      box.appendChild(el("div", c.k, { class: "k" }));
+      box.appendChild(el("div", c.v, { class: "v" }));
+      box.appendChild(el("div", c.s, { class: "s" }));
+      stats.appendChild(box);
+    }
+
+    // セグメント分布
+    const segHost = document.getElementById("segments");
+    segHost.innerHTML = "";
+    segHost.className = "";
+    const maxCount = Math.max(1, ...data.segments.map((s) => s.count));
+    for (const s of data.segments) {
+      const row = el("div");
+      row.className = "bar";
+      row.appendChild(el("span", s.label));
+      const track = el("div");
+      track.className = "track";
+      const fill = el("div");
+      fill.className = "fill";
+      fill.style.width = `${(s.count / maxCount) * 100}%`;
+      track.appendChild(fill);
+      row.appendChild(track);
+      row.appendChild(el("span", s.count));
+      segHost.appendChild(row);
+    }
+
+    bars("personalityAvg", data.personalityAverage, PERSONALITY_LABELS);
+    bars("valueAvg", data.valueAverage, data.valueLabels);
+
+    // 日別
+    const metrics = new Set();
+    for (const row of data.daily) for (const k of Object.keys(row)) if (k !== "day") metrics.add(k);
+    const metricList = [...metrics];
+    table("dailyTable", ["日付", ...metricList], data.daily, (row) => {
+      const tr = el("tr");
+      tr.appendChild(el("td", row.day));
+      for (const m of metricList) tr.appendChild(el("td", row[m] ?? 0));
+      return tr;
+    });
+
+    table("listingTable", ["状態", "件数"], data.listings, (row) => {
+      const tr = el("tr");
+      tr.appendChild(el("td", row.status));
+      tr.appendChild(el("td", row.n));
+      return tr;
+    });
+  }
+
+  async function loadPersonas() {
+    const data = await api("/api/admin/personas?limit=100");
+    table(
+      "personaTable",
+      ["ID", "更新", "段階", "会話", "セグメント", "確度", "年代", "性別", "地域", "職業", "属性%", "関心"],
+      data.personas,
+      (p) => {
+        const tr = el("tr");
+        tr.appendChild(el("td", (p.character_id || "").slice(0, 8)));
+        tr.appendChild(el("td", new Date(p.updated_at).toLocaleDateString("ja-JP")));
+        tr.appendChild(el("td", p.growth_stage || "-"));
+        tr.appendChild(el("td", p.interaction_count));
+        tr.appendChild(el("td", p.segment_id || "-"));
+        tr.appendChild(el("td", `${p.segment_confidence}%`));
+        tr.appendChild(el("td", p.age_band || "-"));
+        tr.appendChild(el("td", p.gender || "-"));
+        tr.appendChild(el("td", p.region || "-"));
+        tr.appendChild(el("td", p.occupation || "-"));
+        tr.appendChild(el("td", `${p.profile_completion}%`));
+        tr.appendChild(el("td", p.top_interests || "-"));
+        return tr;
+      }
+    );
+  }
+
+  async function loadRequests() {
+    const data = await api("/api/admin/requests?limit=100");
+    table("requestTable", ["日時", "出品", "連絡先", "内容", "状態", ""], data.requests, (r) => {
+      const tr = el("tr");
+      tr.appendChild(el("td", new Date(r.created_at).toLocaleString("ja-JP")));
+      tr.appendChild(el("td", r.title || r.listing_id.slice(0, 8)));
+      tr.appendChild(el("td", r.contact));
+      const msg = el("td", r.message || "-");
+      msg.className = "wrap";
+      tr.appendChild(msg);
+      tr.appendChild(el("td", r.status));
+      const actionCell = el("td");
+      const btn = el("button", r.status === "new" ? "対応済みにする" : "未対応に戻す");
+      btn.addEventListener("click", async () => {
+        await api("/api/admin/requests", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ requestId: r.request_id, status: r.status === "new" ? "handled" : "new" }),
+        });
+        loadRequests();
+      });
+      actionCell.appendChild(btn);
+      tr.appendChild(actionCell);
+      return tr;
+    });
+  }
+
+  loadOverview().catch((e) => {
+    document.querySelector("main").prepend(
+      Object.assign(document.createElement("div"), { className: "note", textContent: e.message })
+    );
+  });
+</script>
+</body>
+</html>
