@@ -167,8 +167,7 @@
     margin-top: 16px; border: none; background: var(--brand); color: #fff; font-weight: 700;
     font-size: 15px; padding: 13px 30px; border-radius: 999px; cursor: pointer; font-family: inherit;
   }
-  form button:disabled { opacity: .5; cursor: not-allowed; }
-  #formStatus { font-size: 13px; color: var(--muted); min-height: 20px; margin-top: 10px; }
+  form button:hover { opacity: 0.9; }
 
   footer.site { border-top: 1px solid var(--line); padding: 26px 0 44px; font-size: 12px; color: var(--muted); }
   footer.site .row { display: flex; gap: 14px; flex-wrap: wrap; }
@@ -421,6 +420,7 @@ ollama run    waketama-persona</pre>
   </div>
 </section>
 
+<!-- Formspree への POST に修正したお問い合わせフォーム -->
 <section id="contact">
   <div class="wrap">
     <h2>お問い合わせ</h2>
@@ -428,28 +428,29 @@ ollama run    waketama-persona</pre>
       具体的な載せ先が決まっていない段階でも構いません。
       「こういう機器で、こういう会話をさせたい」だけいただければ、成立するかどうかからお話しします。
     </p>
-    <form id="contactForm">
+    <form action="https://formspree.io/f/xqpkvpop" method="POST">
+      <input type="hidden" name="_subject" value="【わけたま for Business】新規お問い合わせ">
+      
       <label for="company">会社名・組織名</label>
-      <input type="text" id="company" maxlength="80" placeholder="株式会社◯◯" />
+      <input type="text" id="company" name="company" maxlength="80" placeholder="株式会社◯◯" />
 
       <label for="contactEmail">メールアドレス</label>
-      <input type="email" id="contactEmail" maxlength="120" placeholder="you@example.com" required />
+      <input type="email" id="contactEmail" name="email" maxlength="120" placeholder="you@example.com" required />
 
       <label for="topic">ご関心</label>
-      <select id="topic">
-        <option value="format">人格カード（フォーマット）の利用</option>
-        <option value="data">マスキング済み人格データの提供</option>
-        <option value="insights">セグメント統計の提供</option>
-        <option value="poc">実機での検証・共同開発</option>
-        <option value="other">その他</option>
+      <select id="topic" name="topic">
+        <option value="人格カード（フォーマット）の利用">人格カード（フォーマット）の利用</option>
+        <option value="マスキング済み人格データの提供">マスキング済み人格データの提供</option>
+        <option value="セグメント統計の提供">セグメント統計の提供</option>
+        <option value="実機での検証・共同開発">実機での検証・共同開発</option>
+        <option value="その他">その他</option>
       </select>
 
       <label for="message">ご相談内容</label>
-      <textarea id="message" maxlength="1000" placeholder="想定している機器、台数、稼働環境（通信の有無）、時期など、決まっている範囲で構いません。"></textarea>
+      <textarea id="message" name="message" maxlength="1000" placeholder="想定している機器、台数、稼働環境（通信の有無）、時期など、決まっている範囲で構いません。"></textarea>
       <div class="hint">いただいた内容は、ご連絡と検討のためだけに使用します。</div>
 
-      <button type="submit" id="submitBtn">送信する</button>
-      <div id="formStatus"></div>
+      <button type="submit">送信する</button>
     </form>
   </div>
 </section>
@@ -466,37 +467,5 @@ ollama run    waketama-persona</pre>
   </div>
 </footer>
 
-<script>
-  const form = document.getElementById("contactForm");
-  const statusEl = document.getElementById("formStatus");
-  const submitBtn = document.getElementById("submitBtn");
-
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    submitBtn.disabled = true;
-    statusEl.textContent = "送信しています…";
-    try {
-      const res = await fetch("/api/contact", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          kind: "biz",
-          company: document.getElementById("company").value,
-          contact: document.getElementById("contactEmail").value,
-          topic: document.getElementById("topic").value,
-          message: document.getElementById("message").value,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "送信できませんでした");
-      statusEl.textContent = "受け付けました。折り返しご連絡します。";
-      form.reset();
-    } catch (err) {
-      statusEl.textContent = err.message;
-    } finally {
-      submitBtn.disabled = false;
-    }
-  });
-</script>
 </body>
 </html>
