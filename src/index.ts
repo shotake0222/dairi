@@ -29,6 +29,8 @@ import { handleIme } from "./ime";
 import { handleContact, handleAdminContacts } from "./contact";
 import { handleRecoveryLookup, handleRecoveryIssue } from "./recovery";
 import { countMetric } from "./persona/registry";
+import { canonicalFor, hostRedirect, isMarketingHost, renderRobots, renderSitemap, routingEnv, SW_UNREGISTER_SCRIPT } from "./hosts";
+import { purgeOldIpQuota } from "./lib/ipQuota";
 import { LogContext, newRequestId } from "./lib/log";
 
 export { CharacterState };
@@ -53,6 +55,19 @@ export interface Env {
   CHAT_MODEL?: string;
   /** 管理画面の合言葉。未設定なら管理画面は開かない（secretで設定）。 */
   ADMIN_PASSCODE?: string;
+  /**
+   * Service Workerの緊急停止。"1" を指定してデプロイすると、/sw.js が解除用スクリプトに変わる。
+   *   npx wrangler deploy --env="" --var SW_KILL:1
+   * 壊れたSWが配られたときの唯一の逃げ道なので、消さないこと（src/hosts.ts）。
+   */
+  SW_KILL?: string;
+  /**
+   * 紹介ページを見せるドメイン（apex）とサービス本体のドメイン。
+   * 両方揃っているときだけホストの振り分けが働く（src/hosts.ts）。
+   * ローカル・ステージングでは未設定なので、何も起きない。
+   */
+  SITE_HOST?: string;
+  APP_HOST?: string;
 }
 
 /**
@@ -71,22 +86,85 @@ function json(data: unknown, init?: ResponseInit): Response {
   });
 }
 
+/**
+ * HTMLページに付ける保護のヘッダ。
+ *
+ * - frame-ancestors: 他所のサイトに埋め込ませない。管理画面や引き継ぎ画面を透明なiframeで重ねて
+ *   踏ませる手口（クリックジャッキング）を塞ぐ。X-Frame-Options は古いブラウザ向けの保険。
+ * - nosniff: content-typeを無視した解釈をさせない。
+ * - Referrer-Policy: 他所へ遷移するときに、URLのクエリ（cid等）を送らない。
+ * - Permissions-Policy: カメラ・マイクは自分のページでだけ使う（かざして話す・通話・視線入力で必要）。
+ *   位置情報などは使っていないので明示的に閉じる。
+ *
+ * CSPはここでは付けていない。全ページがインラインスクリプトで書かれているため、
+ * 中途半端に入れると 'unsafe-inline' を許すことになり、意味のある防御にならない。
+ * 入れるなら nonce を配る作りに変えてからにする（ROADMAPの積み残し）。
+ */
+function securityHeaders(): Record<string, string> {
+  return {
+    "content-security-policy": "frame-ancestors 'none'",
+    "x-frame-options": "DENY",
+    "x-content-type-options": "nosniff",
+    "referrer-policy": "strict-origin-when-cross-origin",
+    "permissions-policy": "camera=(self), microphone=(self), geolocation=(), payment=(), usb=()",
+  };
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+    // ホストで判断する処理は、開発サーバーでは無効にする。
+    // wrangler dev はURLもHostヘッダも独自ドメインに書き換えてしまうため
+    // （詳細は src/hosts.ts の isEdgeRuntime）。
+    const hostEnv = routingEnv(request, env);
     const log: LogContext = { requestId: newRequestId(), route: url.pathname };
 
     // 検証環境に合言葉が設定されている場合、ここで止める（本番では何もしない）
     const gated = stagingGate(request, url, env);
     if (gated) return gated;
 
+    // 紹介ドメイン（waketama.com）とアプリ本体（app.waketama.com）の振り分け。
+    // 合言葉の判定より前に置くと、管理画面のパスが素通りしてしまうので必ず後。
+    // 詳しい理由（localStorageはオリジンごとに別物）は src/hosts.ts の冒頭コメント。
+    const hostMoved = hostRedirect(url, hostEnv);
+    if (hostMoved) return hostMoved;
+
     // 管理画面は合言葉で閉じる。未設定なら開かない（設定漏れが情報公開になるのを防ぐ）
     const adminBlocked = adminGate(request, url, env);
     if (adminBlocked) return adminBlocked;
 
+    // --- Service Workerの配信（緊急停止の口）---
+    // 壊れたSWを配ると、こちらが直しても端末側の古いSWが動き続ける。
+    // SW_KILL=1 を付けてデプロイすれば、解除用のスクリプトに差し替えて端末から抜ける。
+    if (url.pathname === "/sw.js") {
+      if (env.SW_KILL === "1" || isMarketingHost(url, hostEnv)) {
+        return new Response(SW_UNREGISTER_SCRIPT, {
+          headers: {
+            "content-type": "text/javascript; charset=utf-8",
+            // 端末が古いSWを掴み続けないよう、ここだけは絶対にキャッシュさせない
+            "cache-control": "no-store",
+          },
+        });
+      }
+      return env.ASSETS.fetch(request);
+    }
+
+    // --- 検索エンジン向け ---
+    if (url.pathname === "/robots.txt") {
+      return new Response(renderRobots(url, hostEnv), {
+        headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "public, max-age=3600" },
+      });
+    }
+    if (url.pathname === "/sitemap.xml") {
+      return new Response(renderSitemap(url, hostEnv), {
+        headers: { "content-type": "application/xml; charset=utf-8", "cache-control": "public, max-age=3600" },
+      });
+    }
+
     // --- トップページ ---
     // public/ に index.html を置いていないため、素のドメインを開くと404になってしまう。
     // ドメイン直打ちや共有リンクからの流入は「分身一覧」に着地させる。
+    // （apex に来た人は hostRedirect が先に /lp へ送っているので、ここに来るのは本体側だけ）
     if (url.pathname === "/") {
       return Response.redirect(new URL("/home", url.origin).toString(), 302);
     }
@@ -172,7 +250,7 @@ export default {
 
     // --- 法人向けページからの問い合わせ ---
     if (url.pathname === "/api/contact" && request.method === "POST") {
-      return handleContact(env, await request.json(), log);
+      return handleContact(env, await request.json(), log, request);
     }
 
     // --- かな漢字変換（視線入力・スイッチ入力の補助） ---
@@ -439,7 +517,7 @@ export default {
     }
 
     // --- それ以外は静的ファイル（public/ 配下）を配信 ---
-    return serveAsset(request, url, env);
+    return serveAsset(request, url, env, hostEnv);
   },
 
   /**
@@ -452,6 +530,10 @@ export default {
    * AIコスト・D1負荷を抑えるため、1回の実行で処理する件数には上限を設けている。
    */
   async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    // 回数制限の記録は数日で用済みになる。放っておくと増え続けるので、ここで掃除する
+    // （塩も一緒に消えるため、過去の送信元をあとから割り出すことはできなくなる）。
+    ctx.waitUntil(purgeOldIpQuota(env).catch(() => {}));
+
     const BATCH_LIMIT = 50;
     const rows = await env.DB.prepare(
       `SELECT character_id FROM character_directory ORDER BY updated_at ASC LIMIT ?1`
@@ -482,8 +564,25 @@ export default {
  * 変わるたびにカード画像が壊れる。リクエストのオリジンを見てここで補完すれば、どのドメインで配信しても
  * 常に正しい絶対URLになり、HTML側はドメインを知らなくて済む。
  */
-async function serveAsset(request: Request, url: URL, env: Env): Promise<Response> {
-  const assetResponse = await env.ASSETS.fetch(request);
+async function serveAsset(request: Request, url: URL, env: Env, hostEnv: Env = env): Promise<Response> {
+  let assetResponse = await env.ASSETS.fetch(request);
+
+  // 存在しないパスには案内のあるページを返す。
+  //
+  // アセット層の not_found_handling = "404-page" には**しない**こと。
+  // あれを有効にすると、アセットに無いパスをアセット層がその場で404にしてしまい、
+  // リクエストがWorkerまで届かなくなる（/api/* が丸ごと動かなくなる）。
+  // 案内は、こうしてWorker側から読みに行くほうが安全。
+  if (assetResponse.status === 404 && request.method === "GET") {
+    const fallback = await env.ASSETS.fetch(new Request(new URL("/404.html", url.origin), { method: "GET" }));
+    if (fallback.ok) {
+      assetResponse = new Response(fallback.body, {
+        status: 404,
+        headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+      });
+    }
+  }
+
   const contentType = assetResponse.headers.get("content-type") || "";
   if (!contentType.includes("text/html")) return assetResponse;
 
@@ -491,6 +590,9 @@ async function serveAsset(request: Request, url: URL, env: Env): Promise<Respons
   // 検証環境なら、あわせて検索避け（noindex）も付ける。
   const withVersion = applyAdminHeaders(applyStagingHeaders(new Response(assetResponse.body, assetResponse), env), url);
   for (const [key, value] of Object.entries(versionHeaders(env))) {
+    withVersion.headers.set(key, value);
+  }
+  for (const [key, value] of Object.entries(securityHeaders())) {
     withVersion.headers.set(key, value);
   }
 
@@ -501,7 +603,37 @@ async function serveAsset(request: Request, url: URL, env: Env): Promise<Respons
     return origin + (value.startsWith("/") ? value : `/${value}`);
   };
 
+  // 正規URL。app と apex の両方から同じページが引けるため、
+  // これが無いと検索エンジンに重複ページとして扱われる。
+  // HTMLに直書きしないのは、OGPと同じ理由（配信ドメインが変わると壊れるため）。
+  const canonical = canonicalFor(url, hostEnv);
+  let canonicalSeen = false;
+
+  // 紹介ドメイン（apex）ではPWAとして入れさせない。
+  // 入れられると、起動のたびに本体ドメインへ転送される「入れても意味のないアプリ」ができ、
+  // しかもホーム画面には本物と同じアイコンが並ぶ。どちらが本物か本人にも分からなくなる。
+  const stripManifest = isMarketingHost(url, hostEnv);
+
   return new HTMLRewriter()
+    .on('link[rel="manifest"]', {
+      element(element) {
+        if (stripManifest) element.remove();
+      },
+    })
+    .on("head", {
+      element(element) {
+        element.onEndTag((end) => {
+          if (!canonicalSeen) end.before(`<link rel="canonical" href="${canonical}">`, { html: true });
+        });
+      },
+    })
+    .on('link[rel="canonical"]', {
+      element(element) {
+        // 既に書かれている場合は上書きする（古い絶対URLが残っているより確実）
+        canonicalSeen = true;
+        element.setAttribute("href", canonical);
+      },
+    })
     .on('meta[property="og:image"], meta[name="twitter:image"]', {
       element(element) {
         const absolute = toAbsolute(element.getAttribute("content"));
@@ -511,7 +643,8 @@ async function serveAsset(request: Request, url: URL, env: Env): Promise<Respons
     .on('meta[property="og:url"]', {
       element(element) {
         // 共有されるのは「今開いているページ」。クエリ文字列（cid等）は共有カードに載せない。
-        element.setAttribute("content", origin + url.pathname);
+        // 転送先が決まっているページは転送後のURLを載せる（踏んだ人が無駄に1回転送されないように）。
+        element.setAttribute("content", canonical);
       },
     })
     .transform(withVersion);

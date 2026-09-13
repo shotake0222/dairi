@@ -356,14 +356,30 @@ const bizLayout = await page.evaluate(() => ({
 }));
 check("法人向けページが横に溢れていない", bizLayout.overflowX === false);
 
-// 問い合わせフォームが実際に届くこと
+// 問い合わせの経路。
+// フォームの送信そのものは Formspree（外部）に投げる作りなので、ここでは押さない
+// （外部への送信をE2Eで発生させない）。代わりに、
+//   1) Formspreeへ送る口があること
+//   2) 同じ内容の控えがこちらの管理画面にも残るように仕込まれていること
+//   3) その受け皿（/api/contact）が生きていること
+// の3点を確かめる。1つでも欠けると「問い合わせが届かない」に直結する。
+check("問い合わせフォームがFormspreeへ送られる", bizHtml.includes("formspree.io/f/"));
+check("控えがこちらにも残るよう仕込まれている", bizHtml.includes('sendBeacon("/api/contact"'));
+check("LPの問い合わせフォームにも同じ仕込みがある", lp2.includes('sendBeacon("/api/contact"'));
+
 const bizMail = `e2e-biz-${Date.now()}@example.com`;
-await page.fill("#company", "E2E株式会社");
-await page.fill("#contactEmail", bizMail);
-await page.fill("#message", "検証用の問い合わせです");
-await page.click("#submitBtn");
-await page.waitForTimeout(1200);
-check("問い合わせが受け付けられる", ((await page.textContent("#formStatus")) || "").includes("受け付けました"));
+const contactRes = await fetch(`${BASE}/api/contact`, {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ kind: "biz", company: "E2E株式会社", contact: bizMail, topic: "poc", message: "検証用の問い合わせです" }),
+});
+check("問い合わせが受け付けられる", contactRes.status === 200, String(contactRes.status));
+const contactBad = await fetch(`${BASE}/api/contact`, {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ contact: "not-an-email" }),
+});
+check("宛先にならない入力は弾かれる", contactBad.status === 400, String(contactBad.status));
 await page.screenshot({ path: path.join(OUT_DIR, "biz.png") });
 
 const contactsClosed = await fetch(`${BASE}/api/admin/contacts`);
@@ -479,6 +495,34 @@ if (adminPass) {
   )).json();
   check("会話の履歴も戻っている", (card.examples || []).length > 0 || (card.memories || []).length >= 0);
 }
+
+console.log("\n[22] 迷子の受け皿と、検索エンジン向けの案内");
+// アセット層の not_found_handling を有効にすると、無いパスがWorkerまで届かず
+// /api/* が丸ごと死ぬ。この2つは必ず一緒に確認する（片方だけ見ると気づけない）。
+const missingRes = await fetch(`${BASE}/no-such-page-${Date.now()}`);
+check("存在しないパスは404になる", missingRes.status === 404, String(missingRes.status));
+check("404には行き先の案内がある", (await missingRes.text()).includes("分身の一覧をひらく"));
+const healthAlive = await fetch(`${BASE}/api/health`);
+check("APIが巻き添えになっていない", (healthAlive.headers.get("content-type") || "").includes("json"));
+
+const robotsRes = await fetch(`${BASE}/robots.txt`);
+const robotsTxt = await robotsRes.text();
+check("robots.txtが配信される", robotsRes.status === 200);
+check("管理画面はクロール対象外", robotsTxt.includes("Disallow: /admin"));
+const sitemapRes = await fetch(`${BASE}/sitemap.xml`);
+check("sitemap.xmlが配信される", sitemapRes.status === 200);
+check("個人のページはsitemapに載せない", !(await sitemapRes.text()).includes("/home"));
+
+const swBody = await (await fetch(`${BASE}/sw.js`)).text();
+check("Service Workerが通常どおり配信される", swBody.includes("isCacheableAsset"));
+
+const canonicalHtml = await (await fetch(`${BASE}/lp`)).text();
+check("canonicalリンクが入っている", /<link rel="canonical" href="https?:\/\/[^"]+\/lp">/.test(canonicalHtml));
+
+const lpHeaders = await fetch(`${BASE}/lp`);
+check("埋め込み防止のヘッダが付いている", lpHeaders.headers.get("x-frame-options") === "DENY");
+check("カメラ・マイクは自分のページにだけ許可されている",
+  (lpHeaders.headers.get("permissions-policy") || "").includes("camera=(self)"));
 
 check("JavaScriptエラーが出ていない", pageErrors.length === 0, pageErrors.join(" / "));
 

@@ -155,6 +155,38 @@ tools/
 | `GET /api/admin/recovery/lookup` / `POST .../issue` | 復旧（本人確認用の情報の照会と、引き継ぎコードの発行） |
 | `GET/POST /api/market/*` | マーケット（一覧・出品・問い合わせ・集約セグメント統計） |
 | `GET /api/admin/*` | 管理画面用。`ADMIN_PASSCODE` を設定していなければ 404 |
+| `GET /robots.txt`, `GET /sitemap.xml` | ホストごとに内容が変わる（本体側は全面拒否、検証環境も全面拒否） |
+| `GET /sw.js` | Service Worker。`SW_KILL=1` を付けてデプロイすると解除用スクリプトに差し替わる |
+
+## 2つのドメイン
+
+| ドメイン | 役割 |
+| --- | --- |
+| `waketama.com`（apex） | 紹介ページ（`/lp`・`/biz`）。検索・SNS・名刺からの入口 |
+| `app.waketama.com` | サービス本体（`/home` 以下）。分身を育てる場所 |
+
+同じWorkerが両方を受け、`src/hosts.ts` の `hostRedirect()` が振り分けます。
+
+- apex の `/` → `/lp`
+- apex にアプリ本体のパス（`/home`・`/chat`・`/t/:id`・`/admin` など）で来たら app へ送り返す
+- app で `/lp`・`/biz` を開いたら apex へ送る
+- `/terms`・`/privacy` はどちらでも開ける（canonical は apex）
+
+**本体を1つのホストに寄せているのは、持ち主トークンが localStorage にあるためです。**
+localStorage はオリジンごとに別物なので、同じアプリを2つのホストで開けるようにすると、
+片方で育てた分身がもう片方からは「持ち主ではない」ものに見えます。
+ユーザーから見れば分身を失ったのと同じです。この一線は動かさないでください。
+
+`SITE_HOST` / `APP_HOST`（`wrangler.toml` の `[vars]`）のどちらかが欠けていれば、振り分けは
+一切行われません。また `wrangler dev` はリクエストのURLもHostヘッダも独自ドメインに書き換えるため、
+ローカルでは振り分けを無効にしています（`isEdgeRuntime()`。これが無いとローカルでLPを開けません）。
+
+### アセットの 404 について
+
+`[assets]` の `not_found_handling` は **既定（none）のままにしてください**。
+`"404-page"` にすると、アセットに無いパスをアセット層がその場で404にしてしまい、
+**リクエストがWorkerまで届かなくなります（`/api/*` が丸ごと死にます）**。
+案内のある404ページは `serveAsset()` が `public/404.html` を読んで返しています。
 
 ## テスト
 
@@ -187,15 +219,22 @@ E2E_ADMIN_PASSCODE=<同じ値> npm run test:e2e
 `/admin` にあります。**合言葉を設定するまで開きません**（未設定は 404）。
 
 ```bash
-npx wrangler secret put ADMIN_PASSCODE
+npm run admin:passcode
 ```
 
-**この引数は「シークレットの名前」です。合言葉そのものではありません。**
-実行するとプロンプトが出るので、そこに合言葉を入力してください。
+**この引数（`ADMIN_PASSCODE`）は「シークレットの名前」です。合言葉そのものではありません。**
+実行すると `Enter a secret value:` というプロンプトが出るので、**そこに合言葉を入力**してください。
 `npx wrangler secret put <合言葉>` と書くと、その文字列を名前とするシークレットが作られ、
 `ADMIN_PASSCODE` は未設定のまま＝管理画面は開きません（間違えたら `npx wrangler secret delete <名前>` で消せます）。
 
-設定できたかは `/api/health` の `admin` フィールドで確認できます（`enabled` / `disabled`）。
+`npm run admin:passcode` の実体は `wrangler secret put ADMIN_PASSCODE --env=""` です。
+`--env=""` を付けているのは、`wrangler.toml` に staging 環境も書いてあるため、
+省略すると wrangler がどちらのWorkerに入れるか決められず、本番側に入らないことがあるからです。
+
+設定できたかは `npm run secrets:list`（`ADMIN_PASSCODE` が並べばOK）か、
+`/api/health` の `admin` フィールド（`enabled` / `disabled`）で確認できます。
+**シークレットの設定にデプロイは不要です**（設定した瞬間から有効）。
+逆に、`git pull` しただけではサイトは変わりません。ページの変更を反映するには `npm run deploy` が必要です。
 開くときは `https://app.waketama.com/admin?key=合言葉`。合言葉はCookieへ移され、URLからは消えます（12時間有効）。
 
 表示されるのは、集約に同意した分身の数値と、日次の利用状況、問い合わせ、そして復旧の窓口までです。

@@ -10,6 +10,7 @@
  */
 
 import { LogContext, logInfo, logWarn } from "./lib/log";
+import { consumeIpQuota } from "./lib/ipQuota";
 
 export interface ContactEnv {
   DB: D1Database;
@@ -19,6 +20,12 @@ const MAX_COMPANY = 80;
 const MAX_CONTACT = 120;
 const MAX_MESSAGE = 1000;
 const TOPICS = ["format", "data", "insights", "poc", "other"];
+/**
+ * 同じ送信元からの1日あたりの上限。
+ * 相談・復旧依頼を続けて送る人（書き直し・追記）はいるので、1〜2件では狭すぎる。
+ * 一方でこれを超える回数を人が手で送ることはまずない。
+ */
+const CONTACT_DAILY_LIMIT = 8;
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -35,8 +42,19 @@ function clean(value: unknown, max: number): string {
 export async function handleContact(
   env: ContactEnv,
   body: { kind?: unknown; company?: unknown; contact?: unknown; topic?: unknown; message?: unknown },
-  log: LogContext
+  log: LogContext,
+  request?: Request
 ): Promise<Response> {
+  // 大量送信で本物の相談が埋もれるのを防ぐ。送信元のIPは保存せず、
+  // その日限りの塩でハッシュ化した値だけを数える（src/lib/ipQuota.ts）。
+  if (request) {
+    const limited = await consumeIpQuota(env, "contact", request, CONTACT_DAILY_LIMIT);
+    if (!limited.allowed) {
+      logWarn(log, "contact.rate_limited", { count: limited.count });
+      return json({ error: "本日の送信回数の上限に達しました。お急ぎの場合は時間をおいてお試しください" }, 429);
+    }
+  }
+
   const contact = clean(body.contact, MAX_CONTACT);
   if (!contact) return json({ error: "連絡先を入力してください" }, 400);
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(contact)) {

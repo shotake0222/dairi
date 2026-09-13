@@ -438,12 +438,13 @@ ollama run    waketama-persona</pre>
       <input type="email" id="contactEmail" name="email" maxlength="120" placeholder="you@example.com" required />
 
       <label for="topic">ご関心</label>
+      <!-- data-code は管理画面に残す控え用の分類。Formspree に送る value は日本語のまま（メールで読めるように） -->
       <select id="topic" name="topic">
-        <option value="人格カード（フォーマット）の利用">人格カード（フォーマット）の利用</option>
-        <option value="マスキング済み人格データの提供">マスキング済み人格データの提供</option>
-        <option value="セグメント統計の提供">セグメント統計の提供</option>
-        <option value="実機での検証・共同開発">実機での検証・共同開発</option>
-        <option value="その他">その他</option>
+        <option value="人格カード（フォーマット）の利用" data-code="format">人格カード（フォーマット）の利用</option>
+        <option value="マスキング済み人格データの提供" data-code="data">マスキング済み人格データの提供</option>
+        <option value="セグメント統計の提供" data-code="insights">セグメント統計の提供</option>
+        <option value="実機での検証・共同開発" data-code="poc">実機での検証・共同開発</option>
+        <option value="その他" data-code="other">その他</option>
       </select>
 
       <label for="message">ご相談内容</label>
@@ -466,6 +467,38 @@ ollama run    waketama-persona</pre>
     <div style="margin-top:10px">わけたま for Business</div>
   </div>
 </footer>
+
+<script>
+  // 送信内容の控えを、こちら側の管理画面にも残す。
+  // フォーム自体は Formspree にそのまま送る（送信の成否はあちらに委ねる）。
+  // メール1本しか残らないと、返信済みかどうかを追う場所が無く、取りこぼしが起きるため。
+  // 失敗しても何もしない: 控えが残らないだけで、本来の送信は妨げない。
+  (function () {
+    var form = document.querySelector("#contact form");
+    if (!form) return;
+    form.addEventListener("submit", function () {
+      try {
+        var email = form.querySelector("#contactEmail");
+        if (!email || !email.value) return;
+        var company = form.querySelector("#company");
+        var message = form.querySelector("#message");
+        var topic = form.querySelector("#topic");
+        var selected = topic && topic.options[topic.selectedIndex];
+        var payload = JSON.stringify({
+          kind: "biz",
+          company: company ? company.value : "",
+          contact: email.value,
+          topic: (selected && selected.getAttribute("data-code")) || "other",
+          message: message ? String(message.value).slice(0, 1000) : "",
+        });
+        var blob = new Blob([payload], { type: "application/json" });
+        if (navigator.sendBeacon) navigator.sendBeacon("/api/contact", blob);
+      } catch (e) {
+        /* 控えが残らないだけなので握りつぶす */
+      }
+    });
+  })();
+</script>
 
 </body>
 </html>

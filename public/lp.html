@@ -502,6 +502,36 @@
 </footer>
 
 <script>
+  // 送信内容の控えを、こちら側の管理画面にも残す。
+  // フォーム自体は Formspree にそのまま送る（送信の成否はあちらに委ねる）。
+  // メール1本しか残らないと、返信済みかどうかを追う場所が無く、取りこぼしが起きるため。
+  // 失敗しても何もしない: 控えが残らないだけで、本来の送信は妨げない。
+  (function () {
+    var form = document.querySelector(".contact-form");
+    if (!form) return;
+    form.addEventListener("submit", function () {
+      try {
+        var value = function (name) {
+          var el = form.querySelector('[name="' + name + '"]');
+          return el && el.value ? String(el.value).slice(0, 1000) : "";
+        };
+        var email = value("email");
+        if (!email) return;
+        var payload = JSON.stringify({
+          kind: "other",
+          company: value("name"),
+          contact: email,
+          topic: "other",
+          message: value("message"),
+        });
+        var blob = new Blob([payload], { type: "application/json" });
+        if (navigator.sendBeacon) navigator.sendBeacon("/api/contact", blob);
+      } catch (e) {
+        /* 控えが残らないだけなので握りつぶす */
+      }
+    });
+  })();
+
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {
       navigator.serviceWorker.register("/sw.js").catch(() => {});

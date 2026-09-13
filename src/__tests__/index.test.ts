@@ -449,11 +449,70 @@ describe("静的ファイル配信とPWA/OGP", () => {
     expect(sw).toContain('url.pathname.startsWith("/characters/")');
   });
 
+  it("Service Workerは緊急停止できる（SW_KILLを立てると解除用スクリプトに差し替わる）", async () => {
+    // 壊れたSWを配ると、こちらが直しても端末側の古いSWが動き続ける。
+    // この逃げ道が無いと「サイトデータを消してください」と案内するしかなくなる。
+    const before = (env as { SW_KILL?: string }).SW_KILL;
+    try {
+      (env as { SW_KILL?: string }).SW_KILL = "1";
+      const res = await SELF.fetch(`${BASE}/sw.js`);
+      const body = await res.text();
+      expect(body).toContain("self.registration.unregister()");
+      expect(body).not.toContain("isCacheableAsset");
+      // 解除用スクリプト自体がキャッシュされると、そこから抜けられなくなる
+      expect(res.headers.get("cache-control")).toBe("no-store");
+    } finally {
+      (env as { SW_KILL?: string }).SW_KILL = before;
+    }
+    // 元に戻ること（停止が居座らない）
+    expect(await (await SELF.fetch(`${BASE}/sw.js`)).text()).toContain("isCacheableAsset");
+  });
+
+  it("HTMLに埋め込み防止と参照元制限のヘッダが付く", async () => {
+    const res = await SELF.fetch(`${BASE}/home`);
+    expect(res.headers.get("x-frame-options")).toBe("DENY");
+    expect(res.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(res.headers.get("referrer-policy")).toBe("strict-origin-when-cross-origin");
+    // かざして話す・通話・視線入力で必要なので、カメラとマイクは自分のページにだけ許す
+    expect(res.headers.get("permissions-policy")).toContain("camera=(self)");
+    expect(res.headers.get("permissions-policy")).toContain("geolocation=()");
+  });
+
+  it("存在しないパスには案内付きの404ページを返す（APIは巻き添えにしない）", async () => {
+    // アセット層の not_found_handling を使うと、無いパスがWorkerまで届かなくなり
+    // /api/* が丸ごと死ぬ。Worker側で404ページを返しているのはそのため。
+    const missing = await SELF.fetch(`${BASE}/no-such-page`);
+    expect(missing.status).toBe(404);
+    expect(await missing.text()).toContain("このページは見つかりませんでした");
+
+    // 同じ経路でAPIが壊れていないこと（この2つは必ず一緒に検証する）
+    const health = await SELF.fetch(`${BASE}/api/health`);
+    expect(health.headers.get("content-type")).toContain("application/json");
+  });
+
+  it("robots.txtとsitemap.xmlが配信され、管理画面はクロール対象外", async () => {
+    const robots = await (await SELF.fetch(`${BASE}/robots.txt`)).text();
+    expect(robots).toContain("Disallow: /admin");
+    const sitemap = await (await SELF.fetch(`${BASE}/sitemap.xml`)).text();
+    expect(sitemap).toContain("<urlset");
+    expect(sitemap).not.toContain("/admin");
+  });
+
   it("HTMLのog:image / og:url が、配信元のオリジンを使った絶対URLに書き換えられる", async () => {
     const html = await (await SELF.fetch(`${BASE}/home`)).text();
     expect(html).toContain(`<meta property="og:image" content="${BASE}/icons/ogp.png" />`);
     expect(html).toContain(`<meta name="twitter:image" content="${BASE}/icons/ogp.png" />`);
     expect(html).toContain(`<meta property="og:url" content="${BASE}/home" />`);
+  });
+
+  it("HTMLにcanonicalリンクが1つだけ挿し込まれる", async () => {
+    // 同じページが2つのホスト（apex / app）から引けるため、
+    // これが無いと検索エンジンに重複ページとして扱われる。
+    const html = await (await SELF.fetch(`${BASE}/lp`)).text();
+    const matches = html.match(/<link rel="canonical"/g) ?? [];
+    expect(matches.length).toBe(1);
+    expect(html).toContain(`<link rel="canonical" href="${BASE}/lp">`);
   });
 
   it("og:urlにはクエリ文字列（cid）を含めない", async () => {

@@ -5,9 +5,11 @@
   "description": "わけたま（Waketama） - NFCタグ起点・会話育成型キャラクターサービス（Cloudflare Workers / Durable Objects / D1 / Workers AI）",
   "scripts": {
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy --var APP_VERSION:$(git rev-parse --short HEAD)$(git diff --quiet || echo -dirty) --var BUILT_AT:$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+    "deploy": "wrangler deploy --env=\"\" --var APP_VERSION:$(git rev-parse --short HEAD)$(git diff --quiet || echo -dirty) --var BUILT_AT:$(date -u +%Y-%m-%dT%H:%M:%SZ)",
     "db:migrate:local": "wrangler d1 migrations apply nfc-companion-db --local",
     "db:migrate:remote": "wrangler d1 migrations apply nfc-companion-db --remote",
+    "admin:passcode": "wrangler secret put ADMIN_PASSCODE --env=\"\"",
+    "secrets:list": "wrangler secret list --env=\"\"",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "node tools/e2e.mjs",

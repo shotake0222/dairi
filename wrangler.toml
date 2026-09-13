@@ -10,17 +10,31 @@ compatibility_flags = ["nodejs_compat"]
 # 自動で用意する。**事前に app のDNSレコードを手で作る必要はない**
 # （むしろ手で作っておくと「既にレコードがある」と衝突してデプロイが止まることがある）。
 #
-# apex（waketama.com）はここでは押さえていない。将来LPを置く余地を残すため。
-# 素のドメインを開いた人をアプリへ送りたい場合は、Cloudflareのリダイレクトルールで
-# waketama.com → app.waketama.com を設定するのが手軽（Workerを経由しないので速い）。
+# 紹介用のページ（/lp・/biz）は apex（waketama.com）で見せ、サービス本体は app.waketama.com に置く。
+# 同じWorkerが両方のホストを受け、src/index.ts の hostRedirect() が振り分ける。
+#
+# **なぜ本体を1つのホストに寄せるのか。**
+# 持ち主トークンはブラウザのlocalStorageにあり、localStorageはオリジンごとに別物になる。
+# 同じアプリを2つのホストで開けるようにすると、片方で育てた分身がもう片方からは
+# 「持ち主ではない」状態に見える。ユーザーから見れば分身を失ったのと同じなので、
+# アプリ本体のパスに apex で来た人は app へ送り返す。
+#
+# apex を custom_domain にすると、CloudflareがDNSと証明書を用意する。
+# 既に waketama.com に A/CNAME レコードが手で作られていると衝突してデプロイが止まるので、
+# その場合は先にそのレコードを削除すること。
 routes = [
-  { pattern = "app.waketama.com", custom_domain = true }
+  { pattern = "app.waketama.com", custom_domain = true },
+  { pattern = "waketama.com", custom_domain = true }
 ]
 
 # --- 環境の識別子 ---
 # コード側で本番か検証環境かを見分けるために使う（検証環境には検索避けと合言葉を付ける）。
 [vars]
 ENVIRONMENT = "production"
+# 2つのホストの役割。どちらか未設定なら振り分けは一切行わない
+# （検証環境・ローカルで意図しないリダイレクトが起きないようにするため）。
+SITE_HOST = "waketama.com"
+APP_HOST = "app.waketama.com"
 
 # --- 観測性（Workers Logs） ---
 # 本番で何が起きたかを後から追えるようにする。これが無効だとダッシュボードにログが残らず、
@@ -34,11 +48,15 @@ head_sampling_rate = 1
 [assets]
 directory = "./public"
 binding = "ASSETS"
+# not_found_handling は既定（none）のままにすること。
+# "404-page" にすると、アセットに無いパスをアセット層が404で返してしまい、
+# **Workerまで届かなくなる**（/api/* が全滅する）。案内のある404ページは
+# src/index.ts の serveAsset() が public/404.html を読んで返している。
 # HTMLページだけはWorkerを先に通す。
 # 既定では静的ファイルはWorkerに届く前にアセット層が直接返してしまい、
 # src/index.ts の HTMLRewriter（OGPのURL絶対化）が動かないため。
 # 画像や3Dモデルまで対象にするとリクエストごとにWorker呼び出しが増えるので、ページのパスだけに限定する。
-run_worker_first = ["/", "/home", "/chat", "/call", "/talk", "/eyes", "/summon", "/friends", "/history", "/profile", "/market", "/admin", "/lp", "/biz", "/privacy", "/terms", "/recover", "/offline"]
+run_worker_first = ["/", "/home", "/chat", "/call", "/talk", "/eyes", "/summon", "/friends", "/history", "/profile", "/market", "/admin", "/lp", "/biz", "/privacy", "/terms", "/recover", "/offline", "/sw.js", "/robots.txt", "/sitemap.xml"]
 
 # --- Workers AI（序盤はSLMで運用） ---
 [ai]
@@ -103,7 +121,8 @@ head_sampling_rate = 1
 [env.staging.assets]
 directory = "./public"
 binding = "ASSETS"
-run_worker_first = ["/", "/home", "/chat", "/call", "/talk", "/eyes", "/summon", "/friends", "/history", "/profile", "/market", "/admin", "/lp", "/biz", "/privacy", "/terms", "/recover", "/offline"]
+# not_found_handling は既定のまま（理由は本番側のコメント）
+run_worker_first = ["/", "/home", "/chat", "/call", "/talk", "/eyes", "/summon", "/friends", "/history", "/profile", "/market", "/admin", "/lp", "/biz", "/privacy", "/terms", "/recover", "/offline", "/sw.js", "/robots.txt", "/sitemap.xml"]
 
 [env.staging.ai]
 binding = "AI"
