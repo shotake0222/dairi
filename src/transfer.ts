@@ -56,6 +56,39 @@ export interface IssueResult {
 }
 
 /**
+ * コードを1本発行して記録する（所有権の確認はしない）。
+ *
+ * 呼び出し口を2つ持つために切り出している:
+ *   - issueTransferCode(): 持ち主本人が発行する通常の経路
+ *   - src/recovery.ts: 持ち主トークンを失った人のために、運営が本人確認のうえで発行する経路
+ * 「確認して発行する」を1つの関数にまとめてしまうと、運営経路のために確認を素通しする
+ * 引数を足すことになり、うっかり通常経路でも素通しになる事故が起きやすい。判定と発行を分ける。
+ */
+export async function createTransferCode(
+  env: TransferEnv,
+  characterId: string,
+  ttlMs = TRANSFER_CODE_TTL_MS
+): Promise<{ code: string; expiresAt: number }> {
+  const now = Date.now();
+  const code = generateCode();
+  const newOwnerToken = crypto.randomUUID();
+
+  // 同じキャラクターの未使用コードは、新しいものを出す時点で無効化しておく
+  await env.DB.prepare("DELETE FROM transfer_codes WHERE character_id = ? AND used_at IS NULL")
+    .bind(characterId)
+    .run();
+
+  await env.DB.prepare(
+    `INSERT INTO transfer_codes (code, character_id, new_owner_token, created_at, expires_at)
+     VALUES (?1, ?2, ?3, ?4, ?5)`
+  )
+    .bind(normalizeCode(code), characterId, newOwnerToken, now, now + ttlMs)
+    .run();
+
+  return { code, expiresAt: now + ttlMs };
+}
+
+/**
  * 引き継ぎコードを発行する。現在の持ち主だけが実行できる。
  * 新しい持ち主トークンはこの時点で決めておき、引き継ぎ先が使った瞬間に有効化する。
  */
@@ -76,24 +109,9 @@ export async function issueTransferCode(
     return { ok: false, error: "この操作は分身の持ち主だけが行えます", status: 403 };
   }
 
-  const now = Date.now();
-  const code = generateCode();
-  const newOwnerToken = crypto.randomUUID();
-
-  // 同じキャラクターの未使用コードは、新しいものを出す時点で無効化しておく
-  await env.DB.prepare("DELETE FROM transfer_codes WHERE character_id = ? AND used_at IS NULL")
-    .bind(characterId)
-    .run();
-
-  await env.DB.prepare(
-    `INSERT INTO transfer_codes (code, character_id, new_owner_token, created_at, expires_at)
-     VALUES (?1, ?2, ?3, ?4, ?5)`
-  )
-    .bind(normalizeCode(code), characterId, newOwnerToken, now, now + TRANSFER_CODE_TTL_MS)
-    .run();
-
+  const issued = await createTransferCode(env, characterId);
   logInfo(log, "transfer.issued", { expiresInMs: TRANSFER_CODE_TTL_MS });
-  return { ok: true, code, expiresAt: now + TRANSFER_CODE_TTL_MS };
+  return { ok: true, code: issued.code, expiresAt: issued.expiresAt };
 }
 
 export interface ClaimResult {

@@ -69,6 +69,12 @@
   .log .line.self { color: #4c3a99; }
   .log .line.other { color: #7c6a3f; }
 
+  #moreBtn {
+    display: block; margin: 16px auto 0; border: 1px solid #ddd; background: #fff; color: #7c5cff;
+    font-size: 13px; font-weight: 600; padding: 10px 22px; border-radius: 999px; cursor: pointer;
+    font-family: inherit;
+  }
+  #moreBtn[hidden] { display: none; }
   .empty { text-align: center; color: #888; font-size: 13px; padding: 40px 16px; line-height: 1.8; }
   .loading { text-align: center; color: #aaa; font-size: 13px; padding: 40px 16px; }
 
@@ -97,6 +103,7 @@
       <h2 id="summaryHeadline"></h2>
       <div class="sub" id="summarySub">タップすると、その時の立ち話を振り返れます</div>
       <div class="grid" id="grid"></div>
+      <button id="moreBtn" type="button" hidden>もっと見る</button>
     </div>
 
     <div class="card">
@@ -135,11 +142,38 @@
     return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
   }
 
+  /**
+   * 図鑑の描画。
+   *
+   * 最大60件を一度に描くと、1件ごとに会話ログのDOMまで作るため、
+   * 古い端末では開いた瞬間に固まる。少しずつ足していく形にする。
+   */
+  const PAGE_SIZE = 12;
+  let pendingRecords = [];
+
+  function appendPage(container) {
+    const chunk = pendingRecords.splice(0, PAGE_SIZE);
+    for (const record of chunk) container.appendChild(buildEntry(record));
+
+    const moreBtn = el("moreBtn");
+    if (pendingRecords.length > 0) {
+      moreBtn.hidden = false;
+      moreBtn.textContent = `もっと見る（あと ${pendingRecords.length} 体）`;
+    } else {
+      moreBtn.hidden = true;
+    }
+  }
+
   function renderGrid(container, history) {
     container.innerHTML = "";
     // 新しい出会いを先頭に
-    const ordered = [...history].reverse();
-    for (const record of ordered) {
+    pendingRecords = [...history].reverse();
+    appendPage(container);
+    el("moreBtn").addEventListener("click", () => appendPage(container));
+  }
+
+  function buildEntry(record) {
+    {
       const entry = document.createElement("div");
       entry.className = "entry";
 
@@ -159,7 +193,7 @@
         <div class="log">${logHtml}</div>
       `;
       entry.addEventListener("click", () => entry.classList.toggle("expanded"));
-      container.appendChild(entry);
+      return entry;
     }
   }
 

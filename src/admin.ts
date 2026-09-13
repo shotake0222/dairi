@@ -68,9 +68,21 @@ export function adminGate(request: Request, url: URL, env: AdminEnv): Response |
   if (!passcode) {
     // 未設定のときに素通しにしない。設定漏れが即座に情報公開になるため。
     return new Response(
-      "管理画面は無効です（ADMIN_PASSCODE が未設定）。\n" +
-        "有効にするには: npx wrangler secret put ADMIN_PASSCODE\n",
-      { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } }
+      [
+        "管理画面は無効です（ADMIN_PASSCODE が未設定）。",
+        "",
+        "有効にするには、次を実行してください:",
+        "  npx wrangler secret put ADMIN_PASSCODE",
+        "",
+        "※ この引数は「シークレットの名前」です。合言葉そのものではありません。",
+        "   実行するとプロンプトが出るので、そこに合言葉を入力してください。",
+        "   合言葉を引数に書くと、その文字列の名前でシークレットが作られ、ここは無効のままになります。",
+        "",
+        "設定できたか確認: /api/health の admin フィールドを見てください。",
+        "開くとき: /admin?key=合言葉",
+        "",
+      ].join("\n"),
+      { status: 404, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" } }
     );
   }
 

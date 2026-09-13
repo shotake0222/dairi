@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>わけたま｜分身を取り戻す</title>
+<meta name="description" content="機種変更やデータ消去で分身を操作できなくなったときの、復旧のご依頼。" />
+
+<link rel="manifest" href="/manifest.webmanifest" />
+<meta name="theme-color" content="#7c5cff" />
+<link rel="icon" href="/icons/favicon-64.png" sizes="64x64" type="image/png" />
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="わけたま" />
+<meta property="og:title" content="わけたま｜分身を取り戻す" />
+<meta property="og:description" content="機種変更やデータ消去で分身を操作できなくなったときの、復旧のご依頼。" />
+<meta property="og:image" content="/icons/ogp.png" />
+<meta property="og:url" content="/" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="わけたま｜分身を取り戻す" />
+<meta name="twitter:description" content="機種変更やデータ消去で分身を操作できなくなったときの、復旧のご依頼。" />
+<meta name="twitter:image" content="/icons/ogp.png" />
+<style>
+  :root { color-scheme: light; --brand:#7c5cff; --ink:#1c1630; --muted:#6f668f; --line:#e9e5f7; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: #f7f5ff; color: var(--ink); line-height: 1.85;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+  }
+  header { background: #fff; border-bottom: 1px solid var(--line); padding: 18px 16px; }
+  .brand { font-size: 10px; letter-spacing: 0.08em; color: #a78bfa; font-weight: 700; }
+  header h1 { margin: 4px 0 4px; font-size: 19px; }
+  header p { margin: 0; font-size: 12.5px; color: var(--muted); }
+  main { max-width: 640px; margin: 0 auto; padding: 18px 16px 72px; }
+  section { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 18px; margin-bottom: 14px; }
+  section h2 { margin: 0 0 8px; font-size: 15px; }
+  section p { margin: 0 0 12px; font-size: 13.5px; color: #4a4266; }
+  section p:last-child { margin-bottom: 0; }
+  .muted { color: var(--muted); font-size: 13px; }
+  ol, ul { margin: 0 0 12px; padding-left: 1.3em; font-size: 13.5px; color: #4a4266; }
+  li { margin-bottom: 7px; }
+  .first {
+    background: #f0ecff; border-color: #ddd4ff;
+  }
+  .first strong { color: #4c3a99; }
+  label { display: block; font-size: 13px; font-weight: 700; margin: 14px 0 5px; }
+  input, textarea {
+    width: 100%; padding: 11px 13px; border-radius: 10px; border: 1px solid var(--line);
+    font-family: inherit; font-size: 16px; background: #fff; color: var(--ink);
+  }
+  textarea { min-height: 110px; resize: vertical; line-height: 1.7; }
+  .hint { font-size: 11.5px; color: #9a90c0; margin-top: 5px; }
+  button {
+    margin-top: 18px; border: none; background: var(--brand); color: #fff; font-weight: 700;
+    font-size: 15px; padding: 13px 30px; border-radius: 999px; cursor: pointer; font-family: inherit;
+  }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  #status { font-size: 13px; color: var(--muted); min-height: 20px; margin-top: 10px; }
+  a { color: var(--brand); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">わけたま</div>
+  <h1>分身を取り戻す</h1>
+  <p>機種変更やデータの消去で、分身を操作できなくなってしまったときの窓口です。</p>
+</header>
+
+<main>
+  <section class="first">
+    <h2>先に、こちらをお試しください</h2>
+    <p>
+      <strong>引き継ぎコードをお持ちなら、この窓口は不要です。</strong>
+      チャット画面の「📦 保存/復元」から「引き継ぎコードを使う」でコードを入力すれば、その場で戻せます。
+    </p>
+    <p style="margin-bottom:0" class="muted">
+      また、<strong>分身のデータそのものは消えていません</strong>。
+      いま操作できないのは「この端末が持ち主だと確認できない」だけの状態です。
+      会話の履歴も、育った性格も、そのまま残っています。
+    </p>
+  </section>
+
+  <section>
+    <h2>復旧の流れ</h2>
+    <ol>
+      <li>下のフォームで、分かる範囲の情報を送ってください</li>
+      <li>本当にあなたの分身かどうかを確認するため、いくつか質問させていただきます（分身の名前、育て始めた時期など）</li>
+      <li>確認できたら、引き継ぎコードをお送りします</li>
+      <li>新しい端末のチャット画面でコードを入力すると、<strong>会話の履歴も記憶も含めて、そのまま戻ります</strong></li>
+    </ol>
+    <p class="muted" style="margin-bottom:0">
+      本人確認のために、運営が会話の中身を読むことはありません。
+      確認に使うのは、分身の名前・見た目・育ち具合といった、中身以外の情報だけです。
+    </p>
+  </section>
+
+  <section>
+    <h2>ご依頼</h2>
+    <p class="muted">分からない項目は空欄で構いません。分かる情報が多いほど、確認が早く済みます。</p>
+    <form id="recoverForm">
+      <label for="tagId">NFCタグのID、または分身のID</label>
+      <input type="text" id="tagId" maxlength="120" placeholder="タグに書かれている文字列、または以前のURLの cid=" />
+      <div class="hint">
+        キーホルダーが手元にあれば、かざしたときに開くURLの <code>/t/</code> のあとの部分です。
+      </div>
+
+      <label for="charName">分身の名前</label>
+      <input type="text" id="charName" maxlength="40" placeholder="つけた名前" />
+
+      <label for="contact">連絡先（メールアドレス）</label>
+      <input type="email" id="contact" maxlength="120" placeholder="you@example.com" required />
+
+      <label for="detail">状況</label>
+      <textarea id="detail" maxlength="800" placeholder="いつ頃から育てていたか、どうして操作できなくなったか（機種変更・データ消去など）、覚えている範囲でお書きください。"></textarea>
+
+      <button type="submit" id="submitBtn">送信する</button>
+      <div id="status"></div>
+    </form>
+  </section>
+
+  <p style="text-align:center;font-size:12px">
+    <a href="/home">分身にもどる</a> ・
+    <a href="/terms">利用規約</a> ・
+    <a href="/privacy">プライバシーポリシー</a>
+  </p>
+</main>
+
+<script>
+  const form = document.getElementById("recoverForm");
+  const statusEl = document.getElementById("status");
+  const submitBtn = document.getElementById("submitBtn");
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    submitBtn.disabled = true;
+    statusEl.textContent = "送信しています…";
+
+    // 復旧の申請は問い合わせ窓口と同じ経路に入れる。
+    // 別の受け皿を作ると、運営が2箇所を見に行くことになり、取りこぼしが起きる。
+    const detail = [
+      `タグ/分身ID: ${document.getElementById("tagId").value || "（不明）"}`,
+      `分身の名前: ${document.getElementById("charName").value || "（不明）"}`,
+      "",
+      document.getElementById("detail").value,
+    ].join("\n");
+
+    try {
+      const res = await fetch("/api/contact", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          kind: "recovery",
+          contact: document.getElementById("contact").value,
+          topic: "other",
+          message: detail,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "送信できませんでした");
+      statusEl.textContent = "受け付けました。確認のため、折り返しご連絡します。";
+      form.reset();
+    } catch (err) {
+      statusEl.textContent = err.message;
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>

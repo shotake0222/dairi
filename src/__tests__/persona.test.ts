@@ -313,13 +313,62 @@ describe("マーケット", () => {
   });
 });
 
-describe("管理画面", () => {
+/**
+ * 管理画面の入口。
+ *
+ * 合言葉の有無を、テストの中で明示的に切り替えている。
+ * 開発時に .dev.vars へ ADMIN_PASSCODE を書いていると、環境によって結果が変わってしまうため
+ * （実際それで落ちた）。「未設定なら開かない」は最も守りたい性質なので、環境に依存させない。
+ */
+describe("管理画面の入口", () => {
+  type MutableEnv = { ADMIN_PASSCODE?: string };
+
+  async function withPasscode<T>(passcode: string | undefined, fn: () => Promise<T>): Promise<T> {
+    const mutable = env as unknown as MutableEnv;
+    const saved = mutable.ADMIN_PASSCODE;
+    if (passcode === undefined) delete mutable.ADMIN_PASSCODE;
+    else mutable.ADMIN_PASSCODE = passcode;
+    try {
+      return await fn();
+    } finally {
+      if (saved === undefined) delete mutable.ADMIN_PASSCODE;
+      else mutable.ADMIN_PASSCODE = saved;
+    }
+  }
+
   it("is closed when no passcode is configured", async () => {
-    // ADMIN_PASSCODE を設定していない状態が既定。素通しにしてはいけない
-    const res = await SELF.fetch(`${BASE}/api/admin/overview`);
-    expect(res.status).toBe(404);
-    const page = await SELF.fetch(`${BASE}/admin`);
-    expect(page.status).toBe(404);
+    await withPasscode(undefined, async () => {
+      // 「未設定なら素通し」にすると、設定を忘れた瞬間に全データが公開される
+      expect((await SELF.fetch(`${BASE}/api/admin/overview`)).status).toBe(404);
+      expect((await SELF.fetch(`${BASE}/admin`)).status).toBe(404);
+      expect((await SELF.fetch(`${BASE}/api/admin/contacts`)).status).toBe(404);
+      expect((await SELF.fetch(`${BASE}/api/admin/recovery/lookup?q=x`)).status).toBe(404);
+    });
+  });
+
+  it("refuses without the passcode once one is configured", async () => {
+    await withPasscode("test-passcode", async () => {
+      expect((await SELF.fetch(`${BASE}/api/admin/overview`)).status).toBe(401);
+    });
+  });
+
+  it("moves the passcode out of the URL and into an HttpOnly cookie", async () => {
+    await withPasscode("test-passcode", async () => {
+      const res = await SELF.fetch(`${BASE}/admin?key=test-passcode`, { redirect: "manual" });
+      expect(res.status).toBe(302);
+      const cookie = res.headers.get("set-cookie") || "";
+      // 合言葉がURLに残ると、共有履歴や参照元ヘッダから漏れる
+      expect(res.headers.get("location")).not.toContain("key=");
+      expect(cookie).toContain("HttpOnly");
+      expect(cookie).toContain("Secure");
+    });
+  });
+
+  it("rejects a wrong passcode", async () => {
+    await withPasscode("test-passcode", async () => {
+      const res = await SELF.fetch(`${BASE}/admin?key=wrong`, { redirect: "manual" });
+      expect(res.status).toBe(401);
+    });
   });
 });
 
@@ -456,9 +505,37 @@ describe("法人からの問い合わせ（/api/contact）", () => {
     expect(row!.topic).toBe("other");
   });
 
-  it("is not readable without the admin passcode", async () => {
+  it("is not readable from outside the admin console", async () => {
     // 連絡先が入る表なので、管理画面と同じ扉の内側にあること
     const res = await SELF.fetch(`${BASE}/api/admin/contacts`);
-    expect(res.status).toBe(404);
+    expect([401, 404]).toContain(res.status);
+  });
+});
+
+describe("分身の復旧（運営による救済）", () => {
+  it("is only reachable from inside the admin console", async () => {
+    // 所有権を移せる操作なので、管理画面の扉の内側にしか無いこと
+    const res = await SELF.fetch(`${BASE}/api/admin/recovery/lookup?q=whatever`);
+    expect([401, 404]).toContain(res.status);
+    const issue = await post("/api/admin/recovery/issue", { characterId: "x", reason: "test" });
+    expect([401, 404]).toContain(issue.status);
+  });
+});
+
+describe("復旧の依頼（/api/contact kind=recovery）", () => {
+  it("goes into the same inbox as the business inquiries", async () => {
+    const contact = `recover-${crypto.randomUUID()}@example.com`;
+    const res = await post("/api/contact", {
+      kind: "recovery",
+      contact,
+      message: "機種変更で引き継ぎを忘れました",
+    });
+    expect(res.status).toBe(200);
+
+    const row = await env.DB.prepare("SELECT kind FROM contact_requests WHERE contact = ?")
+      .bind(contact)
+      .first<{ kind: string }>();
+    // 受け皿を分けると運営が2箇所を見ることになるので、同じ表に種別だけ分けて入れる
+    expect(row!.kind).toBe("recovery");
   });
 });

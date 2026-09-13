@@ -48,7 +48,9 @@ export async function handleContact(
   const rawMessage = typeof body.message === "string" ? body.message.trim() : "";
   const message = rawMessage.slice(0, MAX_MESSAGE);
   const topic = typeof body.topic === "string" && TOPICS.includes(body.topic) ? body.topic : "other";
-  const kind = body.kind === "other" ? "other" : "biz";
+  // recovery は /recover（分身の復旧の依頼）から届く。
+  // 受け皿を分けると運営が2箇所を見ることになり、取りこぼすので同じ表に入れる。
+  const kind = body.kind === "other" ? "other" : body.kind === "recovery" ? "recovery" : "biz";
 
   try {
     await env.DB.prepare(

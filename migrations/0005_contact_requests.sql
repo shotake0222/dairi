@@ -1,6 +1,6 @@
 -- 問い合わせの受付。
 --
--- 法人向けページ（/biz）の相談フォームと、将来の一般的な問い合わせ窓口で共用する。
+-- 法人向けページ（/biz）の相談フォームと、分身の復旧の依頼（/recover）で共用する。
 -- purchase_requests と分けているのは、あちらが「特定の出品に対する購入希望」であり、
 -- 出品IDに紐づく必要があるのに対し、こちらは出品と無関係なため。
 -- 無関係なものを同じ表に押し込むと、出品を消したときの扱いが曖昧になる。
@@ -10,7 +10,7 @@
 
 CREATE TABLE IF NOT EXISTS contact_requests (
   request_id TEXT PRIMARY KEY,
-  kind       TEXT NOT NULL DEFAULT 'biz',   -- biz | other
+  kind       TEXT NOT NULL DEFAULT 'biz',   -- biz | recovery | other
   company    TEXT,
   contact    TEXT NOT NULL,
   topic      TEXT,

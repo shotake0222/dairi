@@ -470,7 +470,9 @@ export class CharacterState extends DurableObject<Env> {
     const characterId = this.ctx.id.name ?? "unknown";
 
     const daysSinceLastVisit = (now - data.lastVisit) / (1000 * 60 * 60 * 24);
-    const signal = analyzeMessage(trimmed, daysSinceLastVisit);
+    // これまでによく聞いてきた語を渡す。「初めて出てきた話題か」を、
+    // 質問かどうかではなく実際の語で判定できるようになる（src/ai/signalExtractor.ts 参照）。
+    const signal = analyzeMessage(trimmed, daysSinceLastVisit, data.psychographics?.terms);
 
     // ここが「育て方で性格が変わる」の核。会話のたびに少しずつパラメータが動く。
     data.personality = updatePersonality(data.personality, signal);

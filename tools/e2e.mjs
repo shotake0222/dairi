@@ -330,7 +330,7 @@ console.log("\n[16] プライバシーポリシーの更新");
 const privacy2 = await (await fetch(`${BASE}/privacy`)).text();
 check("3つの同意が説明されている", privacy2.includes("あなたが選ぶ3つの同意"));
 check("統計に含まれないものが列挙されている", privacy2.includes("統計として提供されるもの"));
-check("運営が会話を読めないことが書かれている", privacy2.includes("運営からも見えない"));
+check("会話の中身が管理画面に出ないと書かれている", privacy2.includes("管理画面のどこにも表示されません"));
 
 console.log("\n[17] 利用規約・LP・法人向けページ");
 const termsHtml = await (await fetch(`${BASE}/terms`)).text();
@@ -383,6 +383,102 @@ const notesNoAuth = await fetch(`${BASE}/api/notes`, {
   body: JSON.stringify({ characterId: newCid, notes: "勝手に書き換える" }),
 });
 check("持ち主以外は覚え書きを書き換えられない", notesNoAuth.status === 403, String(notesNoAuth.status));
+
+console.log("\n[19] 復旧の窓口");
+const recoverHtml = await (await fetch(`${BASE}/recover`)).text();
+check("復旧の窓口が配信される", recoverHtml.includes("分身を取り戻す"));
+check("データが消えていないことを先に伝えている", recoverHtml.includes("消えていません"));
+check("引き継ぎコードを先に案内している", recoverHtml.includes("引き継ぎコードをお持ちなら"));
+
+await page.goto(`${BASE}/recover`, { waitUntil: "domcontentloaded" });
+await page.waitForTimeout(500);
+const recoverMail = `e2e-recover-${Date.now()}@example.com`;
+await page.fill("#tagId", "e2e-tag-unknown");
+await page.fill("#charName", "テストこ");
+await page.fill("#contact", recoverMail);
+await page.fill("#detail", "機種変更で引き継ぎを忘れました");
+await page.click("#submitBtn");
+await page.waitForTimeout(1200);
+check("復旧の依頼が受け付けられる", ((await page.textContent("#status")) || "").includes("受け付けました"));
+
+// 所有権を移せる操作なので、管理画面の外からは触れないこと
+const lookupClosed = await fetch(`${BASE}/api/admin/recovery/lookup?q=${newCid}`);
+check("復旧の検索は管理画面の中にしかない", lookupClosed.status === 404 || lookupClosed.status === 401);
+const issueClosed = await fetch(`${BASE}/api/admin/recovery/issue`, {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ characterId: newCid, reason: "勝手に発行" }),
+});
+check("復旧コードの発行も管理画面の中にしかない", issueClosed.status === 404 || issueClosed.status === 401);
+
+console.log("\n[20] 記述の正確さ");
+const privacy3 = await (await fetch(`${BASE}/privacy`)).text();
+check("復旧について書かれている", privacy3.includes("復旧"));
+// 「絶対に見られない」と書くのは事実に反する。管理画面に出さないこととは分けて書く
+check("運営が技術的にアクセスできることを認めている", privacy3.includes("技術的にはアクセスできる状態"));
+check("それでも復旧に会話を読む必要が無いと説明している", privacy3.includes("会話を読む必要はありません"));
+
+const terms2 = await (await fetch(`${BASE}/terms`)).text();
+check("規約でも復旧に応じると書いている", terms2.includes("分身の復旧について"));
+check("規約から「復旧できません」が消えている", !terms2.includes("復旧のご要望にはお応えできません"));
+
+const health2 = await (await fetch(`${BASE}/api/health`)).json();
+check("管理画面が有効かどうかが分かる", typeof health2.admin === "string", String(health2.admin));
+
+// 管理画面と復旧は「合言葉を設定したときだけ」動く経路なので、既定のE2Eでは入口が閉じていることまでしか見ていない。
+// 中の動作まで確かめたいときは、.dev.vars に ADMIN_PASSCODE を書いたうえで
+//   E2E_ADMIN_PASSCODE=<同じ値> npm run test:e2e
+// を実行する。所有権を移す操作を含むので、通しで動くことを一度は確認しておきたい。
+const adminPass = process.env.E2E_ADMIN_PASSCODE;
+if (adminPass) {
+  console.log("\n[21] 管理画面の中身（合言葉あり）");
+
+  const gate = await fetch(`${BASE}/admin?key=${encodeURIComponent(adminPass)}`, { redirect: "manual" });
+  check("合言葉で管理画面に入れる", gate.status === 302, String(gate.status));
+  const setCookie = gate.headers.get("set-cookie") || "";
+  check("合言葉はCookieへ移されURLから消える", setCookie.includes("waketama_admin") && setCookie.includes("HttpOnly"));
+  const cookie = setCookie.split(";")[0];
+
+  const overview = await (await fetch(`${BASE}/api/admin/overview`, { headers: { cookie } })).json();
+  check("概況が取得できる", typeof overview.totals?.characters === "number", JSON.stringify(overview).slice(0, 80));
+
+  const lookup = await (await fetch(`${BASE}/api/admin/recovery/lookup?q=${newCid}`, { headers: { cookie } })).json();
+  check("本人確認用の情報が引ける", Boolean(lookup.verification?.name), JSON.stringify(lookup).slice(0, 80));
+  // 復旧に会話は要らない。管理画面から中身が読めてしまわないこと
+  const lookupText = JSON.stringify(lookup);
+  check("会話の中身は返らない", !lookupText.includes("かざして話すのテストです") && !lookupText.includes("妹がいる"));
+
+  const noReason = await fetch(`${BASE}/api/admin/recovery/issue`, {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({ characterId: newCid }),
+  });
+  check("理由なしではコードを発行できない", noReason.status === 400, String(noReason.status));
+
+  const issuedRecovery = await (await fetch(`${BASE}/api/admin/recovery/issue`, {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({ characterId: newCid, reason: "名前と育て始めた時期が一致" }),
+  })).json();
+  check("運営が引き継ぎコードを発行できる", Boolean(issuedRecovery.code), JSON.stringify(issuedRecovery));
+
+  const recovered = await (await fetch(`${BASE}/api/character/transfer/claim`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ code: issuedRecovery.code }),
+  })).json();
+  check("そのコードで所有権が戻る", recovered.characterId === newCid && Boolean(recovered.ownerToken));
+
+  // 戻った所有権で、会話の履歴を含めた自分のデータが読めること（＝復旧が成立している）
+  const restored = await (await fetch(
+    `${BASE}/api/profile?cid=${newCid}&token=${encodeURIComponent(recovered.ownerToken)}`
+  )).json();
+  check("復旧後は本人が覚え書きを読める", typeof restored.notes === "string", JSON.stringify(restored).slice(0, 80));
+  const card = await (await fetch(
+    `${BASE}/api/persona/card?cid=${newCid}&token=${encodeURIComponent(recovered.ownerToken)}`
+  )).json();
+  check("会話の履歴も戻っている", (card.examples || []).length > 0 || (card.memories || []).length >= 0);
+}
 
 check("JavaScriptエラーが出ていない", pageErrors.length === 0, pageErrors.join(" / "));
 

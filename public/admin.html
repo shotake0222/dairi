@@ -46,6 +46,11 @@
   }
   .empty { color: #9a90c0; font-size: 12.5px; }
   .note { background: #fff6e0; border: 1px solid #f0dfae; color: #7a5c17; border-radius: 10px; padding: 10px 12px; font-size: 12px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .row input[type="text"] {
+    flex: 1; min-width: 220px; padding: 9px 12px; border-radius: 10px;
+    border: 1px solid var(--line); font-family: inherit; font-size: 13px;
+  }
   .tabs { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
   .tab { border-radius: 999px; }
   .tab.on { background: var(--brand); color: #fff; border-color: transparent; }
@@ -65,7 +70,8 @@
     <button class="tab on" data-panel="overview" type="button">概況</button>
     <button class="tab" data-panel="personas" type="button">人格データ</button>
     <button class="tab" data-panel="requests" type="button">購入希望</button>
-    <button class="tab" data-panel="contacts" type="button">法人問い合わせ</button>
+    <button class="tab" data-panel="contacts" type="button">問い合わせ</button>
+    <button class="tab" data-panel="recovery" type="button">分身の復旧</button>
   </div>
 
   <div class="panel" id="panel-overview">
@@ -114,6 +120,29 @@
       <h2>法人からの問い合わせ</h2>
       <p class="lead">/biz の相談フォームから届いたものです。</p>
       <div class="scroll"><table id="contactTable"></table></div>
+    </section>
+  </div>
+
+  <div class="panel" id="panel-recovery" hidden>
+    <section>
+      <h2>分身の復旧</h2>
+      <p class="lead">
+        持ち主トークンを失った方に、本人確認のうえで引き継ぎコードを発行します。
+        <strong>これは所有権を移す操作です。</strong>本人であることを確認してから実行してください。
+      </p>
+      <div class="row">
+        <input type="text" id="recoveryQuery" placeholder="NFCタグのID、または分身のID" />
+        <button id="recoveryLookupBtn" type="button">探す</button>
+      </div>
+      <div id="recoveryResult" style="margin-top:14px"></div>
+    </section>
+    <section>
+      <h2>確認のしかた</h2>
+      <p class="lead" style="margin:0">
+        下に出るのは、<strong>本人なら答えられるが、会話の中身ではない</strong>情報だけです。
+        「分身の名前」「育て始めたのはいつ頃か」「どんな見た目か」を先方に尋ね、一致するか確かめてください。
+        会話の本文・記憶・覚え書きは、この画面には表示されません（復旧に必要ないためです）。
+      </p>
     </section>
   </div>
 
@@ -317,6 +346,86 @@
     });
   }
 
+  // ---- 分身の復旧 ----
+  const recoveryResult = document.getElementById("recoveryResult");
+
+  function recoveryRow(label, value) {
+    const row = el("div");
+    row.style.cssText = "display:grid;grid-template-columns:9em 1fr;gap:10px;font-size:13px;padding:4px 0";
+    row.appendChild(el("span", label, { style: "color:var(--muted)" }));
+    row.appendChild(el("span", value));
+    return row;
+  }
+
+  async function lookupRecovery() {
+    const q = document.getElementById("recoveryQuery").value.trim();
+    if (!q) return;
+    recoveryResult.innerHTML = "";
+    recoveryResult.appendChild(el("div", "探しています…", { class: "empty" }));
+    try {
+      const data = await api(`/api/admin/recovery/lookup?q=${encodeURIComponent(q)}`);
+      const v = data.verification;
+      recoveryResult.innerHTML = "";
+
+      const box = el("div");
+      box.style.cssText = "border:1px solid var(--line);border-radius:12px;padding:14px";
+      box.appendChild(el("h3", "本人確認に使う情報", { style: "margin:0 0 8px;font-size:13.5px" }));
+      box.appendChild(recoveryRow("分身の名前", v.name));
+      box.appendChild(recoveryRow("見た目", `${v.species} / ${v.color}`));
+      box.appendChild(recoveryRow("成長段階", v.growthStage));
+      box.appendChild(recoveryRow("会話の回数", `${v.interactionCount} 回`));
+      box.appendChild(recoveryRow("育て始めた日", new Date(v.createdAt).toLocaleDateString("ja-JP")));
+      box.appendChild(recoveryRow("最後に話した日", new Date(v.lastVisit).toLocaleDateString("ja-JP")));
+      box.appendChild(recoveryRow("覚え書き", `${v.noteLines} 行（中身は表示しません）`));
+      box.appendChild(recoveryRow("タグ", (data.tags || []).map((t) => t.tagId).join(", ") || "なし"));
+      recoveryResult.appendChild(box);
+
+      const issueBox = el("div");
+      issueBox.style.cssText = "margin-top:14px";
+      issueBox.appendChild(el("div", "確認できたら、理由を書いてコードを発行してください。", { class: "lead" }));
+      const reason = el("input");
+      reason.type = "text";
+      reason.placeholder = "例: 名前と育て始めた時期が一致。機種変更で引き継ぎ忘れとのこと";
+      reason.style.cssText = "width:100%;padding:9px 12px;border-radius:10px;border:1px solid var(--line);font-family:inherit;font-size:13px";
+      issueBox.appendChild(reason);
+
+      const issueBtn = el("button", "引き継ぎコードを発行する");
+      issueBtn.style.cssText = "margin-top:10px";
+      const issued = el("div");
+      issued.style.cssText = "margin-top:12px;font-size:13px";
+      issueBtn.addEventListener("click", async () => {
+        issueBtn.disabled = true;
+        try {
+          const res = await api("/api/admin/recovery/issue", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ characterId: data.characterId, reason: reason.value }),
+          });
+          issued.innerHTML = "";
+          const code = el("div", res.code);
+          code.style.cssText = "font-size:24px;font-weight:800;letter-spacing:.14em;font-family:ui-monospace,monospace;color:var(--brand)";
+          issued.appendChild(code);
+          issued.appendChild(el("div", `「${res.name}」のコード。30分で失効し、1回使うと無効になります。`, { class: "lead" }));
+        } catch (e) {
+          issued.textContent = e.message;
+        } finally {
+          issueBtn.disabled = false;
+        }
+      });
+      issueBox.appendChild(issueBtn);
+      issueBox.appendChild(issued);
+      recoveryResult.appendChild(issueBox);
+    } catch (e) {
+      recoveryResult.innerHTML = "";
+      recoveryResult.appendChild(el("div", e.message, { class: "empty" }));
+    }
+  }
+
+  document.getElementById("recoveryLookupBtn").addEventListener("click", lookupRecovery);
+  document.getElementById("recoveryQuery").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") lookupRecovery();
+  });
+
   const TOPIC_LABELS = {
     format: "フォーマット利用", data: "人格データ提供", insights: "統計提供",
     poc: "実機検証・共同開発", other: "その他",
@@ -324,9 +433,11 @@
 
   async function loadContacts() {
     const data = await api("/api/admin/contacts?limit=100");
-    table("contactTable", ["日時", "会社", "連絡先", "関心", "内容", "状態", ""], data.contacts, (r) => {
+    const KIND_LABELS = { biz: "法人相談", recovery: "分身の復旧", other: "その他" };
+    table("contactTable", ["日時", "種別", "会社", "連絡先", "関心", "内容", "状態", ""], data.contacts, (r) => {
       const tr = el("tr");
       tr.appendChild(el("td", new Date(r.created_at).toLocaleString("ja-JP")));
+      tr.appendChild(el("td", KIND_LABELS[r.kind] || r.kind));
       tr.appendChild(el("td", r.company || "-"));
       tr.appendChild(el("td", r.contact));
       tr.appendChild(el("td", TOPIC_LABELS[r.topic] || r.topic || "-"));

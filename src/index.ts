@@ -27,6 +27,7 @@ import {
 } from "./market";
 import { handleIme } from "./ime";
 import { handleContact, handleAdminContacts } from "./contact";
+import { handleRecoveryLookup, handleRecoveryIssue } from "./recovery";
 import { countMetric } from "./persona/registry";
 import { LogContext, newRequestId } from "./lib/log";
 
@@ -117,6 +118,13 @@ export default {
     }
     if (url.pathname === "/api/admin/contacts") {
       return handleAdminContacts(env, request, url);
+    }
+    // 復旧（持ち主トークンを失った人の救済）。所有権を移せる操作なので管理画面の中にだけ置く。
+    if (url.pathname === "/api/admin/recovery/lookup" && request.method === "GET") {
+      return handleRecoveryLookup(env, url, log);
+    }
+    if (url.pathname === "/api/admin/recovery/issue" && request.method === "POST") {
+      return handleRecoveryIssue(env, await request.json(), log);
     }
 
     // --- 属性・同意・アクセシビリティ（すべて持ち主トークンで保護） ---

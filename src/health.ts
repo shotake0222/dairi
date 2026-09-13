@@ -29,6 +29,7 @@ interface HealthEnv {
   APP_VERSION?: string;
   BUILT_AT?: string;
   CHAT_MODEL?: string;
+  ADMIN_PASSCODE?: string;
 }
 
 async function timed(fn: () => Promise<string | undefined>): Promise<CheckResult> {
@@ -87,6 +88,11 @@ export async function handleHealth(env: HealthEnv, url: URL, log: LogContext): P
     version: env.APP_VERSION || "dev",
     builtAt: env.BUILT_AT || null,
     checkedAt: new Date().toISOString(),
+    // 管理画面が使える状態かどうか。合言葉が未設定だと /admin は 404 を返すが、
+    // 404 だけ見ても「設定できていない」のか「そんなURLは無い」のか区別がつかない。
+    // secret の設定でつまずいたときに、ここを見れば一目で分かるようにしておく。
+    // 値そのものは当然出さない。設定されているか否かだけ。
+    admin: env.ADMIN_PASSCODE ? "enabled" : "disabled (ADMIN_PASSCODE 未設定)",
     checks: { d1, vectorize, ai, chat },
   };
 

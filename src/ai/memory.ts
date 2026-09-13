@@ -184,26 +184,59 @@ export async function importMemories(env: MemoryEnv, characterId: string, memori
 /**
  * そのキャラクターの長期記憶をVectorizeから全件削除する（「分身を削除する」機能の一部）。
  *
- * exportAllMemories同様、Vectorizeには「characterIdで全件削除」の直接APIが無いため、
- * まずcharacterIdでフィルタしたクエリでヒットしたベクトルのidを集め、deleteByIdsへ渡す
- * 二段構成にしている。1回のqueryで拾いきれない件数（topKの上限）が残っている可能性はあるが、
- * 「消し忘れが少し残る」ことよりも「削除操作自体が失敗して全体が止まる」ことを避ける設計とし、
- * 個々の失敗は握りつぶして呼び出し元（deleteData）の完了を優先する。
+ * Vectorizeには「characterIdで全件削除」の直接APIが無いため、
+ * characterIdでフィルタしたクエリでidを集め、deleteByIdsへ渡す二段構成になる。
+ *
+ * **1回のクエリで済ませてはいけない。**
+ * 以前はtopK=200のクエリを1回だけ実行していたため、記憶が200件を超えた分身では
+ * 消し残りが出ていた。「削除しました」と言いながら会話の記録が残るのは、
+ * 消し忘れというより約束違反なので、無くなるまで繰り返す。
+ *
+ * 同じベクトルで引き直すと、消した分だけ次の候補が繰り上がってくるので、
+ * 「引いて消す」を空になるまで回せばよい。無限に回らないよう上限も設けてある。
  */
-export async function deleteAllMemories(env: MemoryEnv, characterId: string, limit = 200): Promise<void> {
-  const vector = await embedText(env, `sodatsukake-memory-export:${characterId}`);
-  if (!vector) return;
+const DELETE_BATCH_SIZE = 200;
+const MAX_DELETE_ROUNDS = 25; // 200件 × 25回 = 5000件まで消し切れる
 
-  try {
-    const result = await env.MEMORY_INDEX.query(vector, {
-      topK: limit,
-      filter: { characterId },
-    });
-    const ids = result.matches.map((m) => m.id).filter((id): id is string => Boolean(id));
-    if (ids.length > 0) {
-      await env.MEMORY_INDEX.deleteByIds(ids);
-    }
-  } catch (err) {
-    // Vectorize側の削除失敗は致命的ではない（DO本体のデータ削除は別途進む）
+export async function deleteAllMemories(
+  env: MemoryEnv,
+  characterId: string,
+  batchSize = DELETE_BATCH_SIZE
+): Promise<{ deleted: number; exhausted: boolean }> {
+  const vector = await embedText(env, `sodatsukake-memory-export:${characterId}`);
+  if (!vector) {
+    // 埋め込みが取れないと検索できない＝1件も消せない。黙って成功扱いにしない。
+    logDetachedWarn("memory.delete_skipped_no_vector", { characterId });
+    return { deleted: 0, exhausted: false };
   }
+
+  let deleted = 0;
+  for (let round = 0; round < MAX_DELETE_ROUNDS; round++) {
+    let ids: string[] = [];
+    try {
+      const result = await env.MEMORY_INDEX.query(vector, { topK: batchSize, filter: { characterId } });
+      ids = result.matches.map((m) => m.id).filter((id): id is string => Boolean(id));
+    } catch (err) {
+      // 検索できなければ、この先も消せない。DO本体の削除は別途進むので、ここで止めて記録だけ残す。
+      logDetachedError("memory.delete_query_failed", err, { characterId, deleted });
+      return { deleted, exhausted: false };
+    }
+
+    if (ids.length === 0) return { deleted, exhausted: true };
+
+    try {
+      await env.MEMORY_INDEX.deleteByIds(ids);
+      deleted += ids.length;
+    } catch (err) {
+      logDetachedError("memory.delete_failed", err, { characterId, deleted });
+      return { deleted, exhausted: false };
+    }
+
+    // 取れた件数が上限に満たなければ、もう残っていない
+    if (ids.length < batchSize) return { deleted, exhausted: true };
+  }
+
+  // 上限まで回しても終わらなかった。件数が想定を超えているので、気づけるように残す。
+  logDetachedWarn("memory.delete_incomplete", { characterId, deleted, rounds: MAX_DELETE_ROUNDS });
+  return { deleted, exhausted: false };
 }
