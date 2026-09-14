@@ -351,6 +351,12 @@ check("法人向けページが配信される", bizHtml.includes("小さなモ�
 check("SLM・エッジ向けの訴求が入っている", bizHtml.includes("フィジカルAI") && bizHtml.includes("メタバース"));
 check("マスキング済みデータの説明が入っている", bizHtml.includes("マスキング済み"));
 check("人格カードの書き出し形式が示されている", bizHtml.includes("modelfile"));
+// 検査結果を訴求に使っている以上、数字と検査コードは必ずセットで出ていること
+check("品質を測っていることが書かれている", bizHtml.includes("測っています"));
+check("到達率の実測値が出ている", bizHtml.includes("到達率") && bizHtml.includes("100%"));
+check("検査を再現できると書いてある", bizHtml.includes("persona:check"));
+check("LLM無しで振る舞いが分かれる例が出ている", bizHtml.includes("policy[].code"));
+check("確かめていないことも書いてある", bizHtml.includes("モデル次第です"));
 
 await page.goto(`${BASE}/biz`, { waitUntil: "domcontentloaded" });
 await page.waitForTimeout(600);

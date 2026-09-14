@@ -84,6 +84,8 @@
   .cta.ghost { background: transparent; border: 1px solid var(--line); color: var(--ink); }
 
   section { padding: 46px 0; border-top: 1px solid var(--line); }
+  /* ヘッダーが追従するので、ページ内リンクで飛ぶと見出しがその下に隠れる */
+  section[id] { scroll-margin-top: 64px; }
   section h2 { font-size: 21px; margin: 0 0 8px; letter-spacing: -0.01em; }
   section .lead { color: var(--muted); font-size: 14px; margin: 0 0 24px; }
 
@@ -294,6 +296,7 @@
             <li>その子固有の声（高さ・速さ）</li>
             <li><strong>身体のパラメータ</strong>（動きの大きさ・間の取り方・目線・対人距離）</li>
             <li><strong>言語に依存しない振る舞いの識別子</strong>（LLMを常時呼べない機器でも分岐できます）</li>
+            <li>本人が申告した値と、会話からの推定の<strong>区別</strong>（確からしさを受け取り側で判断できます）</li>
           </ul>
           <p>
             人格の多くは、言葉ではなく<strong>間・距離・目線</strong>に出ます。
@@ -423,6 +426,62 @@ ollama run    waketama-persona</pre>
   </div>
 </section>
 
+<section id="quality">
+  <div class="wrap">
+    <h2>「渡した気になっている」を、毎回測っています</h2>
+    <p class="lead">
+      人格データでいちばん起きやすい事故は、<strong>集めた情報が載せ先に届いていないこと</strong>です。
+      データベースには入っているのに、実際に渡すシステムプロンプトには出ていない——
+      受け取った側からは、単に「特徴の薄い人格」に見えます。
+    </p>
+
+    <div class="thesis">
+      <div class="big">自社の検査で見つけて、直しました。<em>到達率 48% → 100%</em></div>
+      <p>
+        正反対の回答をした2体を作り、書き出した人格カードを測ったところ、
+        集めた価値観8軸が<strong>システムプロンプトに1文字も入っていませんでした</strong>。
+        以下は、その検査（リポジトリに同梱・<code>npm run persona:check</code>）の実測値です。
+      </p>
+    </div>
+
+    <div class="scroll"><table>
+      <tr><th style="width:44%">指標</th><th>発見時</th><th>現在</th></tr>
+      <tr><td><strong>到達率</strong>（カードの情報がプロンプトに現れる割合）</td><td>55% / 48%</td><td><strong>100% / 100%</strong></td></tr>
+      <tr><td>価値観8軸がプロンプトに現れた割合</td><td>0%</td><td><strong>100%</strong></td></tr>
+      <tr><td>属性の到達</td><td>11項目中 2〜3</td><td><strong>11項目中 11</strong></td></tr>
+      <tr><td>身体のパラメータ（動き・間・距離）</td><td>なし</td><td><strong>あり</strong></td></tr>
+      <tr><td>応答例の健全性</td><td>5組すべてが生成失敗時の定型文</td><td><strong>0件</strong></td></tr>
+      <tr><td>2体の識別性（プロンプトの差／価値観の距離）</td><td>—</td><td><strong>61% ／ 52.9</strong></td></tr>
+    </table></div>
+
+    <p class="lead" style="margin:18px 0 10px">
+      応答例の件は、実害が分かりやすい例です。生成に失敗したときの定型文が口調の手本として
+      書き出されており、<strong>載せ先のモデルはそれを真似ます</strong>。受け取った側には
+      「そういう喋り方の人格」に見えてしまう。データの見た目は正常なので、測らなければ気づけません。
+    </p>
+
+    <h3 style="font-size:15.5px;margin:26px 0 6px">LLMを1回も呼ばずに、振る舞いが分かれます</h3>
+    <p class="lead">
+      人格の多くは言葉ではなく<strong>間・距離・目線</strong>に出ます。
+      価値観から導いた <code>policy[].code</code>（固定の識別子）だけで分岐した結果です。
+      日本語も、モデルも要りません。
+    </p>
+    <div class="scroll"><table>
+      <tr><th style="width:30%">場面</th><th>刺激・自律が高い人格</th><th>安定・思いやりが高い人格</th></tr>
+      <tr><td>相手が黙って10秒経った</td><td>458ms待ってから、自分から話しかける</td><td>話しかけず、視線だけ向けて待つ</td></tr>
+      <tr><td>出かけ先を2つ提案する</td><td>行ったことのない場所を先に出す</td><td>いつもの場所を先に出す</td></tr>
+      <tr><td>相手がため息をついた</td><td>距離を保ったまま、聞かれるまで待つ</td><td>1.4mまで近づいて、先に声をかける</td></tr>
+      <tr><td>予定が急に変わった</td><td>そのまま新しい予定に合わせる</td><td>変更内容を復唱して確認する</td></tr>
+    </table></div>
+
+    <p class="lead" style="margin:18px 0 0">
+      この検査はリポジトリに同梱しており、<strong>お渡しするデータには毎回これを通します</strong>。
+      指標の定義も検査コードも開示しますので、<strong>御社の環境で同じ数字を再現できます</strong>
+      （実際のLLMに載せた応答の確認も、エンドポイントを指定すれば同じスクリプトで回ります）。
+    </p>
+  </div>
+</section>
+
 <section>
   <div class="wrap">
     <h2>正直に書いておくこと</h2>
@@ -438,6 +497,10 @@ ollama run    waketama-persona</pre>
       <ul>
         <li><strong>データの母数はこれから積み上げる段階です。</strong>大規模な統計として使える水準にはまだありません</li>
         <li>オンデバイスでの動作は、載せ先のモデルと機器に依存します。実機での検証を一緒に行う前提でお考えください</li>
+        <li><strong>実際のLLMに載せたときの応答品質は、モデル次第です。</strong>こちらで保証できるのは
+          「人格データが漏れなく届いていること」までで、その先は同梱の検査を御社の環境で回して確かめてください</li>
+        <li>身体のパラメータ（動き・距離・目線）の数値は、<strong>実機を見ながら調整する前提の初期値</strong>です。
+          ロボットやアバターの体格・可動域に合わせた調整は、共同で行う想定です</li>
         <li>本サービス上での決済機能は提供していません。個別のご相談として対応しています</li>
       </ul>
     </div>
