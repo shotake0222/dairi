@@ -292,7 +292,27 @@
             <li>記憶（<strong>埋め込みベクトルではなく平文</strong>。埋め込みモデルに縛られません）</li>
             <li>実会話から抜いた応答例（口調の移植には、説明よりこれが効きます）</li>
             <li>その子固有の声（高さ・速さ）</li>
+            <li><strong>身体のパラメータ</strong>（動きの大きさ・間の取り方・目線・対人距離）</li>
+            <li><strong>言語に依存しない振る舞いの識別子</strong>（LLMを常時呼べない機器でも分岐できます）</li>
           </ul>
+          <p>
+            人格の多くは、言葉ではなく<strong>間・距離・目線</strong>に出ます。
+            そこを数値で渡せないと、身体を持たせた瞬間に別人になります。
+            人格カードには、性格と価値観から導いたこれらのパラメータが入っています。
+          </p>
+          <pre><span class="c">// runtime.avatar — 身体を持たせるための層</span>
+{
+  "motion": { "energy": 77, "gestureRate": 73, <span class="k">"responseDelayMs"</span>: 458, "gazeHoldMs": 1212 },
+  "proxemics": { <span class="k">"comfortableDistanceM"</span>: 1.2, "approachSpeedMps": 0.65 },
+  "policy": [
+    { "axis": "stimulation", "code": <span class="k">"prefer_novel_options"</span>,
+      "behavior": "提案するときは、定番より先に、やったことがない選択肢を出す" }
+  ]
+}</pre>
+          <p>
+            <code>code</code> は固定の識別子なので、<strong>日本語を解さない制御系でもそのまま分岐に使えます</strong>。
+            同じ人格データで、LLMを積んだ端末では会話が、積めない端末では動きと判断が変わります。
+          </p>
           <pre><span class="c"># 書き出し（4形式）</span>
 GET /api/persona/card?format=<span class="k">json</span>       <span class="c"># 自前実装に組み込む</span>
 GET /api/persona/card?format=<span class="k">prompt</span>     <span class="c"># system に入れるだけ</span>

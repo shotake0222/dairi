@@ -19,9 +19,10 @@
  */
 
 import { PersonalityTraits, describePersonality } from "../ai/personality";
+import { AvatarProfile, deriveAvatarProfile } from "./avatarProfile";
 import { deriveSpeechStyle } from "../ai/speechStyle";
 import { deriveVoiceProfile, VoiceProfile } from "../ai/voiceProfile";
-import { Psychographics, describeValues, topInterests } from "../analysis/psychographics";
+import { Psychographics, VALUE_LABELS as VALUE_LABEL_BY_AXIS, topInterests } from "../analysis/psychographics";
 import { SegmentResult } from "../analysis/segments";
 import { ProfileAnswers, describeProfile } from "./profile";
 import { AccessibilityPrefs } from "./accessibility";
@@ -61,6 +62,12 @@ export interface PersonaCard {
   /** 人物像（本人＝育てた人の側の情報）。同意が無ければ空になる */
   owner: {
     values: Record<string, number>;
+    /**
+     * そのうち、**本人が設問に答えて申告した**軸。
+     * 会話からの推定と混ぜて渡すと、受け取った側が確からしさを判断できない。
+     * 買い手にとっては、ここが埋まっている割合がそのままデータの質になる。
+     */
+    declaredValues: Record<string, number>;
     interests: string[];
     segment: { id: string; label: string; confidence: number } | null;
     profile: ProfileAnswers;
@@ -81,6 +88,12 @@ export interface PersonaCard {
     recommendedContextTokens: number;
     /** 音声で喋らせる場合の指定 */
     speech: { language: "ja-JP"; pitch: number; rate: number };
+    /**
+     * 身体を持たせるときのパラメータ（メタバースのアバター・ロボット）。
+     * 言葉を介さずに使えるので、LLMを常時呼べない機器でもこの子らしく動かせる。
+     * 導出は src/persona/avatarProfile.ts。
+     */
+    avatar: AvatarProfile;
   };
 
   /** 本人の手元に戻すときのため。販売・集約の対象には含めない */
@@ -108,6 +121,24 @@ export interface BuildPersonaCardInput {
 }
 
 /** 直近のやり取りから、往復になっている組だけを取り出して応答例にする。 */
+/**
+ * AIが応答できなかったときの定型文。
+ *
+ * これを応答例として持ち出すと、載せ先のモデルが**この言い回しを口調として真似る**。
+ * 「うまく考えがまとまらない」と言い続ける分身ができあがるので、例からは必ず外す。
+ * （検証で実際に、5組すべてがこの文言で埋まったカードが書き出された）
+ */
+const FALLBACK_REPLY_MARKERS = [
+  "うまく考えがまとまらない",
+  "少し時間をおいて",
+  "うまく通信できなかった",
+  "調子がわるいみたい",
+];
+
+function isFallbackReply(text: string): boolean {
+  return FALLBACK_REPLY_MARKERS.some((marker) => text.includes(marker));
+}
+
 export function extractExamples(
   turns: Array<{ role: "user" | "character"; text: string }>,
   limit = 6
@@ -118,6 +149,10 @@ export function extractExamples(
     const user = turns[i].text.trim();
     const assistant = turns[i + 1].text.trim();
     if (!user || !assistant) continue;
+    if (isFallbackReply(assistant)) {
+      i++; // 失敗した組は例にしない（使った組として飛ばす）
+      continue;
+    }
     examples.push({ user, assistant });
     i++; // 使った組は飛ばす
   }
@@ -151,10 +186,36 @@ ${describePersonality(card.personality)}
     blocks.push(`# 相手について覚えていること\n${card.notes.map((n) => (n.startsWith("・") ? n : `・${n}`)).join("\n")}`);
   }
 
+  // --- 相手（育てた人）のこと ---
+  //
+  // ここが抜けていると、集めた属性も価値観もカードのJSONの中で死ぬ。
+  // 大半の載せ先は systemPrompt しか読まないので、**プロンプトに載っていない情報は存在しない**のと同じ。
+  // 実際、検証を書くまで価値観8軸は1文字もプロンプトに入っていなかった。
   const ownerLines: string[] = [];
-  if (card.owner.interests.length > 0) ownerLines.push(`関心のある話題: ${card.owner.interests.join("、")}`);
-  if (card.owner.segment) ownerLines.push(`人物像の傾向: ${card.owner.segment.label}`);
-  if (ownerLines.length > 0) blocks.push(`# 相手の傾向\n${ownerLines.join("\n")}`);
+  const profileText = describeProfile(card.owner.profile);
+  if (profileText) ownerLines.push(profileText);
+  if (card.owner.interests.length > 0) ownerLines.push(`・関心のある話題: ${card.owner.interests.join("、")}`);
+  if (card.owner.segment) ownerLines.push(`・人物像の傾向: ${card.owner.segment.label}`);
+  if (ownerLines.length > 0) {
+    blocks.push(`# 相手（この分身を育てた人）について\n${ownerLines.join("\n")}`);
+  }
+
+  // --- 価値観 ---
+  //
+  // 数値をそのまま渡してもモデルは使えない（「刺激: 82」と書いても振る舞いは変わらない）。
+  // **行動の指示に翻訳してから**渡す。翻訳表は src/persona/avatarProfile.ts にあり、
+  // 言葉を使わない機器（ロボット）へ渡す識別子と同じものを共有している。
+  const policies = card.runtime.avatar?.policy ?? [];
+  if (policies.length > 0) {
+    const valueLines = policies
+      .map((p) => {
+        const score = Math.round(card.owner.values[p.axis] ?? 50);
+        const declared = card.owner.declaredValues?.[p.axis] !== undefined ? "本人の申告" : "会話からの推定";
+        return `・${VALUE_LABEL_BY_AXIS[p.axis] ?? p.axis}（${score} / ${declared}）→ ${p.behavior}`;
+      })
+      .join("\n");
+    blocks.push(`# 相手が大事にしていること（この方針で振る舞ってください）\n${valueLines}`);
+  }
 
   if (card.memories.length > 0) {
     const recent = card.memories.slice(-20);
@@ -248,13 +309,14 @@ export function buildPersonaCard(input: BuildPersonaCardInput): PersonaCard {
     owner: input.includeOwnerProfile
       ? {
           values: input.psychographics.values,
+          declaredValues: input.psychographics.selfReported ?? {},
           interests: topInterests(input.psychographics, 6),
           segment: input.segment
             ? { id: input.segment.id, label: input.segment.label, confidence: input.segment.confidence }
             : null,
           profile: input.profileAnswers,
         }
-      : { values: {}, interests: [], segment: null, profile: {} },
+      : { values: {}, declaredValues: {}, interests: [], segment: null, profile: {} },
     notes,
     memories,
     examples,
@@ -264,6 +326,11 @@ export function buildPersonaCard(input: BuildPersonaCardInput): PersonaCard {
       // 記憶と例を積んだうえで会話ができる程度。載せ先が小さいモデルでも現実的な値にしてある
       recommendedContextTokens: 8192,
       speech: { language: "ja-JP", pitch: voice.pitch, rate: voice.rate },
+      // 同意が無いときは人物像を渡さないので、価値観の効いていない身体になる（性格だけで動く）
+      avatar: deriveAvatarProfile(
+        input.personality,
+        input.includeOwnerProfile ? input.psychographics.values : {}
+      ),
     },
     accessibility: input.accessibility,
   };

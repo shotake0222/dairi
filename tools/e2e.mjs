@@ -621,6 +621,36 @@ for (const [pathname, label] of [["/summon", "召喚"], ["/market", "マーケ�
   check(`${label}に行き止まりの出口がある`, hasExit === true);
 }
 
+console.log("\n[25] 人格カードが載せ先で動く形になっているか");
+{
+  // 詳しい検査は tools/persona-runtime-check.mjs（対照になる2体で測る）。
+  // ここでは「実際に育てた分身から書き出したカード」が、最低限の形を満たすかだけ見る。
+  // 価値観を1問答えておく（答えていない分身は、価値観が全部50なので方針が出ない＝正しい挙動）
+  await fetch(`${BASE}/api/survey/answer`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ characterId: newCid, token: currentToken, id: "psy_stimulation", values: ["絶対はじめての店"] }),
+  });
+
+  const card = await (await fetch(
+    `${BASE}/api/persona/card?cid=${newCid}&token=${encodeURIComponent(currentToken)}&format=json`
+  )).json();
+
+  check("身体の動きのパラメータが入っている", typeof card.runtime?.avatar?.motion?.energy === "number");
+  check("対人距離が入っている", typeof card.runtime?.avatar?.proxemics?.comfortableDistanceM === "number");
+  check("機械が分岐できる識別子が付いている",
+    (card.runtime?.avatar?.policy || []).every((p) => /^[a-z_]+$/.test(p.code)));
+  check("本人が申告した価値観と、推定を区別している", typeof card.owner?.declaredValues === "object");
+
+  const prompt = card.runtime?.systemPrompt || "";
+  // 属性に同意して答えている分身なので、プロンプトに人物像が載っていること
+  check("属性がプロンプトに載っている", prompt.includes("相手（この分身を育てた人）について"), prompt.slice(0, 60));
+  check("価値観が行動の指示として載っている", prompt.includes("大事にしていること"));
+  check("年収はプロンプトに載らない", !/年収|万円/.test(prompt));
+  check("AI失敗時の定型文が応答例に混ざっていない",
+    (card.examples || []).every((e) => !e.assistant.includes("うまく考えがまとまらない")));
+}
+
 check("JavaScriptエラーが出ていない", pageErrors.length === 0, pageErrors.join(" / "));
 
 await browser.close();
