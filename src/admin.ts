@@ -19,6 +19,13 @@ import { SEGMENTS, segmentById } from "./analysis/segments";
 import { VALUE_AXES, VALUE_LABELS } from "./analysis/psychographics";
 import { todayKey } from "./persona/registry";
 import { LogContext, logInfo, logWarn } from "./lib/log";
+import {
+  builtinCatalog,
+  deleteQuestion,
+  listQuestionRows,
+  QuestionInput,
+  saveQuestion,
+} from "./persona/questionStore";
 
 export interface AdminEnv {
   DB: D1Database;
@@ -222,13 +229,13 @@ export async function handleAdminPersonas(env: AdminEnv, url: URL): Promise<Resp
     ? env.DB.prepare(
         `SELECT character_id, updated_at, growth_stage, interaction_count, segment_id, segment_confidence,
                 age_band, gender, region, occupation, profile_completion, top_interests,
-                consent_aggregate, consent_marketplace
+                consent_aggregate, consent_marketplace, depth_score, psycho_answered
          FROM persona_registry WHERE segment_id = ?1 ORDER BY updated_at DESC LIMIT ?2`
       ).bind(segment, limit)
     : env.DB.prepare(
         `SELECT character_id, updated_at, growth_stage, interaction_count, segment_id, segment_confidence,
                 age_band, gender, region, occupation, profile_completion, top_interests,
-                consent_aggregate, consent_marketplace
+                consent_aggregate, consent_marketplace, depth_score, psycho_answered
          FROM persona_registry ORDER BY updated_at DESC LIMIT ?1`
       ).bind(limit);
 
@@ -259,4 +266,99 @@ export async function handleAdminRequests(env: AdminEnv, request: Request, url: 
     .bind(limit)
     .all();
   return json({ requests: rows.results ?? [] });
+}
+
+/**
+ * 設問の一覧・編集。
+ *
+ * 組み込みの設問（コード側）とDBの上書きを、同じ一覧に混ぜて返す。
+ * `source` で区別できるようにしてあるのは、
+ * 「これはコードに書いてある既定か、運営が変えたものか」が分からないと、
+ * 直したつもりが既定に戻る／戻したつもりが上書きのまま、という混乱が必ず起きるため。
+ *
+ * 取り消し（DELETE相当）は削除ではなく**既定へ復帰**。組み込みの設問は消せない。
+ * 出したくない設問は enabled=false にする（消すと、次の版で復活したときに気づけない）。
+ */
+export async function handleAdminQuestions(env: AdminEnv, request: Request): Promise<Response> {
+  if (request.method === "POST") {
+    const body = await request.json<Record<string, unknown>>().catch(() => ({}) as Record<string, unknown>);
+
+    if (body.action === "delete") {
+      const id = typeof body.id === "string" ? body.id : "";
+      if (!id) return json({ error: "id is required" }, 400);
+      await deleteQuestion(env, id);
+      return json({ ok: true });
+    }
+
+    const result = await saveQuestion(env, body as QuestionInput);
+    if (!result.ok) return json({ error: result.error }, 400);
+    return json({ ok: true });
+  }
+
+  const rows = await listQuestionRows(env);
+  const overrides = new Map(rows.map((r) => [r.id, r]));
+  const builtin = builtinCatalog();
+
+  const demographic = builtin.groups.flatMap((g) =>
+    g.fields.map((f) => {
+      const row = overrides.get(f.key);
+      return {
+        id: f.key,
+        kind: "demographic" as const,
+        groupKey: g.key,
+        groupTitle: g.title,
+        label: row?.label ?? f.label,
+        why: row?.why ?? f.why,
+        type: row?.type ?? f.type,
+        options: row ? JSON.parse(row.options) : f.options,
+        askAfter: row?.ask_after ?? f.askAfter,
+        maxSelections: row?.max_selections ?? f.maxSelections ?? null,
+        enabled: row ? Boolean(row.enabled) : true,
+        source: row ? "override" : "builtin",
+      };
+    })
+  );
+
+  const psychographic = builtin.psycho.map((q) => {
+    const row = overrides.get(q.id);
+    return {
+      id: q.id,
+      kind: "psychographic" as const,
+      groupKey: "values",
+      groupTitle: "価値観",
+      axis: row?.axis ?? q.axis,
+      label: row?.label ?? q.label,
+      why: row?.why ?? q.why,
+      type: "single" as const,
+      options: row ? JSON.parse(row.options) : q.options,
+      askAfter: row?.ask_after ?? q.askAfter,
+      enabled: row ? Boolean(row.enabled) : true,
+      source: row ? "override" : "builtin",
+    };
+  });
+
+  const builtinIds = new Set([...demographic.map((d) => d.id), ...psychographic.map((p) => p.id)]);
+  const custom = rows
+    .filter((r) => !builtinIds.has(r.id))
+    .map((r) => ({
+      id: r.id,
+      kind: r.kind,
+      groupKey: r.group_key,
+      groupTitle: r.kind === "psychographic" ? "価値観" : r.group_key,
+      axis: r.axis ?? undefined,
+      label: r.label,
+      why: r.why,
+      type: r.type,
+      options: JSON.parse(r.options),
+      askAfter: r.ask_after,
+      maxSelections: r.max_selections,
+      enabled: Boolean(r.enabled),
+      source: "custom" as const,
+    }));
+
+  return json({
+    questions: [...demographic, ...psychographic, ...custom],
+    axes: VALUE_AXES.map((a) => ({ id: a, label: VALUE_LABELS[a] })),
+    groups: builtin.groups.map((g) => ({ key: g.key, title: g.title })),
+  });
 }

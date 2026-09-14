@@ -284,11 +284,14 @@ export const EMPTY_PROFILE: DemographicProfile = { answers: {}, updatedAt: 0 };
  * ここを緩くすると、選択肢式にした意味が無くなる（任意の文字列が保存できてしまい、
  * 氏名や病名のような取るつもりのない情報が入り込む）。知らないキーも知らない値も黙って捨てる。
  */
-export function sanitizeAnswers(raw: unknown): ProfileAnswers {
+export function sanitizeAnswers(raw: unknown, extraFields: ProfileField[] = []): ProfileAnswers {
   if (!raw || typeof raw !== "object") return {};
+  const extra = new Map(extraFields.map((f) => [f.key, f]));
   const out: ProfileAnswers = {};
   for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
-    const field = FIELD_BY_KEY.get(key);
+    // 管理画面から追加された設問は組み込みの一覧に無いので、呼び出し側から渡してもらう。
+    // 渡されなければ従来どおり黙って捨てる（知らない項目は保存しない、という原則は変えない）。
+    const field = extra.get(key) ?? FIELD_BY_KEY.get(key);
     if (!field) continue;
     const values = (Array.isArray(value) ? value : [value]).filter(
       (v): v is string => typeof v === "string" && field.options.includes(v)
@@ -301,10 +304,10 @@ export function sanitizeAnswers(raw: unknown): ProfileAnswers {
 }
 
 /** 何割答えたか（画面の進捗表示と、統計データの品質判定に使う）。 */
-export function completionRate(answers: ProfileAnswers): number {
-  if (PROFILE_FIELDS.length === 0) return 0;
-  const answered = PROFILE_FIELDS.filter((f) => (answers[f.key]?.length ?? 0) > 0).length;
-  return Math.round((answered / PROFILE_FIELDS.length) * 100);
+export function completionRate(answers: ProfileAnswers, fields: ProfileField[] = PROFILE_FIELDS): number {
+  if (fields.length === 0) return 0;
+  const answered = fields.filter((f) => (answers[f.key]?.length ?? 0) > 0).length;
+  return Math.round((answered / fields.length) * 100);
 }
 
 /**
@@ -329,7 +332,7 @@ export function nextFieldToAsk(
  * 分身が会話で使えるように、回答を短い日本語にする。
  * 統計用の生データとは別に、ここで「プロンプトに載せる形」を1箇所で決めておく。
  */
-export function describeProfile(answers: ProfileAnswers): string {
+export function describeProfile(answers: ProfileAnswers, extraLabels: Record<string, string> = {}): string {
   const lines: string[] = [];
   for (const field of PROFILE_FIELDS) {
     const values = answers[field.key];
@@ -337,6 +340,13 @@ export function describeProfile(answers: ProfileAnswers): string {
     // 年収は会話に出さない（統計としてのみ使うと説明しているため）
     if (field.key === "income") continue;
     lines.push(`・${field.label}: ${values.join("、")}`);
+  }
+  // 管理画面から追加された設問。項目名は保存時に一緒に控えてある
+  // （カタログを引かないと名前が分からない、という状態にすると、会話のたびにD1を読むことになる）。
+  for (const [key, label] of Object.entries(extraLabels)) {
+    const values = answers[key];
+    if (!values || values.length === 0) continue;
+    lines.push(`・${label}: ${values.join("、")}`);
   }
   return lines.join("\n");
 }

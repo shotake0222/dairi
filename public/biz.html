@@ -52,7 +52,7 @@
     font-weight: 800; letter-spacing: 0.05em; font-size: 15px; white-space: nowrap; 
   }
   .logo svg {
-    width: 20px; height: 20px;
+    width: 22px; height: 22px;
     fill: var(--brand);
   }
   .logo span { color: var(--brand); }
@@ -179,9 +179,13 @@
 <header class="site">
   <div class="wrap">
     <div class="logo">
-      <!-- シンプルな勾玉モチーフのSVGロゴ -->
-      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-2-9c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2zm6 0c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2z"/>
+      <!--
+        勾玉（まがたま）のロゴ。大きい円の右半分に頭の円を足し、尾の円を引いて、頭に紐穴を開けている。
+        作図の詳細は public/icons/mark.svg。アイコンとOGPも同じ形から作っている
+        （tools/make_brand_assets.py）。形を変えるときは3箇所すべてを揃えること。
+      -->
+      <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path fill-rule="evenodd" d="M24 7A17 17 0 0 1 24 41A6 6 0 0 0 24 29A11 11 0 0 1 24 7ZM28.6 18A4.6 4.6 0 1 1 19.4 18A4.6 4.6 0 1 1 28.6 18Z"/>
       </svg>
       <div>わけ<span>たま</span><span class="biz">FOR BUSINESS</span></div>
     </div>

@@ -49,6 +49,15 @@ export const VALUE_LABELS: Record<ValueAxis, string> = {
 export interface Psychographics {
   /** 0〜100。50が「特に強くも弱くもない」 */
   values: Record<string, number>;
+  /**
+   * 本人が設問に答えて申告した値（軸→0〜100）。
+   *
+   * 推定値（values）とは別に持つ。本人の申告のほうが確かなので、
+   * AIの推定はここに入っている軸に対しては、ほとんど動かさないようにしている。
+   * 「聞いて答えてもらったのに、次の会話で推定に上書きされる」のは、
+   * 答えた人にとっては何のために答えたのか分からない挙動になる。
+   */
+  selfReported?: Record<string, number>;
   /** 話題カテゴリごとの関心の強さ（0〜100） */
   interests: Record<string, number>;
   /** よく口にする語（上位のみ。会話の本文そのものではない） */
@@ -184,7 +193,11 @@ export async function mergeValueEstimate(
     for (const axis of VALUE_AXES) {
       const observed = parsed.values[axis];
       if (typeof observed !== "number" || !Number.isFinite(observed)) continue;
-      values[axis] = Math.round(blend(values[axis] ?? 50, clamp(observed), 0.3));
+      // 本人が答えた軸は、推定でほとんど動かさない（答えた意味が無くなるため）。
+      // ゼロにしないのは、人は変わるので、長く会話が続けばゆっくり追従してほしいから。
+      const declared = prev.selfReported?.[axis];
+      const alpha = typeof declared === "number" ? 0.06 : 0.3;
+      values[axis] = Math.round(blend(values[axis] ?? 50, clamp(observed), alpha));
       applied++;
     }
     if (applied === 0) return prev;
@@ -194,6 +207,23 @@ export async function mergeValueEstimate(
     logDetachedError("psychographics.failed", err);
     return prev;
   }
+}
+
+/**
+ * 本人が申告した値を反映する。
+ *
+ * 推定と違って強く反映する（alpha=0.75）。ただし完全に置き換えないのは、
+ * 選択肢は4段階しかなく、そこに載らない機微を推定側が拾っていることがあるため。
+ */
+export function applySelfReport(prev: Psychographics, axis: string, score: number): Psychographics {
+  if (!VALUE_AXES.includes(axis as ValueAxis)) return prev;
+  const value = clamp(score);
+  return {
+    ...prev,
+    values: { ...prev.values, [axis]: Math.round(blend(prev.values[axis] ?? 50, value, 0.75)) },
+    selfReported: { ...(prev.selfReported ?? {}), [axis]: value },
+    updatedAt: Date.now(),
+  };
 }
 
 /** 上位の関心を、読める形にして返す（プロンプトや管理画面で使う）。 */

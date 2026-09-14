@@ -79,6 +79,13 @@
   .empty { color: #9a90c0; font-size: 13px; }
 
   .kv { display: flex; flex-wrap: wrap; gap: 8px; }
+  /* 厚みの内訳。項目名と点数を左右に振る（並べただけだと、どれがどの点数か読めない） */
+  .kvRow {
+    display: flex; justify-content: space-between; gap: 12px; width: 100%;
+    font-size: 12.5px; padding: 7px 0; border-bottom: 1px dashed var(--line);
+  }
+  .kvRow:last-child { border-bottom: none; }
+  .kvRow span:last-child { color: var(--muted); white-space: nowrap; }
   .tag { background: #f0ecff; color: #4c3a99; border-radius: 999px; padding: 5px 12px; font-size: 12px; }
 
   .bars { display: grid; gap: 6px; margin-top: 8px; }
@@ -101,12 +108,18 @@
   #status { font-size: 12px; color: var(--muted); min-height: 18px; margin-top: 8px; }
   .locked { opacity: .5; pointer-events: none; }
   a.link { color: var(--brand); font-size: 13px; }
+
+  /* ロゴ（勾玉）。形の由来と作図は public/icons/mark.svg のコメントを参照。
+     読み込みを1往復増やさないため、pathはHTMLに直接埋め込んでいる。 */
+  .brand { display: inline-flex; align-items: center; gap: 5px; }
+  .brand .mk { width: 1.25em; height: 1.25em; flex: none; }
 </style>
+<script src="/pulse.js" defer></script>
 </head>
 <body>
 
 <header>
-  <div class="brand">わけたま</div>
+  <div class="brand"><svg class="mk" viewBox="0 0 48 48" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M24 7A17 17 0 0 1 24 41A6 6 0 0 0 24 29A11 11 0 0 1 24 7ZM28.6 18A4.6 4.6 0 1 1 19.4 18A4.6 4.6 0 1 1 28.6 18Z"/></svg><span>わけたま</span></div>
   <h1>あなたと、分身の記録</h1>
   <a class="back" id="backLink" href="/home">← 会話にもどる</a>
 </header>
@@ -134,6 +147,28 @@
     <p class="lead" id="notesHint" style="margin:10px 0 0" hidden>
       1行に1つ、事実だけを書いてください。ここで直した内容は、分身が次に書き足すときの土台になります。
     </p>
+  </section>
+
+  <section id="depthSection">
+    <h2>この分身の厚み</h2>
+    <p class="lead">
+      分身をこの端末の外へ持ち出したり、マーケットに出したりできる水準に届いているかの目安です。
+      <strong>会話・属性・価値観・覚えていること</strong>の4つを別々に数えています。
+    </p>
+    <div class="meter"><div id="depthFill"></div></div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:10px">
+      <span id="depthScore">0</span> / 100　<span id="depthSellable"></span>
+    </div>
+    <div id="depthParts" class="kv"></div>
+  </section>
+
+  <section id="surveySection">
+    <h2>ひとつずつ答える</h2>
+    <p class="lead">
+      分身が知りたがっていることを、1問ずつ出します。<strong>途中でやめて構いません。</strong>
+      答えた分だけ、上の厚みが増えます。
+    </p>
+    <div id="pulseSlot"></div>
   </section>
 
   <section id="profileSection">
@@ -469,9 +504,18 @@
     }
   });
 
+  /**
+   * 覚え書きの表示。
+   *
+   * ここは以前、自分自身を呼び出して無限再帰になっていた（「Maximum call stack size exceeded」）。
+   * 持ち主トークンを持っている人——つまり実際の利用者だけ——が、
+   * このページを開いた瞬間に真っ白な失敗画面を見る状態だった。
+   * 持ち主でないと 403 で手前で止まるので、動作確認では気づけない類の壊れ方をしていた。
+   */
   function renderNotes() {
-    renderNotes();
-    setNotesEditing(false);
+    const notes = (state.notes || "").trim();
+    notesEl.textContent = notes || "まだ何も覚えていません。";
+    notesEl.classList.toggle("empty", notes.length === 0);
   }
 
   // ---- 人物像 ----
@@ -585,6 +629,48 @@
     marketLocked.style.display = canMarket ? "none" : "block";
     marketLink.style.display = canMarket ? "inline-block" : "none";
   }
+
+  // ---- 厚み（人格データとしての充実度）----
+  function renderDepth(depth) {
+    if (!depth) return;
+    document.getElementById("depthFill").style.width = `${Math.max(2, depth.score)}%`;
+    document.getElementById("depthScore").textContent = String(depth.score);
+    document.getElementById("depthSellable").textContent = depth.sellable
+      ? "マーケットに出せる水準です"
+      : "もう少し話すと、外へ持ち出しやすくなります";
+    const parts = document.getElementById("depthParts");
+    parts.innerHTML = "";
+    for (const p of depth.parts) {
+      const row = document.createElement("div");
+      row.className = "kvRow";
+      const label = document.createElement("span");
+      label.textContent = p.label;
+      const value = document.createElement("span");
+      value.textContent = `${p.score} / ${p.max}`;
+      value.title = p.hint;
+      row.append(label, value);
+      parts.appendChild(row);
+    }
+  }
+
+  // ---- 1問ずつのサーベイ ----
+  // ここでは続けて聞く（属性ページは「答えに来た場所」なので、1問で止める理由がない）。
+  window.addEventListener("DOMContentLoaded", () => {
+    if (!cid || !token() || !window.WaketamaPulse) return;
+    window.WaketamaPulse.mount({
+      slot: "#pulseSlot",
+      cid,
+      token: token(),
+      continuous: true,
+      // 厚みは、このページの上のセクションが詳しく出している
+      showDepth: false,
+      onDepth: (depth) => {
+        renderDepth(depth);
+        // 答えたぶんを、上の「あなたのこと」にも反映する
+        load().catch(() => {});
+      },
+    });
+  });
 
   load().catch((e) => {
     document.querySelector("main").innerHTML =

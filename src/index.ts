@@ -26,6 +26,14 @@ import {
   handleSaveListing,
 } from "./market";
 import { handleIme } from "./ime";
+import {
+  handleSurveyAnswer,
+  handleSurveyCatalog,
+  handleSurveyDecline,
+  handleSurveyNext,
+  handleSurveySkip,
+} from "./surveyRoutes";
+import { handleAdminQuestions } from "./admin";
 import { handleContact, handleAdminContacts } from "./contact";
 import { handleRecoveryLookup, handleRecoveryIssue } from "./recovery";
 import { countMetric } from "./persona/registry";
@@ -197,6 +205,10 @@ export default {
     if (url.pathname === "/api/admin/contacts") {
       return handleAdminContacts(env, request, url);
     }
+    // 設問の編集。人格データの質は設問の質でほぼ決まるので、デプロイせずに直せるようにしてある。
+    if (url.pathname === "/api/admin/questions") {
+      return handleAdminQuestions(env, request);
+    }
     // 復旧（持ち主トークンを失った人の救済）。所有権を移せる操作なので管理画面の中にだけ置く。
     if (url.pathname === "/api/admin/recovery/lookup" && request.method === "GET") {
       return handleRecoveryLookup(env, url, log);
@@ -224,6 +236,24 @@ export default {
     // 分身が自分について覚えている内容は、間違っていたら本人が直せる必要がある
     if (url.pathname === "/api/notes" && request.method === "POST") {
       return handleSetNotes(env, await request.json());
+    }
+
+    // --- パルスサーベイ（会話の合間に1問ずつ聞く） ---
+    // 設問の出し方はサーバー側で決める。画面ごとに判断を持たせると、同じ人に同じ設問が何度も出る。
+    if (url.pathname === "/api/survey/next" && request.method === "GET") {
+      return handleSurveyNext(env, url);
+    }
+    if (url.pathname === "/api/survey/answer" && request.method === "POST") {
+      return handleSurveyAnswer(env, await request.json(), log);
+    }
+    if (url.pathname === "/api/survey/skip" && request.method === "POST") {
+      return handleSurveySkip(env, await request.json());
+    }
+    if (url.pathname === "/api/survey/decline" && request.method === "POST") {
+      return handleSurveyDecline(env, await request.json(), log);
+    }
+    if (url.pathname === "/api/survey/catalog" && request.method === "GET") {
+      return handleSurveyCatalog(env);
     }
 
     // --- 人格カード（エッジAI・別ランタイムへの持ち出し） ---

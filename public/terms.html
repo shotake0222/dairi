@@ -46,11 +46,16 @@
   .back { display: inline-block; margin-top: 8px; font-size: 13px; }
   .todo { color: #d1425a; font-weight: 700; }
   .plain { background: #faf8ff; border-radius: 10px; padding: 10px 14px; font-size: 13px; color: #5b4b99; }
+
+  /* ロゴ（勾玉）。形の由来と作図は public/icons/mark.svg のコメントを参照。
+     読み込みを1往復増やさないため、pathはHTMLに直接埋め込んでいる。 */
+  .brand { display: inline-flex; align-items: center; gap: 5px; }
+  .brand .mk { width: 1.25em; height: 1.25em; flex: none; }
 </style>
 </head>
 <body>
 <header>
-  <div class="brand">わけたま</div>
+  <div class="brand"><svg class="mk" viewBox="0 0 48 48" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M24 7A17 17 0 0 1 24 41A6 6 0 0 0 24 29A11 11 0 0 1 24 7ZM28.6 18A4.6 4.6 0 1 1 19.4 18A4.6 4.6 0 1 1 28.6 18Z"/></svg><span>わけたま</span></div>
   <h1>利用規約</h1>
   <div class="updated">最終更新: 2026年9月13日</div>
 </header>

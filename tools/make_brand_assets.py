@@ -43,82 +43,60 @@ def vertical_gradient(size, top, bottom):
 SS = 4  # スーパーサンプリング倍率（大きく描いて縮小し、輪郭を滑らかにする）
 
 
-def soul_orb(draw, center, radius, alpha, tail_angle=None, tail_len=1.9):
+def magatama_mask(canvas_size, scale=1.0, rotate=0.0):
     """
-    人魂（ひとだま）を1つ描く。丸い本体に、後ろへたなびく細い尾を付けることで
-    「ただの円」ではなく「ふわりと漂う魂」に見えるようにしている。
-    tail_angle: 尾が伸びる方向（ラジアン）。Noneなら尾なし。
-    """
-    import math
+    勾玉（まがたま）の輪郭を、そのままの作図法で描く。
 
-    cx, cy = center
-    if tail_angle is not None:
-        # 尾: 玉の両脇から出て、後方の1点へ収束する三角形。玉と重ねて一体に見せる。
-        tip = (cx + math.cos(tail_angle) * radius * tail_len, cy + math.sin(tail_angle) * radius * tail_len)
-        perp = tail_angle + math.pi / 2
-        spread = radius * 0.72
-        draw.polygon(
-            [
-                (cx + math.cos(perp) * spread, cy + math.sin(perp) * spread),
-                (cx - math.cos(perp) * spread, cy - math.sin(perp) * spread),
-                tip,
-            ],
-            fill=(255, 255, 255, alpha),
-        )
-    draw.ellipse([cx - radius, cy - radius, cx + radius, cy + radius], fill=(255, 255, 255, alpha))
+    形の決め方（ここを崩すと「ただの巴」になってしまう）:
+      大きい円 B（半径R）の**右半分**に、頭になる円 H（半径r1）を足し、
+      尾になる円 T（半径r2）を引く。r1 + r2 = R にしておくと、
+      3つの円が同じ縦線の上でぴたりと接し、頭から尾へ滑らかに細くなる。
+      最後に、頭に紐を通す穴を1つ開ける。
+
+    サービス名の由来（分け御霊）に合わせて、玉そのものを標にしている。
+    アプリのアイコン・OGP・LPのロゴは、すべてこの同じ形から作る。
+    SVG版は public/icons/mark.svg（HTMLにはこれと同じ座標を直接埋め込んでいる）。
+    """
+    s = canvas_size * SS
+    mask = Image.new("L", (s, s), 0)
+    d = ImageDraw.Draw(mask)
+
+    cx = cy = s / 2
+    R = s * 0.40 * scale
+    r1 = R * 0.65   # 頭
+    r2 = R - r1     # 尾
+
+    def circle(draw, center, radius, fill):
+        x, y = center
+        draw.ellipse([x - radius, y - radius, x + radius, y + radius], fill=fill)
+
+    # 大きい円の右半分（PILの角度は3時方向が0で時計回り）
+    d.pieslice([cx - R, cy - R, cx + R, cy + R], -90, 90, fill=255)
+    circle(d, (cx, cy - (R - r1)), r1, 255)   # 頭を足す
+    circle(d, (cx, cy + (R - r2)), r2, 0)     # 尾を削る
+    circle(d, (cx, cy - (R - r1)), r1 * 0.42, 0)  # 紐を通す穴
+
+    if rotate:
+        mask = mask.rotate(rotate, resample=Image.BICUBIC, center=(cx, cy))
+    return mask.resize((canvas_size, canvas_size), Image.LANCZOS)
 
 
 def draw_mark(canvas_size, scale=1.0, offset=(0, 0)):
-    """
-    「分け魂」のマーク。
-    左下の大きな魂（＝あなた自身）から、右上へ小さな魂（＝分身）が分かれて昇っていく。
-    2つのあいだに空きをつくり、そこに分かれていく途中の粒を置くことで
-    「重なった2つの丸」ではなく「ひとつが分かれた瞬間」として読めるようにする。
-    """
-    import math
+    """勾玉のマークを、白抜き＋ほのかな発光で返す（背景のグラデーションに重ねて使う）。"""
+    mask = magatama_mask(canvas_size, scale=scale)
+    mark = Image.new("RGBA", (canvas_size, canvas_size), (255, 255, 255, 0))
+    mark.putalpha(0)
+    white = Image.new("RGBA", (canvas_size, canvas_size), (255, 255, 255, 250))
+    mark = Image.composite(white, mark, mask)
 
-    s = canvas_size * SS
-    size = (s, s)
-    c = s / 512.0 * scale
-    ox = s * 0.5 + offset[0] * SS - 256 * c
-    oy = s * 0.5 + offset[1] * SS - 256 * c
+    if offset != (0, 0):
+        shifted = Image.new("RGBA", (canvas_size, canvas_size), (255, 255, 255, 0))
+        shifted.paste(mark, (int(offset[0]), int(offset[1])), mark)
+        mark = shifted
 
-    def p(x, y):
-        return (ox + x * c, oy + y * c)
-
-    # 本体（＝あなた自身）。尾を付けると吹き出しに見えてしまうため、静かな玉のまま置く。
-    body = Image.new("RGBA", size, (255, 255, 255, 0))
-    soul_orb(ImageDraw.Draw(body), p(196, 330), 116 * c, 252)
-
-    # 本体の内側にうっすら三日月状の陰を入れて、平らな円ではなく球体に見せる。
-    shade = Image.new("RGBA", size, (255, 255, 255, 0))
-    scx, scy = p(160, 300)
-    sr = 108 * c
-    ImageDraw.Draw(shade).ellipse([scx - sr, scy - sr, scx + sr, scy + sr], fill=(255, 255, 255, 40))
-    body = Image.alpha_composite(body, shade)
-
-    # 分身（＝分けて生まれたほう）。ひと回り小さく、少し透けさせて「生まれたて」の軽さを出す。
-    child = Image.new("RGBA", size, (255, 255, 255, 0))
-    soul_orb(ImageDraw.Draw(child), p(360, 168), 66 * c, 210)
-
-    # 本体から分身へ向かって小さくなっていく粒の列。
-    # これがあることで「並んだ2つの丸」ではなく「ひとつが分かれて昇っていく」動きとして読める。
-    dots = Image.new("RGBA", size, (255, 255, 255, 0))
-    dd = ImageDraw.Draw(dots)
-    for x, y, r, a in ((268, 254, 26, 200), (312, 218, 15, 165), (340, 196, 8, 125)):
-        cx, cy = p(x, y)
-        rr = r * c
-        dd.ellipse([cx - rr, cy - rr, cx + rr, cy + rr], fill=(255, 255, 255, a))
-    _ = math
-
-    mark = Image.alpha_composite(Image.alpha_composite(body, dots), child)
-
-    # 全体をほんのり発光させる（ぼかした複製を下に敷く）。
-    glow = mark.filter(ImageFilter.GaussianBlur(22 * c))
-    glow.putalpha(glow.getchannel("A").point(lambda v: int(v * 0.42)))
-    mark = Image.alpha_composite(glow, mark)
-
-    return mark.resize((canvas_size, canvas_size), Image.LANCZOS)
+    glow = mark.filter(ImageFilter.GaussianBlur(canvas_size * 0.045))
+    glow.putalpha(glow.getchannel("A").point(lambda v: int(v * 0.40)))
+    return Image.alpha_composite(glow, mark)
 
 
 def rounded_icon(size, corner_ratio=0.22, mark_scale=1.0):
@@ -188,12 +166,12 @@ def main():
     import os
 
     os.makedirs(OUT_DIR, exist_ok=True)
-    rounded_icon(512).save(f"{OUT_DIR}/icon-512.png")
-    rounded_icon(192).save(f"{OUT_DIR}/icon-192.png")
+    rounded_icon(512, mark_scale=0.86).save(f"{OUT_DIR}/icon-512.png")
+    rounded_icon(192, mark_scale=0.86).save(f"{OUT_DIR}/icon-192.png")
     # iOSのホーム画面アイコンは角丸をOS側で付けるため、角丸なし（正方形）で用意する。
     maskable_icon(180).save(f"{OUT_DIR}/apple-touch-icon.png")
     maskable_icon(512).save(f"{OUT_DIR}/icon-maskable-512.png")
-    rounded_icon(64, corner_ratio=0.20, mark_scale=1.06).save(f"{OUT_DIR}/favicon-64.png")
+    rounded_icon(64, corner_ratio=0.20, mark_scale=0.94).save(f"{OUT_DIR}/favicon-64.png")
     ogp_image().save(f"{OUT_DIR}/ogp.png")
     print("generated:", sorted(os.listdir(OUT_DIR)))
 

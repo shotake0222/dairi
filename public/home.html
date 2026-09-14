@@ -99,11 +99,16 @@
   /* フッター。アカウント不要のサービスなので、データの扱いへの導線は常に見える場所に置く。 */
   .siteFooter { text-align: center; padding: 22px 0 8px; font-size: 12px; }
   .siteFooter a { color: #9a90c0; text-decoration: none; }
+
+  /* ロゴ（勾玉）。形の由来と作図は public/icons/mark.svg のコメントを参照。
+     読み込みを1往復増やさないため、pathはHTMLに直接埋め込んでいる。 */
+  .brand { display: inline-flex; align-items: center; gap: 5px; }
+  .brand .mk { width: 1.25em; height: 1.25em; flex: none; }
 </style>
 </head>
 <body>
 <header>
-  <div class="brand">わけたま</div>
+  <div class="brand"><svg class="mk" viewBox="0 0 48 48" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M24 7A17 17 0 0 1 24 41A6 6 0 0 0 24 29A11 11 0 0 1 24 7ZM28.6 18A4.6 4.6 0 1 1 19.4 18A4.6 4.6 0 1 1 28.6 18Z"/></svg><span>わけたま</span></div>
   <h1>あなたの分身</h1>
   <div class="sub">NFCタグが手元になくても、ここから会いに行けます</div>
 </header>

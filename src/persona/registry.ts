@@ -32,6 +32,10 @@ export interface RegistrySnapshot {
   segment: SegmentResult;
   profile: ProfileAnswers;
   consent: ConsentState | undefined;
+  /** 人格データの厚み（0〜100）。計算は src/persona/survey.ts の personaDepth。 */
+  depthScore: number;
+  /** 価値観の設問に答えた数。厚みの内訳として、出品可否の判断に使う。 */
+  psychoAnswered: number;
 }
 
 const first = (answers: ProfileAnswers, key: string): string | null => answers[key]?.[0] ?? null;
@@ -73,8 +77,9 @@ export async function syncRegistry(env: RegistryEnv, snap: RegistrySnapshot): Pr
          v_achievement, v_benevolence, v_hedonism, v_security,
          v_stimulation, v_selfdirection, v_tradition, v_power,
          age_band, gender, region, occupation, income, profile_completion,
-         top_interests, consent_aggregate, consent_marketplace
-       ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26,?27,?28,?29,?30)
+         top_interests, consent_aggregate, consent_marketplace,
+         depth_score, psycho_answered
+       ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26,?27,?28,?29,?30,?31,?32)
        ON CONFLICT(character_id) DO UPDATE SET
          updated_at=excluded.updated_at, growth_stage=excluded.growth_stage,
          interaction_count=excluded.interaction_count,
@@ -89,7 +94,8 @@ export async function syncRegistry(env: RegistryEnv, snap: RegistrySnapshot): Pr
          occupation=excluded.occupation, income=excluded.income,
          profile_completion=excluded.profile_completion,
          top_interests=excluded.top_interests,
-         consent_aggregate=excluded.consent_aggregate, consent_marketplace=excluded.consent_marketplace`
+         consent_aggregate=excluded.consent_aggregate, consent_marketplace=excluded.consent_marketplace,
+         depth_score=excluded.depth_score, psycho_answered=excluded.psycho_answered`
     )
       .bind(
         snap.characterId,
@@ -121,7 +127,9 @@ export async function syncRegistry(env: RegistryEnv, snap: RegistrySnapshot): Pr
         shareProfile ? completionRate(snap.profile) : 0,
         topInterests,
         aggregate ? 1 : 0,
-        marketplace ? 1 : 0
+        marketplace ? 1 : 0,
+        Math.round(snap.depthScore),
+        snap.psychoAnswered
       )
       .run();
   } catch (err) {

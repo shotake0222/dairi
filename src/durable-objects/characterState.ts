@@ -15,9 +15,12 @@ import { distillProfileNotes, shouldReflect, MAX_NOTES_CHARS, MAX_NOTES_LINES } 
 import { deriveVoiceProfile, VoiceProfile } from "../ai/voiceProfile";
 import { logDetachedWarn } from "../lib/log";
 import { ConsentState, hasConsent, normalizeConsent } from "../persona/consent";
+import { personaDepth, PSYCHO_QUESTIONS } from "../persona/survey";
 import {
   DemographicProfile,
+  PROFILE_FIELDS,
   ProfileAnswers,
+  ProfileField,
   describeProfile,
   nextFieldToAsk,
   sanitizeAnswers,
@@ -25,6 +28,7 @@ import {
 import { AccessibilityPrefs, sanitizeAccessibility } from "../persona/accessibility";
 import {
   Psychographics,
+  applySelfReport,
   describeValues,
   emptyPsychographics,
   mergeTermSignals,
@@ -206,6 +210,22 @@ export interface CharacterData {
 
   /** 会話から積み上げた価値観・関心。人物像の記述であり、分身の演技指示ではない。 */
   psychographics?: Psychographics;
+
+  /**
+   * パルスサーベイ（会話の合間に1問ずつ聞く仕組み）の進み具合。
+   *
+   * 属性の回答そのものは profile 側に入るので、ここに持つのは
+   *   - 価値観の設問にどう答えたか（同じ軸に複数の設問がありうるので、設問IDで持つ）
+   *   - 「あとで」と言われた設問（すぐ聞き直すと催促になる）
+   *   - 管理画面から追加された設問の項目名（会話に載せるときに必要。
+   *     ここに控えておかないと、会話のたびに設問カタログをD1から読むことになる）
+   */
+  survey?: {
+    psychoAnswers?: Record<string, string>;
+    skipped?: string[];
+    customLabels?: Record<string, string>;
+    updatedAt?: number;
+  };
 }
 
 // 「図鑑」機能用の出会いの記録は、無制限に貯めるとストレージを圧迫するため、
@@ -503,7 +523,9 @@ export class CharacterState extends DurableObject<Env> {
     // 価値観の推定は分身自身の理解（覚え書きと同じ性質のもの）なので、
     // 手元で使うぶんには同意の対象にしていない。外へ出すときだけ同意を見る（syncRegistry参照）。
     const ownerProfile =
-      hasConsent(data.consent, "profile") && data.profile ? describeProfile(data.profile.answers) : "";
+      hasConsent(data.consent, "profile") && data.profile
+        ? describeProfile(data.profile.answers, data.survey?.customLabels ?? {})
+        : "";
     const ownerValues = data.psychographics ? describeValues(data.psychographics) : "";
 
     const promptParams = {
@@ -591,6 +613,20 @@ export class CharacterState extends DurableObject<Env> {
   /** 集計用レジストリ（D1）を同期する。同意していなければ、この中で行が削除される。 */
   private async syncPersonaRegistry(data: CharacterData): Promise<void> {
     const characterId = this.ctx.id.name ?? "unknown";
+    const psychoAnswered = Object.keys(data.survey?.psychoAnswers ?? {}).length;
+
+    // 厚みは、この分身が人格データとして使える水準かどうかの目安。
+    // 組み込みの設問数を母数にしている（管理画面で設問を足した場合、
+    // ここでは実際より控えめな値になる。過大に出すよりは安全側に倒す）。
+    const depth = personaDepth({
+      interactionCount: data.interactionCount,
+      profileAnswered: Object.keys(data.profile?.answers ?? {}).length,
+      profileTotal: PROFILE_FIELDS.length,
+      psychoAnswered,
+      psychoTotal: PSYCHO_QUESTIONS.length,
+      memoryCount: (data.profileNotes ?? "").split("\n").filter((l) => l.trim()).length,
+    });
+
     await syncRegistry(this.env, {
       characterId,
       createdAt: data.createdAt,
@@ -601,6 +637,8 @@ export class CharacterState extends DurableObject<Env> {
       segment: this.segmentOf(data),
       profile: data.profile?.answers ?? {},
       consent: data.consent,
+      depthScore: depth.score,
+      psychoAnswered,
     });
   }
 
@@ -669,6 +707,8 @@ export class CharacterState extends DurableObject<Env> {
         profileNotes: string;
         nextField: string | null;
         interactionCount: number;
+        /** パルスサーベイの進み具合（次の1問はWorker側でカタログと突き合わせて決める） */
+        survey: { psychoAnswered: string[]; skipped: string[] };
       }
     | { ok: false; error: string }
   > {
@@ -687,6 +727,10 @@ export class CharacterState extends DurableObject<Env> {
       profileNotes: data.profileNotes ?? "",
       nextField: nextFieldToAsk(profile, data.interactionCount)?.key ?? null,
       interactionCount: data.interactionCount,
+      survey: {
+        psychoAnswered: Object.keys(data.survey?.psychoAnswers ?? {}),
+        skipped: data.survey?.skipped ?? [],
+      },
     };
   }
 
@@ -716,7 +760,16 @@ export class CharacterState extends DurableObject<Env> {
   async setProfile(
     raw: unknown,
     ownerToken?: string,
-    options?: { replace?: boolean; declineAll?: boolean }
+    options?: {
+      replace?: boolean;
+      declineAll?: boolean;
+      /**
+       * 管理画面から追加された設問の定義。
+       * 組み込みの一覧に無いキーは既定で捨てるので、追加分はここで渡してもらう
+       * （知らない項目は保存しない、という原則を緩めずに拡張するための口）。
+       */
+      extraFields?: ProfileField[];
+    }
   ): Promise<{ ok: true; profile: DemographicProfile } | { ok: false; error: string }> {
     const data = await this.ctx.storage.get<CharacterData>("data");
     if (!data) return { ok: false, error: "not found" };
@@ -725,7 +778,8 @@ export class CharacterState extends DurableObject<Env> {
       return { ok: false, error: "先に「あなたのことを分身に覚えさせる」への同意が必要です" };
     }
 
-    const incoming = sanitizeAnswers(raw);
+    const extraFields = options?.extraFields ?? [];
+    const incoming = sanitizeAnswers(raw, extraFields);
     const merged: ProfileAnswers = options?.replace ? incoming : { ...(data.profile?.answers ?? {}), ...incoming };
 
     data.profile = {
@@ -733,9 +787,76 @@ export class CharacterState extends DurableObject<Env> {
       updatedAt: Date.now(),
       declinedAll: options?.declineAll ?? data.profile?.declinedAll,
     };
+
+    // 追加設問の項目名を控える。会話に載せるときにカタログを引かずに済ませるため。
+    const answeredExtras = extraFields.filter((f) => (merged[f.key]?.length ?? 0) > 0);
+    if (answeredExtras.length > 0) {
+      const labels = { ...(data.survey?.customLabels ?? {}) };
+      for (const f of answeredExtras) labels[f.key] = f.label;
+      data.survey = { ...(data.survey ?? {}), customLabels: labels, updatedAt: Date.now() };
+    }
     await this.ctx.storage.put("data", data);
     await this.syncPersonaRegistry(data);
     return { ok: true, profile: data.profile };
+  }
+
+  /**
+   * パルスサーベイの回答（価値観の設問）を反映する。
+   *
+   * 属性の回答が setProfile を通るのに対し、こちらは価値観の軸へ直接効く。
+   * 分けているのは、保存先が違うからというだけでなく、
+   * **本人の申告は推定より強い**という扱いの違いを1箇所に閉じ込めるため
+   * （実際の重みの付け方は analysis/psychographics.ts の applySelfReport）。
+   *
+   * 同意の扱いは属性と揃える。設問に答えてもらって覚えておく、という点では同じ行為なので、
+   * 片方だけ同意なしで保存できると説明が矛盾する。
+   */
+  async answerPsychoQuestion(
+    itemId: string,
+    axis: string,
+    score: number,
+    optionLabel: string,
+    ownerToken?: string
+  ): Promise<{ ok: true; psychographics: Psychographics } | { ok: false; error: string }> {
+    const data = await this.ctx.storage.get<CharacterData>("data");
+    if (!data) return { ok: false, error: "not found" };
+    if (!isOwner(data, ownerToken)) return { ok: false, error: "この操作は分身の持ち主だけが行えます" };
+    if (!hasConsent(data.consent, "profile")) {
+      return { ok: false, error: "先に「あなたのことを分身に覚えさせる」への同意が必要です" };
+    }
+
+    const psychographics = applySelfReport(data.psychographics ?? emptyPsychographics(), axis, score);
+    const survey = data.survey ?? {};
+    data.psychographics = psychographics;
+    data.survey = {
+      ...survey,
+      psychoAnswers: { ...(survey.psychoAnswers ?? {}), [itemId]: optionLabel.slice(0, 60) },
+      skipped: (survey.skipped ?? []).filter((id) => id !== itemId),
+      updatedAt: Date.now(),
+    };
+
+    await this.ctx.storage.put("data", data);
+    await this.syncPersonaRegistry(data);
+    return { ok: true, psychographics };
+  }
+
+  /**
+   * 「あとで」。同じ設問をすぐ出し直さないための記録。
+   * 消さずに残すのは、次に開いたときに別の設問から始めたいから
+   * （同じ問いが毎回いちばん上に出てくると、答えないことが気まずくなる）。
+   */
+  async skipSurveyItem(itemId: string, ownerToken?: string): Promise<{ ok: true } | { ok: false; error: string }> {
+    const data = await this.ctx.storage.get<CharacterData>("data");
+    if (!data) return { ok: false, error: "not found" };
+    if (!isOwner(data, ownerToken)) return { ok: false, error: "この操作は分身の持ち主だけが行えます" };
+
+    const survey = data.survey ?? {};
+    const skipped = new Set(survey.skipped ?? []);
+    skipped.add(itemId);
+    // 際限なく貯めない。古いものから落として、いつかまた聞けるようにしておく
+    data.survey = { ...survey, skipped: Array.from(skipped).slice(-40), updatedAt: Date.now() };
+    await this.ctx.storage.put("data", data);
+    return { ok: true };
   }
 
   /**

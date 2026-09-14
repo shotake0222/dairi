@@ -55,6 +55,18 @@
   .tab { border-radius: 999px; }
   .tab.on { background: var(--brand); color: #fff; border-color: transparent; }
   .panel[hidden] { display: none; }
+  .formGrid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin: 12px 0; }
+  .formGrid label, label.wide { display: block; font-size: 12px; color: var(--muted); }
+  label.wide { margin-bottom: 10px; }
+  .formGrid input, .formGrid select, label.wide input, label.wide textarea {
+    width: 100%; margin-top: 4px; padding: 8px 10px; border-radius: 8px;
+    border: 1px solid var(--line); font-family: inherit; font-size: 13px; background: #fff; color: var(--ink);
+  }
+  label.wide textarea { resize: vertical; line-height: 1.7; }
+  .srcTag { font-size: 10px; border-radius: 999px; padding: 2px 8px; border: 1px solid var(--line); color: var(--muted); }
+  .srcTag.override { background: #fff4e2; border-color: #ffd9a0; color: #9a6b1a; }
+  .srcTag.custom { background: #e8f7ef; border-color: #b6e6cd; color: #1c7a4d; }
+  .offRow { opacity: 0.5; }
 </style>
 </head>
 <body>
@@ -71,6 +83,7 @@
     <button class="tab" data-panel="personas" type="button">人格データ</button>
     <button class="tab" data-panel="requests" type="button">購入希望</button>
     <button class="tab" data-panel="contacts" type="button">問い合わせ</button>
+    <button class="tab" data-panel="questions" type="button">設問</button>
     <button class="tab" data-panel="recovery" type="button">分身の復旧</button>
   </div>
 
@@ -120,6 +133,64 @@
       <h2>法人からの問い合わせ</h2>
       <p class="lead">/biz の相談フォームから届いたものです。</p>
       <div class="scroll"><table id="contactTable"></table></div>
+    </section>
+  </div>
+
+  <div class="panel" id="panel-questions" hidden>
+    <section>
+      <h2>設問の管理</h2>
+      <p class="lead">
+        分身が会話の合間に1問ずつ聞く設問です。<strong>属性（デモグラフィック）と価値観（サイコグラフィック）を交互に出します。</strong>
+        既定はコードに書いてあり、ここでの変更は上書きとして保存されます（<em>既定に戻す</em>でいつでも元に戻ります）。
+        <br />変更はデプロイ不要で、次にサーベイが読まれた時点から効きます。
+      </p>
+      <div class="row">
+        <button id="newQuestionBtn" type="button">設問を追加する</button>
+        <span class="lead" id="questionCount"></span>
+      </div>
+      <div class="scroll" style="margin-top:12px"><table id="questionTable"></table></div>
+    </section>
+
+    <section id="questionEditor" hidden>
+      <h2 id="editorTitle">設問を編集</h2>
+      <p class="lead" id="editorHint"></p>
+      <div class="formGrid">
+        <label>ID<input type="text" id="qId" placeholder="hobbies / psy_stimulation など" /></label>
+        <label>種類
+          <select id="qKind">
+            <option value="demographic">属性（デモグラフィック）</option>
+            <option value="psychographic">価値観（サイコグラフィック）</option>
+          </select>
+        </label>
+        <label>グループ<select id="qGroup"></select></label>
+        <label id="qAxisWrap">価値観の軸<select id="qAxis"></select></label>
+        <label>回答形式
+          <select id="qType">
+            <option value="single">ひとつ選ぶ</option>
+            <option value="multi">いくつでも選ぶ</option>
+          </select>
+        </label>
+        <label>何回会話したら聞くか<input type="number" id="qAskAfter" min="0" max="500" value="0" /></label>
+        <label>並び順<input type="number" id="qSort" min="0" max="9999" value="100" /></label>
+        <label>有効
+          <select id="qEnabled"><option value="1">出す</option><option value="0">出さない</option></select>
+        </label>
+      </div>
+      <label class="wide">設問文<input type="text" id="qLabel" maxlength="120" /></label>
+      <label class="wide">なぜ聞くのか（そのまま利用者に見せます）<input type="text" id="qWhy" maxlength="160" /></label>
+      <label class="wide" id="qOptionsWrap">
+        選択肢（1行に1つ）
+        <textarea id="qOptions" rows="6"></textarea>
+      </label>
+      <label class="wide" id="qPsychoOptionsWrap" hidden>
+        選択肢（1行に「文言｜点数」。点数は0〜100で、選ばれるとその軸がこの値へ寄ります）
+        <textarea id="qPsychoOptions" rows="6" placeholder="絶対はじめての店｜92&#10;どちらかといえば新しい方｜68"></textarea>
+      </label>
+      <div class="row">
+        <button id="saveQuestionBtn" type="button">保存する</button>
+        <button id="cancelQuestionBtn" type="button" class="ghost">やめる</button>
+        <span id="questionStatus" class="lead"></span>
+      </div>
     </section>
   </div>
 
@@ -219,6 +290,7 @@
       if (tab.dataset.panel === "personas") loadPersonas();
       if (tab.dataset.panel === "requests") loadRequests();
       if (tab.dataset.panel === "contacts") loadContacts();
+      if (tab.dataset.panel === "questions") loadQuestions();
     });
   });
 
@@ -298,14 +370,19 @@
     const data = await api("/api/admin/personas?limit=100");
     table(
       "personaTable",
-      ["ID", "更新", "段階", "会話", "セグメント", "確度", "年代", "性別", "地域", "職業", "属性%", "関心"],
+      ["ID", "更新", "厚み", "段階", "会話", "価値観", "セグメント", "確度", "年代", "性別", "地域", "職業", "属性%", "関心"],
       data.personas,
       (p) => {
         const tr = el("tr");
         tr.appendChild(el("td", (p.character_id || "").slice(0, 8)));
         tr.appendChild(el("td", new Date(p.updated_at).toLocaleDateString("ja-JP")));
+        // 厚み: 人格データとして使える水準か。60以上を出品・提供の目安にしている
+        const depth = el("td", `${p.depth_score ?? 0}`);
+        if ((p.depth_score ?? 0) >= 60) depth.style.fontWeight = "700";
+        tr.appendChild(depth);
         tr.appendChild(el("td", p.growth_stage || "-"));
         tr.appendChild(el("td", p.interaction_count));
+        tr.appendChild(el("td", `${p.psycho_answered ?? 0}問`));
         tr.appendChild(el("td", p.segment_id || "-"));
         tr.appendChild(el("td", `${p.segment_confidence}%`));
         tr.appendChild(el("td", p.age_band || "-"));
@@ -460,6 +537,186 @@
       return tr;
     });
   }
+
+
+  // ---- 設問の管理 ----
+  // 設問の質が、そのまま人格データの質になる。デプロイを挟まずに直せるのはそのため。
+  let questionMeta = { axes: [], groups: [] };
+
+  function optionsToText(kind, options) {
+    if (kind === "psychographic") {
+      return (options || []).map((o) => `${o.label}｜${o.score}`).join("\n");
+    }
+    return (options || []).join("\n");
+  }
+
+  function parseDemographicOptions(text) {
+    return text.split("\n").map((l) => l.trim()).filter(Boolean);
+  }
+
+  function parsePsychoOptions(text) {
+    return text
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const parts = line.split(/[｜|]/);
+        return { label: (parts[0] || "").trim(), score: Number((parts[1] || "").trim()) };
+      });
+  }
+
+  async function loadQuestions() {
+    const data = await api("/api/admin/questions");
+    questionMeta = { axes: data.axes || [], groups: data.groups || [] };
+    document.getElementById("questionCount").textContent =
+      `${data.questions.length}問（うち出さない設定 ${data.questions.filter((q) => !q.enabled).length}問）`;
+
+    table(
+      "questionTable",
+      ["種類", "設問", "いつ聞くか", "選択肢", "状態", ""],
+      data.questions,
+      (q) => {
+        const tr = el("tr");
+        if (!q.enabled) tr.className = "offRow";
+        tr.appendChild(el("td", q.kind === "psychographic" ? `価値観・${q.axis || ""}` : q.groupTitle || q.groupKey));
+
+        const labelCell = el("td");
+        labelCell.appendChild(el("div", q.label));
+        const why = el("div", q.why || "");
+        why.className = "lead";
+        labelCell.appendChild(why);
+        tr.appendChild(labelCell);
+
+        tr.appendChild(el("td", `${q.askAfter}回`));
+        tr.appendChild(
+          el("td", q.kind === "psychographic"
+            ? (q.options || []).map((o) => o.label).join(" / ")
+            : (q.options || []).join(" / "))
+        );
+
+        const stateCell = el("td");
+        const tag = el("span", q.source === "builtin" ? "既定" : q.source === "override" ? "上書き" : "追加");
+        tag.className = `srcTag ${q.source}`;
+        stateCell.appendChild(tag);
+        if (!q.enabled) stateCell.appendChild(el("div", "出さない"));
+        tr.appendChild(stateCell);
+
+        const actions = el("td");
+        const edit = el("button", "編集");
+        edit.type = "button";
+        edit.addEventListener("click", () => openEditor(q));
+        actions.appendChild(edit);
+        if (q.source !== "builtin") {
+          const reset = el("button", q.source === "custom" ? "削除" : "既定に戻す");
+          reset.type = "button";
+          reset.className = "ghost";
+          reset.addEventListener("click", async () => {
+            await api("/api/admin/questions", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ action: "delete", id: q.id }),
+            });
+            loadQuestions();
+          });
+          actions.appendChild(reset);
+        }
+        tr.appendChild(actions);
+        return tr;
+      }
+    );
+  }
+
+  function syncEditorKind() {
+    const kind = document.getElementById("qKind").value;
+    const isPsycho = kind === "psychographic";
+    document.getElementById("qAxisWrap").hidden = !isPsycho;
+    document.getElementById("qOptionsWrap").hidden = isPsycho;
+    document.getElementById("qPsychoOptionsWrap").hidden = !isPsycho;
+    // 価値観の設問は必ず単一選択（複数選ばれると、どの点数を採るか決められない）
+    document.getElementById("qType").disabled = isPsycho;
+    if (isPsycho) document.getElementById("qType").value = "single";
+  }
+
+  function openEditor(q) {
+    const editor = document.getElementById("questionEditor");
+    editor.hidden = false;
+    document.getElementById("questionStatus").textContent = "";
+
+    const axisSel = document.getElementById("qAxis");
+    axisSel.innerHTML = "";
+    for (const a of questionMeta.axes) {
+      axisSel.appendChild(Object.assign(document.createElement("option"), { value: a.id, textContent: a.label }));
+    }
+    const groupSel = document.getElementById("qGroup");
+    groupSel.innerHTML = "";
+    for (const g of questionMeta.groups) {
+      groupSel.appendChild(Object.assign(document.createElement("option"), { value: g.key, textContent: g.title }));
+    }
+    groupSel.appendChild(Object.assign(document.createElement("option"), { value: "custom", textContent: "その他（追加分）" }));
+
+    const isNew = !q;
+    document.getElementById("editorTitle").textContent = isNew ? "設問を追加" : "設問を編集";
+    document.getElementById("editorHint").textContent = isNew
+      ? "IDは英数字とアンダースコアで付けてください。既存のIDと同じにすると、その設問の上書きになります。"
+      : q.source === "builtin"
+        ? "これは既定の設問です。保存すると上書きとして保存され、一覧に「上書き」と出ます。"
+        : "保存すると内容が置き換わります。";
+
+    document.getElementById("qId").value = q ? q.id : "";
+    document.getElementById("qId").readOnly = !isNew;
+    document.getElementById("qKind").value = q ? q.kind : "demographic";
+    document.getElementById("qGroup").value = q ? q.groupKey || "custom" : "custom";
+    if (q && q.axis) axisSel.value = q.axis;
+    document.getElementById("qType").value = q ? q.type : "single";
+    document.getElementById("qAskAfter").value = q ? q.askAfter : 0;
+    document.getElementById("qSort").value = 100;
+    document.getElementById("qEnabled").value = q && !q.enabled ? "0" : "1";
+    document.getElementById("qLabel").value = q ? q.label : "";
+    document.getElementById("qWhy").value = q ? q.why || "" : "";
+    document.getElementById("qOptions").value = q && q.kind !== "psychographic" ? optionsToText("demographic", q.options) : "";
+    document.getElementById("qPsychoOptions").value = q && q.kind === "psychographic" ? optionsToText("psychographic", q.options) : "";
+    syncEditorKind();
+    editor.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  document.getElementById("qKind").addEventListener("change", syncEditorKind);
+  document.getElementById("newQuestionBtn").addEventListener("click", () => openEditor(null));
+  document.getElementById("cancelQuestionBtn").addEventListener("click", () => {
+    document.getElementById("questionEditor").hidden = true;
+  });
+
+  document.getElementById("saveQuestionBtn").addEventListener("click", async () => {
+    const kind = document.getElementById("qKind").value;
+    const body = {
+      id: document.getElementById("qId").value.trim(),
+      kind,
+      groupKey: document.getElementById("qGroup").value,
+      label: document.getElementById("qLabel").value.trim(),
+      why: document.getElementById("qWhy").value.trim(),
+      type: document.getElementById("qType").value,
+      askAfter: Number(document.getElementById("qAskAfter").value),
+      sortOrder: Number(document.getElementById("qSort").value),
+      enabled: document.getElementById("qEnabled").value === "1",
+      axis: kind === "psychographic" ? document.getElementById("qAxis").value : undefined,
+      options:
+        kind === "psychographic"
+          ? parsePsychoOptions(document.getElementById("qPsychoOptions").value)
+          : parseDemographicOptions(document.getElementById("qOptions").value),
+    };
+    const status = document.getElementById("questionStatus");
+    try {
+      await api("/api/admin/questions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      status.textContent = "保存しました";
+      document.getElementById("questionEditor").hidden = true;
+      loadQuestions();
+    } catch (e) {
+      status.textContent = e.message;
+    }
+  });
 
   loadOverview().catch((e) => {
     document.querySelector("main").prepend(

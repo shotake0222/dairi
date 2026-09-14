@@ -65,8 +65,19 @@
   }
   button.show { opacity: 1; }
   button:disabled { opacity: 0.4 !important; cursor: default; }
-  .fallback { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #aaa; font-size: 14px; padding: 24px; text-align: center; }
+  /* カメラが使えないときの案内。
+     以前は画面全体に絶対配置していたため、登場テキストや説明文とちょうど重なり、
+     どちらも読めなくなっていた。**重ねずに、他の文と同じ流れに置く**。
+     カメラ前提の説明文（.hint）のほうは、カメラが無い時点で嘘になるのでJS側で隠す。 */
+  .fallback { color: #b9b3cc; font-size: 13px; line-height: 1.8; text-align: center; }
   .brand { position: absolute; top: 16px; left: 16px; font-size: 11px; letter-spacing: 0.1em; color: rgba(255,255,255,0.6); font-weight: 700; z-index: 2; }
+  /* 行き止まりにしないための出口。タップ領域が小さいと押せないので、余白ごと確保する。 */
+  #homeLink {
+    position: absolute; top: 12px; right: 46px; z-index: 2;
+    font-size: 11px; color: rgba(255,255,255,0.72); text-decoration: none;
+    padding: 6px 10px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.22);
+    background: rgba(0,0,0,0.3); white-space: nowrap;
+  }
   #infoBtn {
     position: absolute; top: 12px; right: 12px; z-index: 2; width: 26px; height: 26px; border-radius: 999px;
     border: 1px solid rgba(255,255,255,0.3); background: rgba(0,0,0,0.3); color: #fff; font-weight: 700;
@@ -108,16 +119,19 @@
     opacity: 0; transition: opacity 0.6s ease;
   }
   #goTalk.show { opacity: 1; }
+
+  /* ロゴ（勾玉）。形の由来と作図は public/icons/mark.svg のコメントを参照。
+     読み込みを1往復増やさないため、pathはHTMLに直接埋め込んでいる。 */
+  .brand { display: inline-flex; align-items: center; gap: 5px; }
+  .brand .mk { width: 1.25em; height: 1.25em; flex: none; }
 </style>
 </head>
 <body>
   <div class="stage">
-    <div class="brand">わけたま</div>
+    <div class="brand"><svg class="mk" viewBox="0 0 48 48" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M24 7A17 17 0 0 1 24 41A6 6 0 0 0 24 29A11 11 0 0 1 24 7ZM28.6 18A4.6 4.6 0 1 1 19.4 18A4.6 4.6 0 1 1 28.6 18Z"/></svg><span>わけたま</span></div>
+    <a id="homeLink" href="/home" title="分身の一覧へ">← 分身の一覧</a>
     <button id="infoBtn" type="button" title="わけたまとは？">?</button>
     <video id="cam" autoplay playsinline muted></video>
-    <div class="fallback" id="fallback" hidden>
-      カメラを起動できませんでした。<br />このままキャラクターに会うこともできます。
-    </div>
     <!-- 3Dモデル表示。カメラ映像の上に浮かべることで簡易的なAR風の登場演出にしている。
          ar-modes を有効にしているため、対応端末では「ARで見る」から実カメラ越しのAR表示にも遷移できる。 -->
     <model-viewer id="model" camera-controls disable-zoom auto-rotate auto-rotate-delay="0"
@@ -134,6 +148,9 @@
       </div>
 
       <div class="hint" id="hint">キーホルダーを画面に映すと、キャラクターが姿を見せてくれます</div>
+      <div class="fallback" id="fallback" hidden>
+        カメラを起動できませんでした。<br />このままキャラクターに会うこともできます。
+      </div>
 
       <!-- 初回タップ時だけ表示する命名フォーム -->
       <form class="nameForm" id="nameForm">
@@ -218,6 +235,8 @@
       document.getElementById("cam").srcObject = stream;
     } catch (e) {
       document.getElementById("fallback").hidden = false;
+      // カメラ前提の案内は、カメラが無い時点で嘘になるうえ、上の案内と重なって読めなくなる
+      document.getElementById("hint").hidden = true;
     }
   }
 

@@ -226,14 +226,24 @@
   input { flex: 1; padding: 12px 14px; border-radius: 999px; border: 1px solid #ddd; font-size: 14px; }
   button.send { padding: 12px 20px; border-radius: 999px; border: none; background: #7c5cff; color: #fff; font-weight: 600; }
   button:disabled { opacity: 0.5; }
+
+  /* ロゴ（勾玉）。形の由来と作図は public/icons/mark.svg のコメントを参照。
+     読み込みを1往復増やさないため、pathはHTMLに直接埋め込んでいる。 */
+  .brand { display: inline-flex; align-items: center; gap: 5px; }
+  .brand .mk { width: 1.25em; height: 1.25em; flex: none; }
+  /* パルスサーベイの置き場所。会話ログと入力欄のあいだに、はさむように出す。
+     会話の上に重ねると読んでいる途中の文が隠れるので、重ねない。 */
+  #pulseSlot { padding: 0 12px; }
+  #pulseSlot:empty { display: none; }
 </style>
+<script src="/pulse.js" defer></script>
 </head>
 <body>
 <header>
   <div class="row">
     <img id="avatarIcon" src="" alt="" hidden />
     <div class="nameCol">
-      <div class="brand">わけたま</div>
+      <div class="brand"><svg class="mk" viewBox="0 0 48 48" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M24 7A17 17 0 0 1 24 41A6 6 0 0 0 24 29A11 11 0 0 1 24 7ZM28.6 18A4.6 4.6 0 1 1 19.4 18A4.6 4.6 0 1 1 28.6 18Z"/></svg><span>わけたま</span></div>
       <h1 id="charName">キャラクター</h1>
       <div id="status">読み込み中…</div>
     </div>
@@ -339,6 +349,10 @@
 </div>
 
 <div id="log"></div>
+
+<!-- パルスサーベイ。会話の合間に1問だけ聞く（実装は /pulse.js） -->
+<div id="pulseSlot"></div>
+
 <form id="form">
   <input id="input" type="text" placeholder="話しかけてみよう" autocomplete="off" maxlength="400" />
   <button class="send" type="submit">送信</button>
@@ -1020,6 +1034,22 @@
     modelEl.setAttribute("alt", data.name || "キャラクター");
   }
 
+  // --- パルスサーベイ ---
+  // 会話画面では1問だけ。ここで畳みかけると、話しに来た人を尋問することになる。
+  // defer で読み込んでいるので、この場では window.WaketamaPulse がまだ無い。
+  // DOMContentLoaded まで待ってから起動する（待たないと、静かに何も出ないだけになる）。
+  // 出すのは、ひととおり話しはじめてから。
+  // 生まれた直後の「はじめまして」の直後に質問を出すと、会いに来た人をいきなり尋問することになる。
+  const PULSE_MIN_INTERACTIONS = 3;
+  let pulseMounted = false;
+  function maybeMountPulse(interactionCount) {
+    if (pulseMounted || (interactionCount ?? 0) < PULSE_MIN_INTERACTIONS) return;
+    const token = getOwnerToken();
+    if (!cid || !token || !window.WaketamaPulse) return;
+    pulseMounted = true;
+    window.WaketamaPulse.mount({ slot: "#pulseSlot", cid, token });
+  }
+
   function renderStatus(data) {
     nameEl.textContent = data.name || "キャラクター";
     const styleLabel = data.speechStyleLabel ? ` / 口調: ${data.speechStyleLabel}` : "";
@@ -1030,6 +1060,7 @@
     }
     applyCharacterVisuals(data);
     renderSocial(data);
+    maybeMountPulse(data.interactionCount);
   }
 
   function renderPersonality(personality) {
@@ -1150,6 +1181,7 @@
 <script>
   // Service Workerの登録。失敗してもアプリ本体の動作には一切影響させない
   // （非対応ブラウザ・プライベートモード・http環境などでは単に登録されないだけ）。
+
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {
       navigator.serviceWorker.register("/sw.js").catch(() => {});

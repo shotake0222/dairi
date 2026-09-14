@@ -250,6 +250,9 @@ console.log("\n[12] 同意と属性（既定はすべてオフ）");
 // [8]の引き継ぎで持ち主トークンが差し替わっているため、端末に残っている古い値ではなく
 // 引き継ぎで発行された新しいトークンを使う（古い方は、もう持ち主として通らない）
 const profileToken = claimed.ownerToken || (await page.evaluate((c) => localStorage.getItem(`sodatsukake_token_${c}`), newCid));
+// 復旧（[21]）で引き継ぎコードを使うと持ち主トークンが変わる。
+// それ以降の節は、こちらの「いま有効なトークン」を使うこと。
+let currentToken = profileToken;
 const ownerView = await (await fetch(`${BASE}/api/profile?cid=${newCid}&token=${profileToken}`)).json();
 check("初期状態では何にも同意していない", ownerView.consent === null, JSON.stringify(ownerView.consent));
 
@@ -484,6 +487,7 @@ if (adminPass) {
     body: JSON.stringify({ code: issuedRecovery.code }),
   })).json();
   check("そのコードで所有権が戻る", recovered.characterId === newCid && Boolean(recovered.ownerToken));
+  currentToken = recovered.ownerToken;
 
   // 戻った所有権で、会話の履歴を含めた自分のデータが読めること（＝復旧が成立している）
   const restored = await (await fetch(
@@ -523,6 +527,99 @@ const lpHeaders = await fetch(`${BASE}/lp`);
 check("埋め込み防止のヘッダが付いている", lpHeaders.headers.get("x-frame-options") === "DENY");
 check("カメラ・マイクは自分のページにだけ許可されている",
   (lpHeaders.headers.get("permissions-policy") || "").includes("camera=(self)"));
+
+console.log("\n[23] パルスサーベイ（1問ずつ聞く）");
+{
+  // ここは専用の分身を1体作ってから確かめる。
+  // 他の節で使い回すと、同意済み・所有権が移ったあと、といった状態が混ざり、
+  // 「同意前は聞かない」のような肝心の確認ができなくなる。
+  await page.goto(`${BASE}/t/survey-${Date.now()}`, { waitUntil: "networkidle" });
+  const sCid = new URL(page.url()).searchParams.get("cid");
+  const sToken = await page.evaluate((c) => localStorage.getItem(`sodatsukake_token_${c}`), sCid);
+  const q = (t) => `cid=${encodeURIComponent(sCid)}&token=${encodeURIComponent(t)}`;
+
+  const before = await (await fetch(`${BASE}/api/survey/next?${q(sToken)}`)).json();
+  check("同意前は設問を出さない", before.needsConsent === true && before.item === null, JSON.stringify(before).slice(0, 90));
+  check("同意の文面が一緒に返る", typeof before.consentText === "string" && before.consentText.length > 10);
+
+  const saveWithoutConsent = await fetch(`${BASE}/api/survey/answer`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ characterId: sCid, token: sToken, id: "ageBand", values: ["30代"] }),
+  });
+  check("同意していない相手の回答は保存しない", saveWithoutConsent.status === 403, String(saveWithoutConsent.status));
+
+  await fetch(`${BASE}/api/consent`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ characterId: sCid, token: sToken, consent: { profile: true } }),
+  });
+
+  const first = await (await fetch(`${BASE}/api/survey/next?${q(sToken)}`)).json();
+  check("同意すると1問返る", Boolean(first.item), JSON.stringify(first.item));
+  check("なぜ聞くのかが一緒に返る", Boolean(first.item && first.item.why));
+  check("厚みが一緒に返る", typeof first.depth?.score === "number");
+
+  const answered = await fetch(`${BASE}/api/survey/answer`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ characterId: sCid, token: sToken, id: first.item.id, values: [first.item.options[0]] }),
+  });
+  check("答えを保存できる", answered.status === 200, String(answered.status));
+
+  const second = await (await fetch(`${BASE}/api/survey/next?${q(sToken)}`)).json();
+  check("同じ設問を二度出さない", second.item && second.item.id !== first.item.id, String(second.item?.id));
+  check("厚みが増えている", second.depth.score >= first.depth.score, `${first.depth.score} → ${second.depth.score}`);
+
+  // 価値観の申告が、AI推定と同じ軸に載ること
+  const valueAnswer = await fetch(`${BASE}/api/survey/answer`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ characterId: sCid, token: sToken, id: "psy_stimulation", values: ["絶対はじめての店"] }),
+  });
+  check("価値観の設問に答えられる", valueAnswer.status === 200, String(valueAnswer.status));
+  const view = await (await fetch(`${BASE}/api/profile?${q(sToken)}`)).json();
+  check("申告した価値観が人物像に反映される", (view.psychographics?.values?.stimulation ?? 0) > 70, String(view.psychographics?.values?.stimulation));
+  check("申告値が別枠でも保持される", view.psychographics?.selfReported?.stimulation === 92);
+
+  const stranger = await fetch(`${BASE}/api/survey/next?cid=${sCid}&token=wrong`);
+  check("持ち主以外には設問も進み具合も見せない", stranger.status === 403, String(stranger.status));
+
+  // 属性ページに、厚みと1問ずつの欄が出ていること
+  await page.goto(`${BASE}/profile?cid=${sCid}`, { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(1800);
+  const profileHtml = await page.content();
+  check("属性ページに厚みが出ている", profileHtml.includes("この分身の厚み"));
+  check("属性ページに1問ずつの欄がある", profileHtml.includes("ひとつずつ答える"));
+  const pulseVisible = await page.evaluate(() => {
+    const card = document.querySelector(".wtPulse");
+    return Boolean(card && !card.hidden);
+  });
+  check("設問カードが実際に表示される", pulseVisible === true);
+  const profileOverflow = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth
+  );
+  check("属性ページが横に溢れていない", profileOverflow === false);
+  await page.screenshot({ path: path.join(OUT_DIR, "profile-survey.png") });
+}
+
+console.log("\n[24] ロゴと行き止まり");
+for (const [pathname, label] of [["/lp", "LP"], ["/home", "分身の一覧"], ["/market", "マーケット"]]) {
+  const html = await (await fetch(`${BASE}${pathname}`)).text();
+  // 勾玉ロゴは同じ座標をHTMLに直接埋め込んである（public/icons/mark.svg と同じ形）
+  check(`${label}に勾玉のロゴが入っている`, html.includes("M24 7A17 17 0 0 1 24 41"));
+}
+check("ロゴのSVGが単体でも配信される", (await fetch(`${BASE}/icons/mark.svg`)).ok);
+
+for (const [pathname, label] of [["/summon", "召喚"], ["/market", "マーケット"], ["/recover", "復旧"]]) {
+  await page.goto(`${BASE}${pathname}?cid=${newCid}`, { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(400);
+  const hasExit = await page.evaluate(() => {
+    const links = [...document.querySelectorAll("a,button")];
+    return links.some((el) => /もどる|戻る|一覧/.test(el.textContent || ""));
+  });
+  check(`${label}に行き止まりの出口がある`, hasExit === true);
+}
 
 check("JavaScriptエラーが出ていない", pageErrors.length === 0, pageErrors.join(" / "));
 

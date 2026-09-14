@@ -117,12 +117,22 @@
   #startOverlay p { margin: 0; font-size: 13px; line-height: 1.9; color: #bcb0ee; max-width: 340px; }
   #startBtn { background: #7c5cff; color: #fff; border: none; padding: 14px 34px; border-radius: 999px; font-size: 15px; font-weight: 700; }
   #startOverlay .note { font-size: 11px; color: #8a7fb8; }
+  /* 通話を始めずに引き返すための出口。文字だけだと押せる場所が分かりにくいので枠を付ける。 */
+  .backLink {
+    margin-top: 6px; font-size: 12px; color: #bcb0ee; text-decoration: none;
+    padding: 9px 18px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.16);
+  }
+
+  /* ロゴ（勾玉）。形の由来と作図は public/icons/mark.svg のコメントを参照。
+     読み込みを1往復増やさないため、pathはHTMLに直接埋め込んでいる。 */
+  .brand { display: inline-flex; align-items: center; gap: 5px; }
+  .brand .mk { width: 1.25em; height: 1.25em; flex: none; }
 </style>
 </head>
 <body>
 
 <header>
-  <div class="brand">わけたま</div>
+  <div class="brand"><svg class="mk" viewBox="0 0 48 48" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M24 7A17 17 0 0 1 24 41A6 6 0 0 0 24 29A11 11 0 0 1 24 7ZM28.6 18A4.6 4.6 0 1 1 19.4 18A4.6 4.6 0 1 1 28.6 18Z"/></svg><span>わけたま</span></div>
   <h1 id="charName">…</h1>
   <div id="timer">00:00</div>
 </header>
@@ -157,6 +167,8 @@
   </p>
   <button id="startBtn" type="button">通話をはじめる</button>
   <div class="note">マイクを使うと、声でも話しかけられます</div>
+  <!-- 始める前に気が変わることはある。ブラウザの戻る以外の出口を必ず置く。 -->
+  <a class="backLink" id="startBackLink" href="/home">← 会話にもどる</a>
 </div>
 
 <script>
@@ -175,6 +187,8 @@
   const handsFreeBtn = document.getElementById("handsFreeBtn");
   const voiceModeBtn = document.getElementById("voiceModeBtn");
   const hangupBtn = document.getElementById("hangupBtn");
+  // 引き返す先は、この分身の会話画面（cidが無いときだけ一覧へ）
+  document.getElementById("startBackLink").href = cid ? `/chat?cid=${encodeURIComponent(cid)}` : "/home";
   const startOverlay = document.getElementById("startOverlay");
   const startBtn = document.getElementById("startBtn");
   const startTitle = document.getElementById("startTitle");
