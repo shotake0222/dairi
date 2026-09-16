@@ -52,7 +52,7 @@
     font-weight: 800; letter-spacing: 0.06em; font-size: 15px; 
   }
   .logo svg {
-    width: 22px; height: 22px;
+    width: 20px; height: 20px;
     fill: var(--brand);
   }
   .logo span { color: var(--brand); }
@@ -76,21 +76,30 @@
   }
   .hero h1 em { font-style: normal; color: var(--brand); }
   .hero .sub { font-size: 15px; color: var(--muted); margin: 0 auto 26px; max-width: 28em; }
+  
+  /* ヒーローアート（メインビジュアル）の調整 */
   .heroArt {
-    position: relative;
+    position: relative; /* SVGロゴを絶対配置するための基準 */
     width: min(250px, 60vw); aspect-ratio: 1; margin: 0 auto 24px; border-radius: 40px;
     background: radial-gradient(circle at 50% 38%, #fff 0%, #efe9ff 55%, #e2d9ff 100%);
-    display: flex; align-items: center; justify-content: center; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
     box-shadow: 0 22px 60px rgba(124,92,255,0.18);
   }
-  /* メインビジュアルの後ろに、勾玉（サービスの標）を大きく透かしで置く。
-     分身のキャラクターが「勾玉の中から出てくる」ように見せたいので、
-     キャラクターより手前には出さない。 */
-  .heroArt .heroMark {
-    position: absolute; width: 86%; height: 86%; fill: var(--brand); opacity: 0.13;
-    transform: rotate(-8deg);
+  .heroArt img { width: 74%; animation: float 4.2s ease-in-out infinite; position: relative; z-index: 2; }
+  
+  /* ヒーローアート用の大きめなSVGロゴ装飾 */
+  .heroArt-logo {
+    position: absolute;
+    top: 15px;
+    left: 15px;
+    width: 38px;
+    height: 38px;
+    fill: var(--brand);
+    opacity: 0.8;
+    z-index: 1;
+    transform: rotate(-10deg);
   }
-  .heroArt img { position: relative; width: 74%; animation: float 4.2s ease-in-out infinite; }
+
   @keyframes float { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-9px) } }
   @media (prefers-reduced-motion: reduce) { .heroArt img { animation: none } }
 
@@ -250,13 +259,9 @@
 <header class="site">
   <div class="wrap">
     <div class="logo">
-      <!--
-        勾玉（まがたま）のロゴ。大きい円の右半分に頭の円を足し、尾の円を引いて、頭に紐穴を開けている。
-        作図の詳細は public/icons/mark.svg。アイコンとOGPも同じ形から作っている
-        （tools/make_brand_assets.py）。形を変えるときは3箇所すべてを揃えること。
-      -->
-      <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <path fill-rule="evenodd" d="M24 7A17 17 0 0 1 24 41A6 6 0 0 0 24 29A11 11 0 0 1 24 7ZM28.6 18A4.6 4.6 0 1 1 19.4 18A4.6 4.6 0 1 1 28.6 18Z"/>
+      <!-- シンプルな勾玉モチーフのSVGロゴ -->
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-2-9c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2zm6 0c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2z"/>
       </svg>
       <div>わけ<span>たま</span></div>
     </div>
@@ -270,12 +275,15 @@
   <div class="hero">
     <span class="eyebrow">NFCキーホルダー × 育成AI</span>
     <h1>あなたの御霊を、<em>わける</em>。</h1>
+    
     <div class="heroArt">
-      <svg class="heroMark" viewBox="0 0 48 48" aria-hidden="true">
-        <path fill-rule="evenodd" d="M24 7A17 17 0 0 1 24 41A6 6 0 0 0 24 29A11 11 0 0 1 24 7ZM28.6 18A4.6 4.6 0 1 1 19.4 18A4.6 4.6 0 1 1 28.6 18Z"/>
+      <!-- メインビジュアル内の勾玉ロゴ装飾 -->
+      <svg class="heroArt-logo" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-2-9c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2zm6 0c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2z"/>
       </svg>
       <img src="/characters/punikoro_lavender.png" alt="わけたまのキャラクター" />
     </div>
+    
     <p class="sub">
       キーホルダーにスマホをかざすと、空っぽの分身が生まれます。<br />
       話しかけた分だけ、その子はあなたに似ていきます。
@@ -517,36 +525,6 @@
 </footer>
 
 <script>
-  // 送信内容の控えを、こちら側の管理画面にも残す。
-  // フォーム自体は Formspree にそのまま送る（送信の成否はあちらに委ねる）。
-  // メール1本しか残らないと、返信済みかどうかを追う場所が無く、取りこぼしが起きるため。
-  // 失敗しても何もしない: 控えが残らないだけで、本来の送信は妨げない。
-  (function () {
-    var form = document.querySelector(".contact-form");
-    if (!form) return;
-    form.addEventListener("submit", function () {
-      try {
-        var value = function (name) {
-          var el = form.querySelector('[name="' + name + '"]');
-          return el && el.value ? String(el.value).slice(0, 1000) : "";
-        };
-        var email = value("email");
-        if (!email) return;
-        var payload = JSON.stringify({
-          kind: "other",
-          company: value("name"),
-          contact: email,
-          topic: "other",
-          message: value("message"),
-        });
-        var blob = new Blob([payload], { type: "application/json" });
-        if (navigator.sendBeacon) navigator.sendBeacon("/api/contact", blob);
-      } catch (e) {
-        /* 控えが残らないだけなので握りつぶす */
-      }
-    });
-  })();
-
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {
       navigator.serviceWorker.register("/sw.js").catch(() => {});
