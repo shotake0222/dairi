@@ -65,7 +65,30 @@
   .navLink { font-size: 13px; text-decoration: none; color: var(--muted); white-space: nowrap; }
   @media (max-width: 430px) { .logo .biz { display: none; } }
 
-  .hero { padding: 56px 0 44px; }
+  .hero { padding: 56px 0 44px; position: relative; }
+  
+  /* ヒーローアート背景にロゴを配置 */
+  .hero-logo-bg {
+    position: absolute;
+    top: 50%;
+    right: 5%;
+    transform: translateY(-50%) rotate(15deg);
+    width: 280px;
+    height: 280px;
+    fill: var(--brand);
+    opacity: 0.07;
+    z-index: -1;
+    pointer-events: none;
+  }
+  @media (max-width: 768px) {
+    .hero-logo-bg {
+      width: 180px;
+      height: 180px;
+      top: 40%;
+      right: 0;
+    }
+  }
+
   .hero .eyebrow {
     display: inline-block; font-size: 11px; letter-spacing: 0.16em; font-weight: 700;
     color: var(--accent); border: 1px solid rgba(85,227,176,0.35); padding: 5px 13px; border-radius: 999px;
@@ -199,6 +222,11 @@
 
 <div class="wrap">
   <div class="hero">
+    <!-- メインビジュアル背景の勾玉ロゴ -->
+    <svg class="hero-logo-bg" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <path fill-rule="evenodd" d="M24 7A17 17 0 0 1 24 41A6 6 0 0 0 24 29A11 11 0 0 1 24 7ZM28.6 18A4.6 4.6 0 1 1 19.4 18A4.6 4.6 0 1 1 28.6 18Z"/>
+    </svg>
+    
     <span class="eyebrow">PERSONA DATA FOR SMALL MODELS</span>
     <h1>小さなモデルに、<em>人格</em>を載せる。</h1>
     <p class="sub">
