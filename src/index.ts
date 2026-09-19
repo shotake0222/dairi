@@ -43,6 +43,7 @@ import {
   listTags,
   publicSpot,
   recordOrigin,
+  isLimitedSpot,
   saveSpot,
   spotOfTag,
 } from "./yorishiro";
@@ -466,7 +467,8 @@ export default {
         characterId = row.character_id;
       } else {
         // 初回の読み取り: この依代に宿る分身を新規発行する。
-        // 姿はDO側（init）がランダムに決める。ここでは一切指定しない。
+        // 姿を引くのはDO側（init）。ここで渡せるのは**引く範囲**だけで、
+        // どの子が出るかは指定できない（migration 0011 と BirthPool のコメントを参照）。
         characterId = crypto.randomUUID();
         isFirstTime = true;
         await env.DB.prepare(
@@ -475,10 +477,19 @@ export default {
           .bind(tagId, characterId, Date.now())
           .run();
 
-        const stub = env.CHARACTER.getByName(characterId);
-        const initData = await stub.init("名もなきキャラクター");
-        ownerToken = initData.ownerToken;
         spotCode = await spotOfTag(env, tagId);
+        // 場所限定の姿。配布元が範囲を絞っているときだけ効く（ほとんどの依代は素通り）。
+        // 止まっている配布元（active=false）の範囲は使わない——止めたつもりの企画が
+        // 配り残しのコードから生き続けるのは、運営として困る。
+        const spotForBirth = spotCode ? await getSpot(env, spotCode) : null;
+        const pool =
+          spotForBirth && spotForBirth.active && isLimitedSpot(spotForBirth)
+            ? { species: spotForBirth.speciesPool, color: spotForBirth.colorPool }
+            : undefined;
+
+        const stub = env.CHARACTER.getByName(characterId);
+        const initData = await stub.init("名もなきキャラクター", pool);
+        ownerToken = initData.ownerToken;
         ctx.waitUntil(countMetric(env, "new_character"));
         ctx.waitUntil(recordOrigin(env, characterId, viaQr ? "qr" : "nfc", tagId, spotCode));
       }

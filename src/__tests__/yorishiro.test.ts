@@ -158,3 +158,128 @@ describe("運営側の台帳", () => {
     expect(body.spot.place).toBeUndefined();
   });
 });
+
+/**
+ * 場所限定の姿（migration 0011）。
+ *
+ * ここで守りたいのは、**運営が決められるのは「どの範囲から引くか」までで、
+ * 「どの子が出るか」ではない**という線。緩めすぎると「引き当てた」が「配られた」になる。
+ */
+describe("場所限定の姿", () => {
+  async function birth(spotCode: string): Promise<{ species: string; color: string }> {
+    const issued = await issueTags(env, { count: 1, kind: "qr", spot: spotCode });
+    if (!issued.ok) throw new Error("依代を発行できませんでした");
+    const res = await SELF.fetch(`${BASE}/q/${issued.tagIds[0]}`, { redirect: "manual" });
+    const cid = cidOf(res);
+    const state = await (await SELF.fetch(`${BASE}/api/character?cid=${cid}`)).json<{
+      species: string;
+      color: string;
+    }>();
+    return state;
+  }
+
+  it("範囲を絞った配布元からは、その範囲の姿しか出ない", async () => {
+    const code = freshCode("limited").slice(0, 32);
+    await saveSpot(env, {
+      code,
+      label: "八重垣神社",
+      speciesPool: ["kiratsubu"],
+      colorPool: ["sun", "lavender"],
+    });
+
+    // 乱数なので、何度か引いて全部が範囲内であることを見る
+    for (let i = 0; i < 12; i++) {
+      const { species, color } = await birth(code);
+      expect(species).toBe("kiratsubu");
+      expect(["sun", "lavender"]).toContain(color);
+    }
+  });
+
+  it("色だけ絞ることもできる（種族は制限なしのまま）", async () => {
+    const code = freshCode("coloronly").slice(0, 32);
+    await saveSpot(env, { code, label: "港の灯台", colorPool: ["peach"] });
+    const seen = new Set<string>();
+    for (let i = 0; i < 10; i++) {
+      const { species, color } = await birth(code);
+      expect(color).toBe("peach");
+      seen.add(species);
+    }
+    // 種族は絞っていないので、10回も引けばふつうは複数出る
+    expect(seen.size).toBeGreaterThan(1);
+  });
+
+  it("範囲を指定していない配布元は、これまでどおり全体から引く", async () => {
+    const code = freshCode("open").slice(0, 32);
+    await saveSpot(env, { code, label: "ふつうの配布元" });
+    const spot = (await listSpots(env)).find((s) => s.code === code);
+    expect(spot?.speciesPool).toEqual([]);
+    expect(spot?.colorPool).toEqual([]);
+  });
+
+  it("知らないキーは保存しない（綴り違いで「絞ったつもり」になるのを防ぐ）", async () => {
+    const code = freshCode("typo").slice(0, 32);
+    await saveSpot(env, { code, label: "綴り違い", speciesPool: ["kiratubu", "kiratsubu"] });
+    const spot = (await listSpots(env)).find((s) => s.code === code);
+    expect(spot?.speciesPool).toEqual(["kiratsubu"]);
+  });
+
+  it("全部選んだら「制限なし」と同じ扱いにする", async () => {
+    const code = freshCode("all").slice(0, 32);
+    await saveSpot(env, {
+      code,
+      label: "全部選んだ場合",
+      colorPool: ["coral", "sky", "leaf", "sun", "lavender", "peach"],
+    });
+    const spot = (await listSpots(env)).find((s) => s.code === code);
+    expect(spot?.colorPool).toEqual([]);
+  });
+
+  it("止めた配布元の限定は効かせない（止めたはずの企画が配り残しから生き続けない）", async () => {
+    const code = freshCode("stopped").slice(0, 32);
+    await saveSpot(env, { code, label: "終わった催し", speciesPool: ["kiratsubu"], active: false });
+    const seen = new Set<string>();
+    for (let i = 0; i < 12; i++) seen.add((await birth(code)).species);
+    expect(seen.size).toBeGreaterThan(1);
+  });
+
+  it("何が出るかは、引く前の画面には出さない", async () => {
+    const code = freshCode("secret").slice(0, 32);
+    await saveSpot(env, { code, label: "秘密の場所", speciesPool: ["kiratsubu"] });
+    const info = await SELF.fetch(`${BASE}/api/spot?code=${code}`);
+    const text = await info.text();
+    // 「限定がある」ことだけ伝え、中身は伝えない
+    expect(text).toContain('"limited":true');
+    expect(text).not.toContain("kiratsubu");
+  });
+});
+
+/**
+ * 依代を複数持てば、分身も複数育てられる。
+ * 「1つの依代からは1体だけ」と混同されやすいが、**端末あたりの上限は無い**。
+ */
+describe("複数の依代で、複数体を育てる", () => {
+  it("依代が2つあれば、別々の分身が2体生まれる", async () => {
+    const a = freshCode("multi-a");
+    const b = freshCode("multi-b");
+    const cidA = cidOf(await SELF.fetch(`${BASE}/t/${a}`, { redirect: "manual" }));
+    const cidB = cidOf(await SELF.fetch(`${BASE}/t/${b}`, { redirect: "manual" }));
+
+    expect(cidA).not.toBe("");
+    expect(cidB).not.toBe("");
+    expect(cidA).not.toBe(cidB);
+
+    // 2体とも生きていて、それぞれ別に育つ
+    for (const cid of [cidA, cidB]) {
+      const res = await SELF.fetch(`${BASE}/api/character?cid=${cid}`);
+      expect(res.status).toBe(200);
+    }
+  });
+
+  it("かざす依代とQRの依代を1つずつ持っても、同じように2体になる", async () => {
+    const a = freshCode("mix-nfc");
+    const b = freshCode("mix-qr");
+    const cidA = cidOf(await SELF.fetch(`${BASE}/t/${a}`, { redirect: "manual" }));
+    const cidB = cidOf(await SELF.fetch(`${BASE}/q/${b}`, { redirect: "manual" }));
+    expect(cidA).not.toBe(cidB);
+  });
+});

@@ -75,6 +75,18 @@
   .empty { text-align: center; color: #888; font-size: 13px; padding: 50px 20px; line-height: 1.8; }
   .empty .big { font-size: 32px; margin-bottom: 12px; }
 
+  /* 集めた姿の図鑑 */
+  .dexHead { display: flex; align-items: baseline; gap: 10px; font-size: 13px; }
+  .dexHead span { font-size: 12px; color: #9a90c0; }
+  .dexGrid { display: grid; gap: 6px; grid-template-columns: repeat(6, 1fr); margin: 12px 0 0; }
+  .dexCell { aspect-ratio: 1; border-radius: 10px; background: #f4f1ff; display: grid; place-items: center;
+             overflow: hidden; }
+  .dexCell img { width: 84%; height: 84%; object-fit: contain; }
+  /* まだ会っていない姿。形は出さない（出すと「引く」前に全部見えてしまう） */
+  .dexCell.unseen { background: #f2f0f7; color: #cfc8e4; font-size: 15px; }
+  .dexNote { font-size: 11.5px; color: #9a90c0; line-height: 1.75; margin-top: 12px; }
+  .dexNote strong { color: #7c5cff; }
+
   /* フッター。アカウント不要のサービスなので、データの扱いへの導線は常に見える場所に置く。 */
   .addEntry { border-style: dashed; }
   .addIcon { display: grid; place-items: center; font-size: 26px; color: #b7a9e8; }
@@ -105,6 +117,22 @@
     依代（よりしろ）をかざすと、あなたの分身がここに現れます。<br />
     キーホルダーをかざすか、置かれているQRを読み取ってみてください。<br />
     <a href="/add" style="display:inline-block;margin-top:12px;color:#7c5cff">どちらも持っていないときは →</a>
+  </div>
+
+  <!-- 集めた姿の図鑑。集める遊びには「あと何が残っているか」が見える場所が要る。
+       出せるのは**この端末で会ったことのある分身**だけ（アカウントが無いので、
+       他の端末で育てた子までは分からない）。その断りも画面に出している。 -->
+  <div class="card" id="dexCard" hidden>
+    <div class="dexHead">
+      <strong>集めた姿</strong>
+      <span id="dexCount"></span>
+    </div>
+    <div class="dexGrid" id="dexGrid"></div>
+    <div class="dexNote">
+      姿は依代をかざしたときにランダムで決まります。<strong>狙って選ぶことはできません。</strong>
+      場所によっては、そこでしか出会えない姿もあります。
+      <br />ここに出るのは、この端末で会ったことのある分身だけです。
+    </div>
   </div>
 
   <div class="card" id="conceptCard" hidden>
@@ -167,6 +195,51 @@
     return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
 
+  // 姿は 5種族 × 6色 = 30通り。名前はサービス側と揃えること
+  // （src/durable-objects/characterState.ts の SPECIES_KEYS / COLOR_KEYS）。
+  const SPECIES_ORDER = ["punikoro", "mofukuru", "tsunomaru", "howahowa", "kiratsubu"];
+  const COLOR_ORDER = ["coral", "sky", "leaf", "sun", "lavender", "peach"];
+
+  /**
+   * 集めた姿の図鑑。
+   *
+   * 「まだ会っていない姿」は**形も色も出さない。** 先に全部見えてしまうと、
+   * かざした瞬間の「何が出るか」が消える。出すのは「まだ空いている枠がある」ことだけ。
+   */
+  function renderDex(list) {
+    const card = document.getElementById("dexCard");
+    const grid = document.getElementById("dexGrid");
+    if (!card || !grid) return;
+    if (list.length === 0) {
+      card.hidden = true;
+      return;
+    }
+
+    const owned = new Set(list.filter((c) => c.species && c.color).map((c) => `${c.species}_${c.color}`));
+    grid.innerHTML = "";
+    for (const sp of SPECIES_ORDER) {
+      for (const co of COLOR_ORDER) {
+        const key = `${sp}_${co}`;
+        const cell = document.createElement("div");
+        cell.className = owned.has(key) ? "dexCell" : "dexCell unseen";
+        if (owned.has(key)) {
+          const img = document.createElement("img");
+          img.src = `/characters/${key}.png`;
+          img.alt = `${SPECIES_LABELS[sp] || sp}（${key}）`;
+          img.loading = "lazy";
+          cell.appendChild(img);
+        } else {
+          cell.textContent = "?";
+          cell.title = "まだ会っていません";
+        }
+        grid.appendChild(cell);
+      }
+    }
+    const total = SPECIES_ORDER.length * COLOR_ORDER.length;
+    document.getElementById("dexCount").textContent = `${owned.size} / ${total}`;
+    card.hidden = false;
+  }
+
   function cardHtml(c) {
     const speciesLabel = SPECIES_LABELS[c.species] || c.species || "";
     const iconSrc = c.species && c.color ? `/characters/${c.species}_${c.color}.png` : "";
@@ -188,10 +261,12 @@
     if (list.length === 0) {
       emptyState.hidden = false;
       conceptCard.hidden = true;
+      renderDex(list);
       return;
     }
     emptyState.hidden = true;
     conceptCard.hidden = false;
+    renderDex(list);
 
     for (const c of list) {
       const a = document.createElement("a");

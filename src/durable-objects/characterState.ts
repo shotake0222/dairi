@@ -307,6 +307,28 @@ function randomColor(): ColorKey {
 }
 
 /**
+ * 「どの範囲から引くか」だけを渡せる口。
+ *
+ * **どの子が出るかは、ここでも決められない。** 渡せるのは候補の集合までで、
+ * その中から引くのは下の乱数。場所限定の姿（特定のQRからしか出ない種族など）を
+ * 作るために 0011 で開けた口で、細くできるのは母集団だけ。
+ *
+ * 1つに絞った集合を渡せば結果として指定と同じになるが、それは
+ * **「その姿しか居ない場所」を作ったということ**で、抽選をすり抜けたわけではない。
+ * 空・未指定・知らないキーしか入っていない場合は、これまでどおり全体から引く。
+ */
+export interface BirthPool {
+  species?: readonly string[];
+  color?: readonly string[];
+}
+
+function drawFrom<T extends string>(all: readonly T[], allowed: readonly string[] | undefined): T {
+  const pool = (allowed || []).filter((k): k is T => (all as readonly string[]).includes(k));
+  const from = pool.length > 0 ? pool : all;
+  return from[Math.floor(Math.random() * from.length)];
+}
+
+/**
  * 後方互換のための再輸出。モデルの選定と呼び出しは src/ai/modelPolicy.ts に移した。
  * 以前は「このDOの中に埋まった1つの定数」がサービス全体の会話品質を決めていたが、
  * 用途ごとの使い分けもフォールバックもできず、品質改善の手が入れづらかった。
@@ -406,15 +428,19 @@ export class CharacterState extends DurableObject<Env> {
    * 依代（NFCタグ／QR）はどれも等しい確率で姿が決まる、というのが集める体験の土台で、
    * 運営が姿を決められる口を1つでも開けると「引き当てた」が「配られた」に変わる。
    */
-  async init(name: string): Promise<CharacterData> {
+  /**
+   * @param pool 引く範囲。省略すれば30種類から等確率（ほとんどの依代はこちら）。
+   *   **姿そのものを指定する引数ではない。** 詳しくは BirthPool のコメントと migration 0011。
+   */
+  async init(name: string, pool?: BirthPool): Promise<CharacterData> {
     const existing = await this.ctx.storage.get<CharacterData>("data");
     if (existing) return existing;
 
     const now = Date.now();
     const data: CharacterData = {
       name,
-      species: randomSpecies(),
-      color: randomColor(),
+      species: pool ? drawFrom(SPECIES_KEYS, pool.species) : randomSpecies(),
+      color: pool ? drawFrom(COLOR_KEYS, pool.color) : randomColor(),
       personality: { ...DEFAULT_PERSONALITY },
       memorySummary: "",
       growthStage: "誕生したばかり",

@@ -943,6 +943,73 @@ console.log("\n[31] ホーム画面への追加と、規約の穴");
   }
 }
 
+console.log("\n[32] 依代を何個でも持てること、書き込むURLの案内、集めた姿");
+{
+  // 依代が2つあれば2体。端末あたりの上限は無い
+  const a = `e2e-multi-a-${Date.now()}`;
+  const b = `e2e-multi-b-${Date.now()}`;
+  const cidOf = async (p) => {
+    const res = await fetch(`${BASE}${p}`, { redirect: "manual" });
+    return new URL(res.headers.get("location"), BASE).searchParams.get("cid");
+  };
+  const cidA = await cidOf(`/t/${a}`);
+  const cidB = await cidOf(`/q/${b}`);
+  check("依代が2つなら分身も2体になる", !!cidA && !!cidB && cidA !== cidB);
+  check("2体ともちゃんと生きている",
+    (await fetch(`${BASE}/api/character?cid=${cidA}`)).ok && (await fetch(`${BASE}/api/character?cid=${cidB}`)).ok);
+
+  // 同じ依代を2回読んでも増えない（「1つにつき1体」）
+  check("同じ依代を読み直しても増えない", (await cidOf(`/t/${a}`)) === cidA);
+
+  // 一覧に2体並び、図鑑が出ること
+  await page.goto(`${BASE}/home`, { waitUntil: "domcontentloaded" });
+  await page.evaluate(
+    ([x, y]) =>
+      localStorage.setItem(
+        "sodatsukake_myCharacters",
+        JSON.stringify([
+          { cid: x, name: "いちばん", species: "punikoro", color: "coral", lastVisit: Date.now() },
+          { cid: y, name: "にばんめ", species: "kiratsubu", color: "sun", lastVisit: Date.now() },
+        ])
+      ),
+    [cidA, cidB]
+  );
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(700);
+  // 「分身を増やす」のタイルも .entry なので、そちらは数えない
+  check("一覧に2体とも並ぶ", (await page.locator("#grid .entry:not(.addEntry)").count()) === 2);
+  const dex = await page.evaluate(() => {
+    const card = document.getElementById("dexCard");
+    return {
+      shown: card && !card.hidden,
+      count: (document.getElementById("dexCount") || {}).textContent || "",
+      owned: document.querySelectorAll("#dexGrid .dexCell:not(.unseen)").length,
+      cells: document.querySelectorAll("#dexGrid .dexCell").length,
+    };
+  });
+  check("集めた姿の図鑑が出る", dex.shown === true && dex.cells === 30, JSON.stringify(dex));
+  check("持っている姿だけが開いている", dex.owned === 2 && dex.count.includes("2 / 30"), JSON.stringify(dex));
+
+  // 1体も居ない端末では図鑑を出さない（集める前に空の棚を見せない）
+  await page.evaluate(() => localStorage.removeItem("sodatsukake_myCharacters"));
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(500);
+  check("1体も居なければ図鑑は出さない",
+    (await page.evaluate(() => document.getElementById("dexCard").hidden)) === true);
+
+  // 管理画面。タグに書き込むURLで迷わせない（合言葉が渡されているときだけ）
+  if (adminPass) {
+    const gate = await fetch(`${BASE}/admin?key=${encodeURIComponent(adminPass)}`, { redirect: "manual" });
+    const cookie = (gate.headers.get("set-cookie") || "").split(";")[0];
+    const admin = await (await fetch(`${BASE}/admin`, { headers: { cookie } })).text();
+    check("書き込むURLの案内がある", admin.includes("タグに書き込むURL"));
+    check("/home を書き込むなと書いてある", admin.includes("をタグに書き込まないでください"));
+    check("依代を使わない入口も案内している", admin.includes("<code>/add</code>"));
+    check("限定の姿を設定できる", admin.includes("ここでしか出ない姿にする"));
+    check("限定でも個体は選べないと明記", admin.includes("どの子が出るかは指定できません"));
+  }
+}
+
 check("JavaScriptエラーが出ていない", pageErrors.length === 0, pageErrors.join(" / "));
 
 await browser.close();

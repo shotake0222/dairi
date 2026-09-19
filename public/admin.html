@@ -56,6 +56,22 @@
   .tab.on { background: var(--brand); color: #fff; border-color: transparent; }
   .panel[hidden] { display: none; }
   .formGrid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin: 12px 0; }
+
+  /* タグに書き込むURL。ここで迷わせないのが依代タブの一番の役目 */
+  .urlBox { display: grid; gap: 8px; }
+  .urlRow { display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+            background: #f7f5ff; border-radius: 10px; padding: 10px 12px; }
+  .urlRow .urlWhat { font-size: 12px; font-weight: 700; min-width: 9em; }
+  .urlRow code { font-size: 13px; color: #43368a; flex: 1; word-break: break-all; }
+
+  /* 限定の姿。ふつうは使わない設定なので、開いたときだけ見えるようにする */
+  .poolBox { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin: 12px 0; }
+  .poolBox summary { cursor: pointer; font-size: 13px; font-weight: 700; }
+  .poolWarn { font-size: 12px; color: #a3552b; background: #fff6ef; border-radius: 8px;
+              padding: 10px 12px; margin: 10px 0; line-height: 1.8; }
+  .poolPick { display: flex; gap: 6px 14px; flex-wrap: wrap; margin: 8px 0 0; }
+  .poolPick label { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; font-weight: 400; }
+  .poolPick input { width: auto; }
   .formGrid label, label.wide { display: block; font-size: 12px; color: var(--muted); }
   label.wide { margin-bottom: 10px; }
   .formGrid input, .formGrid select, label.wide input, label.wide textarea {
@@ -295,13 +311,44 @@
       <p class="lead">
         分身が宿るもの。<strong>NFCタグ</strong>でも<strong>QR</strong>でも、仕組みはまったく同じです。
         <br />・<strong>1つの依代からは1体だけ</strong>（2回目以降の読み取りは、同じ子に会いに行く）
-        <br />・<strong>姿はランダム</strong>。どの依代でも確率は等しく、運営が指定することはできません
-        <br />ここを崩すと「集める」が成り立たないので、姿を固定する仕組みは意図的に用意していません。
-        「その場所でしか手に入らない」は、<strong>そのコードをその場所にしか置かないこと</strong>で作ります。
+        <br />・<strong>姿は引くもの</strong>。既定では30種類から等確率で、運営でも個体は指定できません
+        <br />・<strong>人が持てる数に上限はありません</strong>。依代を3つ持てば3体育ちます
+        <br />「その場所でしか手に入らない」は、まず<strong>そのコードをその場所にしか置かないこと</strong>で作ります。
+        それでも足りないときだけ、配布元ごとに<strong>出る姿の範囲</strong>を絞れます（下の「配布元」）。
+        絞れるのは範囲までで、<strong>どの子が出るかは決められません</strong>——
+        ここを崩すと「引き当てた」が「配られた」になり、集める理由が消えます。
       </p>
+    </section>
+
+    <section>
+      <h2>タグに書き込むURL（迷ったらここ）</h2>
       <p class="lead">
-        書き込む／刷るURL: <code>https://&lt;ドメイン&gt;/t/&lt;コード&gt;</code>（かざす）、
-        <code>https://&lt;ドメイン&gt;/q/&lt;コード&gt;</code>（QR）。どちらのパスでも同じ結果になります。
+        NFCタグに書き込むのも、QRに刷るのも、<strong>この形のURL1本だけ</strong>です。
+        <code>&lt;コード&gt;</code> のところに、下の一覧で発行したコードを入れてください。
+        一覧の「URL」欄にはそのまま使える完全なURLが出ているので、通常はそれをコピーします。
+      </p>
+      <div class="urlBox">
+        <div class="urlRow">
+          <span class="urlWhat">NFCタグに書き込む</span>
+          <code id="urlNfc"></code>
+          <button type="button" class="ghost" data-copy="urlNfc">コピー</button>
+        </div>
+        <div class="urlRow">
+          <span class="urlWhat">QRに刷る</span>
+          <code id="urlQr"></code>
+          <button type="button" class="ghost" data-copy="urlQr">コピー</button>
+        </div>
+      </div>
+      <p class="lead" style="margin-top:10px">
+        <strong>どちらのパスでも結果は同じ</strong>です（かざしたか読み取ったかの記録が変わるだけ）。
+        読み取った人は <code>/summon</code> に飛び、そこで分身が生まれます。
+        <br /><strong><code>/home</code> をタグに書き込まないでください。</strong>
+        あれは「その端末で既に会ったことのある分身の一覧」で、依代の入口ではありません。
+        書き込むと、かざしても分身が生まれず、空の一覧が開くだけになります。
+      </p>
+      <p class="lead" style="margin-bottom:0">
+        <strong>依代を持たない人の入口は <code>/add</code></strong> です（その端末だけで1体つくる）。
+        こちらは台帳にも載らず、依代にも紐づきません。同じ端末から1日3体までにしてあります。
       </p>
     </section>
 
@@ -318,6 +365,31 @@
         <label>ひとこと（読み取った人に見せる）<input type="text" id="spotNote" placeholder="境内でだけ手に入る子です" /></label>
         <label>状態<select id="spotActive"><option value="1">受付中</option><option value="0">停止中</option></select></label>
       </div>
+
+      <details class="poolBox" id="poolBox">
+        <summary>ここでしか出ない姿にする（ふだんは開かなくて構いません）</summary>
+        <div class="poolWarn">
+          <strong>何も選ばなければ、これまでどおり30種類から等確率です。</strong>
+          選ぶと、この配布元で発行した依代からは<strong>選んだ範囲の中だけ</strong>から出るようになります。
+          <br />範囲を狭めることはできますが、<strong>どの子が出るかは指定できません</strong>。
+          抽選そのものはこちらでも動かせない作りにしてあります。
+          <br /><strong>1種類だけ選ぶと、そこは「その姿しか居ない場所」になります。</strong>
+          引く楽しみが無くなるので、種族だけ絞って色は残す、くらいが扱いやすいところです。
+          <br /><strong>配り始めたあとに変えないこと。</strong>先に手に入れた人と後の人で、出るものが変わります。
+          既に生まれた分身の姿は変わりません（変えられません）。
+        </div>
+        <div><strong style="font-size:12.5px">種族</strong>
+          <div class="poolPick" id="poolSpecies"></div>
+        </div>
+        <div style="margin-top:10px"><strong style="font-size:12.5px">色</strong>
+          <div class="poolPick" id="poolColor"></div>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button type="button" class="ghost" id="poolClearBtn">制限なしに戻す</button>
+          <span class="lead" id="poolSummary"></span>
+        </div>
+      </details>
+
       <div class="row">
         <button id="saveSpotBtn" type="button">保存する</button>
         <button id="clearSpotBtn" type="button" class="ghost">入力を空にする</button>
@@ -831,6 +903,82 @@
     return `${location.origin}/${kind === "qr" ? "q" : "t"}/${tagId}`;
   }
 
+  // ---- タグに書き込むURL（実際のドメインで出す。<ドメイン>のままだと書き間違える）----
+  document.getElementById("urlNfc").textContent = `${location.origin}/t/<コード>`;
+  document.getElementById("urlQr").textContent = `${location.origin}/q/<コード>`;
+  for (const btn of document.querySelectorAll("[data-copy]")) {
+    btn.addEventListener("click", async () => {
+      const text = document.getElementById(btn.dataset.copy).textContent;
+      try {
+        await navigator.clipboard.writeText(text);
+        btn.textContent = "コピーしました";
+      } catch (e) {
+        // 権限が無い環境でも作業は止めない。選択できる形にして手でコピーしてもらう
+        btn.textContent = "手でコピーしてください";
+      }
+      setTimeout(() => (btn.textContent = "コピー"), 1800);
+    });
+  }
+
+  // ---- 限定の姿 ----
+  // 名前はサービス側と揃える（src/durable-objects/characterState.ts）。
+  // ここだけ増やしても実体は増えないので、姿を足すときは両方を直すこと。
+  const SPECIES = [
+    ["punikoro", "ぷにころ"], ["mofukuru", "もふくる"], ["tsunomaru", "つのまる"],
+    ["howahowa", "ほわほわ"], ["kiratsubu", "きらつぶ"],
+  ];
+  const COLORS = [
+    ["coral", "コーラル"], ["sky", "スカイ"], ["leaf", "リーフ"],
+    ["sun", "サン"], ["lavender", "ラベンダー"], ["peach", "ピーチ"],
+  ];
+
+  function buildPoolPicker(slotId, items, name) {
+    const slot = document.getElementById(slotId);
+    slot.innerHTML = "";
+    for (const [key, label] of items) {
+      const l = el("label");
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.value = key;
+      cb.dataset.pool = name;
+      cb.addEventListener("change", renderPoolSummary);
+      l.appendChild(cb);
+      l.appendChild(document.createTextNode(label));
+      slot.appendChild(l);
+    }
+  }
+  buildPoolPicker("poolSpecies", SPECIES, "species");
+  buildPoolPicker("poolColor", COLORS, "color");
+
+  function readPool(name) {
+    return [...document.querySelectorAll(`input[data-pool="${name}"]:checked`)].map((i) => i.value);
+  }
+  function writePool(name, values) {
+    const set = new Set(values || []);
+    for (const cb of document.querySelectorAll(`input[data-pool="${name}"]`)) cb.checked = set.has(cb.value);
+  }
+  function renderPoolSummary() {
+    const sp = readPool("species");
+    const co = readPool("color");
+    const out = document.getElementById("poolSummary");
+    if (sp.length === 0 && co.length === 0) {
+      out.textContent = "制限なし（30種類から等確率）";
+      return;
+    }
+    const n = (sp.length || SPECIES.length) * (co.length || COLORS.length);
+    out.textContent =
+      `${sp.length === 0 ? "種族は制限なし" : `種族${sp.length}種`} / ` +
+      `${co.length === 0 ? "色は制限なし" : `色${co.length}種`} → この場所では${n}通りから引きます` +
+      (n === 1 ? "（1通りしかありません。引く楽しみが無くなります）" : "");
+  }
+  renderPoolSummary();
+
+  document.getElementById("poolClearBtn").addEventListener("click", () => {
+    writePool("species", []);
+    writePool("color", []);
+    renderPoolSummary();
+  });
+
   async function loadYorishiro() {
     await Promise.all([loadSpots(), loadTags()]);
   }
@@ -850,11 +998,16 @@
     }
     select.value = keep;
 
-    table("spotTable", ["コード", "名前", "設置メモ", "状態", "発行", "使用済", ""], spotList, (sp) => {
+    table("spotTable", ["コード", "名前", "設置メモ", "限定の姿", "状態", "発行", "使用済", ""], spotList, (sp) => {
       const tr = el("tr");
       tr.appendChild(el("td", sp.code));
       tr.appendChild(el("td", sp.label));
       tr.appendChild(el("td", sp.place || "—"));
+      const sp2 = (sp.speciesPool || []).length;
+      const co2 = (sp.colorPool || []).length;
+      tr.appendChild(
+        el("td", sp2 === 0 && co2 === 0 ? "—" : `${sp2 || "全"}種族 × ${co2 || "全"}色`)
+      );
       tr.appendChild(el("td", sp.active ? "受付中" : "停止中"));
       tr.appendChild(el("td", sp.issued ?? 0));
       tr.appendChild(el("td", sp.claimed ?? 0));
@@ -868,6 +1021,12 @@
         document.getElementById("spotPlace").value = sp.place || "";
         document.getElementById("spotNote").value = sp.note || "";
         document.getElementById("spotActive").value = sp.active ? "1" : "0";
+        writePool("species", sp.speciesPool);
+        writePool("color", sp.colorPool);
+        renderPoolSummary();
+        // 限定が掛かっている配布元は、閉じたままだと気づかずに上書き保存してしまう
+        document.getElementById("poolBox").open =
+          (sp.speciesPool || []).length > 0 || (sp.colorPool || []).length > 0;
         document.getElementById("spotCode").scrollIntoView({ behavior: "smooth", block: "center" });
       });
       td.appendChild(edit);
@@ -888,6 +1047,8 @@
           place: document.getElementById("spotPlace").value,
           note: document.getElementById("spotNote").value,
           active: document.getElementById("spotActive").value === "1",
+          speciesPool: readPool("species"),
+          colorPool: readPool("color"),
         }),
       });
       status.textContent = "保存しました";
@@ -901,6 +1062,9 @@
     for (const id of ["spotCode", "spotLabel", "spotPlace", "spotNote"]) document.getElementById(id).value = "";
     document.getElementById("spotActive").value = "1";
     document.getElementById("spotStatus").textContent = "";
+    writePool("species", []);
+    writePool("color", []);
+    renderPoolSummary();
   });
 
   async function loadTags() {

@@ -22,6 +22,27 @@
  */
 
 import { consumeIpQuota } from "./lib/ipQuota";
+import { COLOR_KEYS, SPECIES_KEYS } from "./durable-objects/characterState";
+
+/**
+ * 管理画面から来た「限定の姿」の指定を、保存できる形に整える。
+ * 配列でも "a,b" でも受ける。**知っているキーだけを残す。**
+ */
+function normalizePool(raw: unknown, allowed: readonly string[]): string {
+  const list = Array.isArray(raw)
+    ? raw
+    : typeof raw === "string"
+      ? raw.split(",")
+      : [];
+  const seen = new Set<string>();
+  for (const v of list) {
+    const key = String(v).trim();
+    if (allowed.includes(key)) seen.add(key);
+  }
+  // 全部選ばれているのは「制限なし」と同じ。空にして、限定扱いにしない
+  if (seen.size === allowed.length) return "";
+  return [...seen].join(",");
+}
 
 export interface YorishiroEnv {
   DB: D1Database;
@@ -47,6 +68,12 @@ export interface Spot {
   note: string | null;
   active: boolean;
   createdAt: number;
+  /**
+   * そこでしか出ない姿の範囲。空なら制限なし（＝30種類から等確率。ほとんどの配布元はこちら）。
+   * **どの子が出るかは指定できない。範囲を狭めるだけ**（migration 0011 の説明を参照）。
+   */
+  speciesPool: string[];
+  colorPool: string[];
   /** この配布元で発行した依代の数（一覧でのみ埋まる） */
   issued?: number;
   /** そのうち既に使われた数 */
@@ -60,6 +87,17 @@ interface SpotRow {
   note: string | null;
   active: number;
   created_at: number;
+  species_pool?: string | null;
+  color_pool?: string | null;
+}
+
+/** "a,b" ⇔ ["a","b"]。空文字とNULLはどちらも「制限なし」を意味する。 */
+function parsePool(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 function toSpot(row: SpotRow): Spot {
@@ -70,7 +108,14 @@ function toSpot(row: SpotRow): Spot {
     note: row.note,
     active: row.active === 1,
     createdAt: row.created_at,
+    speciesPool: parsePool(row.species_pool),
+    colorPool: parsePool(row.color_pool),
   };
+}
+
+/** その配布元は、姿の範囲を絞っているか。 */
+export function isLimitedSpot(spot: Pick<Spot, "speciesPool" | "colorPool">): boolean {
+  return spot.speciesPool.length > 0 || spot.colorPool.length > 0;
 }
 
 /**
@@ -115,6 +160,8 @@ export interface PublicSpot {
   code: string;
   label: string;
   note: string | null;
+  /** そこでしか出ない姿があるか。何が出るかは出さない */
+  limited: boolean;
 }
 
 export async function getSpot(env: { DB: D1Database }, code: string): Promise<Spot | null> {
@@ -125,7 +172,9 @@ export async function getSpot(env: { DB: D1Database }, code: string): Promise<Sp
 
 export function publicSpot(spot: Spot): PublicSpot {
   // place（設置場所の細かいメモ）は出さない。運営が管理のために書いた文で、見せる前提がない。
-  return { code: spot.code, label: spot.label, note: spot.note };
+  // limited は「ここでしか出ない姿がある」の一言を出すためだけの真偽値。
+  // **どの姿が出るかは出さない。** 先に分かると、引く前に結果が見えてしまう。
+  return { code: spot.code, label: spot.label, note: spot.note, limited: isLimitedSpot(spot) };
 }
 
 export type DirectCreateResult =
@@ -298,13 +347,20 @@ export async function saveSpot(
   const note = typeof body.note === "string" ? body.note.trim().slice(0, 200) || null : null;
   const active = body.active === false || body.active === 0 || body.active === "0" ? 0 : 1;
 
+  // 限定の姿。**知らないキーは黙って捨てる。** 綴り間違いをそのまま保存すると、
+  // 「絞ったつもりが1件も該当せず、全体から引かれている」という、
+  // 現物を配ってからでないと気づけない事故になる。
+  const speciesPool = normalizePool(body.speciesPool, SPECIES_KEYS);
+  const colorPool = normalizePool(body.colorPool, COLOR_KEYS);
+
   await env.DB.prepare(
-    `INSERT INTO spots (code, label, place, note, active, created_at)
-     VALUES (?,?,?,?,?,?)
+    `INSERT INTO spots (code, label, place, note, active, created_at, species_pool, color_pool)
+     VALUES (?,?,?,?,?,?,?,?)
      ON CONFLICT(code) DO UPDATE SET
-       label=excluded.label, place=excluded.place, note=excluded.note, active=excluded.active`
+       label=excluded.label, place=excluded.place, note=excluded.note, active=excluded.active,
+       species_pool=excluded.species_pool, color_pool=excluded.color_pool`
   )
-    .bind(code, label, place, note, active, Date.now())
+    .bind(code, label, place, note, active, Date.now(), speciesPool || null, colorPool || null)
     .run();
 
   const saved = await getSpot(env, code);

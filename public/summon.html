@@ -85,7 +85,9 @@
   }
 
   /* コンセプトを最初に伝える2行のテキスト（初回タップ時のみ表示） */
-  .conceptText { opacity: 0; transform: translateY(10px); transition: opacity 0.9s ease, transform 0.9s ease; }
+  /* 限定の姿の一言を2行目に出すことがあるので、改行をそのまま効かせる */
+  .conceptText { opacity: 0; transform: translateY(10px); transition: opacity 0.9s ease, transform 0.9s ease;
+                 white-space: pre-line; }
   .conceptText.show { opacity: 1; transform: translateY(0); }
   .conceptText .line1 { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
   .conceptText .line1 b { color: #c9b8ff; }
@@ -177,6 +179,7 @@
     </div>
   </div>
 
+<script src="/gate.js"></script>
 <script>
   // NOTE: 特許ファミリー（撮像画像の表示中にサーバー主導の処理結果を出力する、という共通要件）を
   // 踏まえ、召喚シーンでは「カメラ映像を表示している最中に」キャラクターの登場演出を重畳表示する
@@ -280,6 +283,17 @@
 
   (async () => {
     startCamera();
+    // 生まれた直後、名前を付けるより先に同意を取る。
+    // ここを飛ばすと、規約を読んでいない人が会話画面まで進んでしまう。
+    if (cid && window.waketamaGate) {
+      const agreed = await window.waketamaGate.require(cid, getOwnerToken());
+      if (!agreed) {
+        appearText.textContent = "同意がないため、ここから先へは進めません";
+        appearText.classList.add("show");
+        hint.textContent = "";
+        return;
+      }
+    }
     if (spotCode) loadSpot();
     const data = await loadCharacter();
     applyModel(data);
@@ -306,9 +320,15 @@
         // その場所でしか会えない子なら、どこで会ったのかをここで伝える。
         // 見た目が決まっているのはそのためだと分かると、集める意味がはっきりする。
         if (spotInfo) {
-          conceptText.textContent = spotInfo.note
+          const where = spotInfo.note
             ? `${spotInfo.label}　—　${spotInfo.note}`
             : `${spotInfo.label}　で手に入れた子です`;
+          // 限定の姿がある場所なら、それも伝える。
+          // **何が出るかは先に言わない**（サーバー側も返していない）。
+          // 引いたあとで「ここでしか会えない姿だった」と分かるほうが、手に入れた実感が残る。
+          conceptText.textContent = spotInfo.limited
+            ? `${where}\nここでしか出会えない姿です`
+            : where;
         }
         nameForm.classList.add("show");
         nameInput.focus();
