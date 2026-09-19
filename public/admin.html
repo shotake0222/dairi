@@ -63,6 +63,9 @@
             background: #f7f5ff; border-radius: 10px; padding: 10px 12px; }
   .urlRow .urlWhat { font-size: 12px; font-weight: 700; min-width: 9em; }
   .urlRow code { font-size: 13px; color: #43368a; flex: 1; word-break: break-all; }
+  .urlSpec { background: #f7f5ff; border-radius: 10px; padding: 12px 14px; margin-top: 12px; font-size: 12.5px; }
+  .urlSpec ul { margin: 8px 0 0; padding-left: 1.2em; color: var(--muted); }
+  .urlSpec li { margin-bottom: 5px; }
 
   /* 限定の姿。ふつうは使わない設定なので、開いたときだけ見えるようにする */
   .poolBox { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin: 12px 0; }
@@ -315,34 +318,72 @@
         <br />・<strong>人が持てる数に上限はありません</strong>。依代を3つ持てば3体育ちます
         <br />「その場所でしか手に入らない」は、まず<strong>そのコードをその場所にしか置かないこと</strong>で作ります。
         それでも足りないときだけ、配布元ごとに<strong>出る姿の範囲</strong>を絞れます（下の「配布元」）。
-        絞れるのは範囲までで、<strong>どの子が出るかは決められません</strong>——
+        ※ 限定の姿が効くのは<strong>1枚ずつコードを振って発行した依代（主にQR）だけ</strong>です。
+        共通URLのNFCタグは、どこで配ったかを台帳に持っていないので、いつもどおり30種類から引きます。
+        <br />絞れるのは範囲までで、<strong>どの子が出るかは決められません</strong>——
         ここを崩すと「引き当てた」が「配られた」になり、集める理由が消えます。
       </p>
     </section>
 
     <section>
-      <h2>タグに書き込むURL（迷ったらここ）</h2>
+      <h2>タグに書き込むURL（発注のときはこれを渡す）</h2>
       <p class="lead">
-        NFCタグに書き込むのも、QRに刷るのも、<strong>この形のURL1本だけ</strong>です。
-        <code>&lt;コード&gt;</code> のところに、下の一覧で発行したコードを入れてください。
-        一覧の「URL」欄にはそのまま使える完全なURLが出ているので、通常はそれをコピーします。
+        <strong>NFCタグは、全部に同じものを書き込んで構いません。</strong>
+        1枚ずつ違うURLを用意する必要はありません。タグ屋さんに渡すのは次の1本と、下の設定だけです。
       </p>
       <div class="urlBox">
         <div class="urlRow">
-          <span class="urlWhat">NFCタグに書き込む</span>
+          <span class="urlWhat">NFCタグ（全枚共通）</span>
           <code id="urlNfc"></code>
           <button type="button" class="ghost" data-copy="urlNfc">コピー</button>
         </div>
         <div class="urlRow">
-          <span class="urlWhat">QRに刷る</span>
+          <span class="urlWhat">QR（1枚ずつ）</span>
           <code id="urlQr"></code>
           <button type="button" class="ghost" data-copy="urlQr">コピー</button>
         </div>
       </div>
+
+      <p class="lead" style="margin-top:12px">
+        <strong>なぜ同じURLで1枚1体になるのか。</strong>
+        NTAG213/215/216 には <strong>UIDミラー</strong>という仕組みがあります。
+        読み取られた瞬間に、<strong>チップが自分の固有番号（UID・14文字）を、URLの中の
+        <code>0</code> の並びに差し替えて</strong>返します。書き込む内容は全部同じ、
+        読まれるURLはタグごとに違う——これで両立します。UIDは工場で焼かれていて
+        書き換えられないので、こちらで番号を振る必要もありません。iPhoneでもAndroidでも同じように効きます。
+      </p>
+
+      <div class="urlSpec">
+        <strong>タグ屋さんへの発注内容（そのまま伝えてください）</strong>
+        <ul>
+          <li>チップ: <strong>NTAG213 / 215 / 216</strong>（UIDミラー対応のもの）</li>
+          <li>書き込む内容: 上のURL（全枚共通）</li>
+          <li><strong>UID ASCIIミラーを有効化</strong>し、ミラー位置を上のURLの
+            <code>0</code> が14個並んでいる先頭に合わせる</li>
+          <li>カウンタミラーは<strong>任意</strong>（有効でも動きます。区切りの <code>x</code> より
+            後ろは読み捨てています）</li>
+        </ul>
+      </div>
+
+      <p class="lead poolWarn" style="margin-top:12px">
+        <strong>いちばん怖い失敗: ミラーの設定を忘れて出荷すること。</strong>
+        そのとき全部のタグが <code>0</code> のままのURLを返すので、
+        本来なら<strong>買った人全員が同じ分身を共有する</strong>ことになります。
+        そうならないよう、<strong>埋め草のままのUIDはこちらで弾いています</strong>
+        （その端末だけの分身が1体できる形に逃がします）。
+        <br /><strong>納品されたら、必ず2枚かざして別々の子が出ることを確かめてください。</strong>
+        1枚しか試さないと、この事故は見抜けません。
+      </p>
+
       <p class="lead" style="margin-top:10px">
-        <strong>どちらのパスでも結果は同じ</strong>です（かざしたか読み取ったかの記録が変わるだけ）。
-        読み取った人は <code>/summon</code> に飛び、そこで分身が生まれます。
-        <br /><strong><code>/home</code> をタグに書き込まないでください。</strong>
+        <strong>QRは1枚ずつ違うコード</strong>が要ります（紙には差し替えの仕組みがないため）。
+        下の「依代の発行」で作って、一覧の「URL」欄をそのまま使ってください。
+        <br />NFCタグでも、1枚ずつ書き込める規模なら <code>/t/&lt;コード&gt;</code> の方式が使えます。
+        どちらも同時に使えます。
+      </p>
+
+      <p class="lead" style="margin-top:10px">
+        <strong><code>/home</code> をタグに書き込まないでください。</strong>
         あれは「その端末で既に会ったことのある分身の一覧」で、依代の入口ではありません。
         書き込むと、かざしても分身が生まれず、空の一覧が開くだけになります。
       </p>
@@ -399,11 +440,15 @@
     </section>
 
     <section>
-      <h2>依代の発行</h2>
+      <h2>依代の発行（1枚ずつコードを振る方式）</h2>
       <p class="lead">
-        コードを作って台帳に載せます。<strong>タグへの書き込みやQRの印刷は、ここで出るURLを使って別途行ってください。</strong>
+        <strong>QRはこちらで作ります。</strong>紙には差し替えの仕組みが無いので、1枚ずつ別のコードが要ります。
+        NFCタグでも、手元で1枚ずつ書き込む規模ならこの方式が使えます。
+        <br /><strong>共通URLのNFCタグは、ここで発行しません。</strong>タグのUIDがそのままIDになるので、
+        こちらで採番する必要がありません。読み取られた時点で分身が結び付きます。
+        そのぶん<strong>「まだ使われていない在庫」はこの台帳からは分かりません</strong>
+        （数えるなら、発注枚数と「概況」の分身の増え方を突き合わせてください）。
         <br />台帳に無いコードで読み取られても分身は生まれます（台帳を作る前に配った分を死なせないため）。
-        台帳は「こちらが発行した分はどれか」「まだ使われていないのはどれか」を見るためのものです。
       </p>
       <div class="formGrid">
         <label>数<input type="number" id="tagCount" value="10" min="1" max="200" /></label>
@@ -904,7 +949,9 @@
   }
 
   // ---- タグに書き込むURL（実際のドメインで出す。<ドメイン>のままだと書き間違える）----
-  document.getElementById("urlNfc").textContent = `${location.origin}/t/<コード>`;
+  // NFCタグは全枚共通。末尾の0が14個＝UIDミラーの埋め草（チップが自分のUIDに差し替える）。
+  // **この0の個数を変えないこと。** UIDは7バイト＝14文字で、長さが合わないと弾かれる。
+  document.getElementById("urlNfc").textContent = `${location.origin}/t?u=00000000000000`;
   document.getElementById("urlQr").textContent = `${location.origin}/q/<コード>`;
   for (const btn of document.querySelectorAll("[data-copy]")) {
     btn.addEventListener("click", async () => {

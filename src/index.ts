@@ -43,6 +43,7 @@ import {
   listTags,
   publicSpot,
   recordOrigin,
+  identifyTag,
   isLimitedSpot,
   saveSpot,
   spotOfTag,
@@ -422,7 +423,11 @@ export default {
 
     // 依代を持っていない人が、その端末だけで育てる分身を始める入口。
     if (url.pathname === "/api/character/new" && request.method === "POST") {
-      const result = await createDirectCharacter(env, request);
+      // 依代をかざしたのにタグを特定できなかったとき（UIDミラー未設定など）も、ここを通る。
+      // その場合だけ入口の記録を分ける。配った枚数と合わなくなるのを避けるため。
+      const from = url.searchParams.get("from");
+      const kind = from === "tag" ? "nfc" : from === "qr" ? "qr" : "direct";
+      const result = await createDirectCharacter(env, request, kind);
       if (!result.ok) return json({ error: result.error }, { status: result.status });
       ctx.waitUntil(countMetric(env, "new_character"));
       return json({ characterId: result.characterId, ownerToken: result.ownerToken });
@@ -443,14 +448,38 @@ export default {
     // ここを揃えておかないと「集める」が成り立たない。運営が姿を決められるようにすると
     // 「引き当てた」が「配られた」になり、1つの依代から何体も生まれるなら集める理由が消える。
     //
-    // 依代に書き込むURLは https://<ドメイン>/t/<コード>（QRとして刷るなら /q/<コード>）。
-    if (url.pathname.startsWith("/t/") || url.pathname.startsWith("/q/")) {
-      const viaQr = url.pathname.startsWith("/q/");
+    // **依代に書き込むURLは、全部同じで構わない。**
+    //   https://<ドメイン>/t?u=00000000000000   ← NFCタグ（UIDミラーの埋め草つき）
+    //   https://<ドメイン>/q/<コード>            ← QRは1枚ずつ違うコードを刷る
+    // タグは読まれた瞬間に、チップが自分のUIDを埋め草へ差し替える。書き込む内容は同じ、
+    // 読まれるURLはタグごとに違う——これで外注できて、かつ1枚1体が成立する
+    // （詳しくは src/yorishiro.ts の identifyTag）。
+    if (url.pathname.startsWith("/t/") || url.pathname.startsWith("/q/") ||
+        url.pathname === "/t" || url.pathname === "/q") {
+      const viaQr = url.pathname === "/q" || url.pathname.startsWith("/q/");
       ctx.waitUntil(countMetric(env, viaQr ? "scan" : "tap"));
-      const tagId = decodeURIComponent(url.pathname.split("/")[2] || "");
-      if (!tagId) {
-        return new Response("invalid tag", { status: 400 });
+
+      const identity = identifyTag(url);
+      if (!identity.tagId) {
+        // 見分けが付かなかった。**ここで400を返して終わりにしない。**
+        // 目の前の人にとっては「かざしたのに何も起きない」で、こちらの設定漏れが
+        // そのまま体験の失敗になる。端末ごとに1体を割り当てる受け皿へ送る。
+        if (identity.suspectedFiller) {
+          // ミラーの設定漏れが疑われる。**全員が同じ分身を共有する事故の一歩手前**なので、
+          // 切り分けられるようログに残す（本文は載せない）。
+          console.warn(
+            JSON.stringify({
+              ...log,
+              event: "yorishiro.uid_filler",
+              note: "UIDミラーが効いていない可能性。タグの書き込み設定を確認すること",
+            })
+          );
+        }
+        const claim = new URL("/summon", url.origin);
+        claim.searchParams.set("claim", viaQr ? "qr" : "tag");
+        return Response.redirect(claim.toString(), 302);
       }
+      const tagId = identity.tagId;
 
       const row = await env.DB.prepare(
         "SELECT character_id FROM nfc_tags WHERE tag_id = ?"

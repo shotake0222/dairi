@@ -143,6 +143,71 @@ export async function recordOrigin(
   }
 }
 
+/**
+ * 共通URLで配るための、依代の見分け方。
+ *
+ * **なぜ要るか。** タグ1枚ずつに違うURLを書き込むのは、数十枚なら回るが、
+ * 売り物として数百・数千枚を外注するとそこが詰まる。全部に同じ内容を書き込めないと、
+ * 「キーホルダーを作って売る」が成立しない。
+ *
+ * **どう解決するか。** NTAG213/215/216 の **UIDミラー**を使う。
+ * タグには全部同じ内容を書き込む。読み取られた瞬間に、**チップが自分のUID（14文字）を
+ * URLの中の埋め草に差し替えて**返す。だから、
+ *
+ *   書き込む内容  … 全部同じ（外注できる）
+ *   読まれるURL   … タグごとに違う（1枚1体が成立する）
+ *
+ * が両立する。UIDは工場で焼かれていて書き換えられないので、こちらで採番する必要もない。
+ * iOSでもAndroidでも、NDEFの中身として読まれるので同じように効く
+ * （Web NFC と違って、ブラウザの対応に依存しない）。
+ *
+ * 受け付ける形:
+ *   /t?u=04a1b2c3d4e5f6         … UIDミラーのみ
+ *   /t?u=04a1b2c3d4e5f6x000123  … UID＋カウンタミラー（区切りは 'x'。カウンタは捨てる）
+ *   /t/<コード>                  … 1枚ずつ個別に書き込む従来の方式（併用できる）
+ *
+ * **いちばん危ないのは、ミラーの設定を忘れて出荷すること。**
+ * そのとき全部のタグが埋め草のまま同じURLを返すので、**買った人全員が同じ分身を共有する**。
+ * 気づくのは苦情が来てから。なので埋め草らしい値（全部0・全部F・16進以外・長さ違い）は
+ * ここで弾いて、見分けが付かなかったものとして扱う。
+ */
+const UID_FILLER = /^(0+|f+|x+|-+)$/;
+
+export interface TagIdentity {
+  /** 見分けが付いたときの依代ID。付かなければ null */
+  tagId: string | null;
+  /** 何から見分けたか。運営が切り分けるときのため */
+  source: "code" | "uid" | "none";
+  /** UIDらしきものは来たが、埋め草だったか（＝ミラーの設定漏れが疑われる） */
+  suspectedFiller: boolean;
+}
+
+/**
+ * 読み取りのURLから、依代を1枚に特定する。
+ * `/t/<コード>` が最優先。無ければ `?u=` のUIDを見る。
+ */
+export function identifyTag(url: URL): TagIdentity {
+  // 1. パスに個別コードが入っている（従来方式）
+  const fromPath = decodeURIComponent(url.pathname.split("/")[2] || "").trim();
+  if (fromPath) return { tagId: fromPath, source: "code", suspectedFiller: false };
+
+  // 2. UIDミラー。タグ屋によって名前が揺れるので、よく使われるものは拾う
+  const raw = url.searchParams.get("u") ?? url.searchParams.get("uid") ?? url.searchParams.get("id");
+  if (!raw) return { tagId: null, source: "none", suspectedFiller: false };
+
+  // カウンタミラーを併用すると "UIDxカウンタ" の形で来る。区切りより前だけ使う
+  const head = raw.split(/[xX]/)[0].trim().toLowerCase().replace(/[^0-9a-f]/g, "");
+
+  // 4バイト(8文字)か7バイト(14文字)のUIDだけを本物として扱う。
+  // NTAG21x は7バイトなので通常は14文字
+  const looksLikeUid = head.length === 8 || head.length === 14;
+  const filler = UID_FILLER.test(head) || !looksLikeUid;
+  if (filler) return { tagId: null, source: "none", suspectedFiller: true };
+
+  // コード方式と混ざらないよう、前置きを付けて別の名前空間にする
+  return { tagId: `uid-${head}`, source: "uid", suspectedFiller: false };
+}
+
 /** その依代が、どの配布元のものとして発行されたか。台帳に無ければ null。 */
 export async function spotOfTag(env: { DB: D1Database }, tagId: string): Promise<string | null> {
   try {
@@ -188,7 +253,17 @@ export type DirectCreateResult =
  * この分身は依代に紐づかないので、端末を変えるときは引き継ぎコードだけが頼りになる。
  * その注意は画面側（/add）で必ず出すこと。
  */
-export async function createDirectCharacter(env: YorishiroEnv, request: Request): Promise<DirectCreateResult> {
+export async function createDirectCharacter(
+  env: YorishiroEnv,
+  request: Request,
+  /**
+   * どの入口から来たか。既定は "direct"（/add から自分で始めた人）。
+   * 依代をかざしたのに**タグを1枚に特定できなかった**ときも、ここを通って1体つくる。
+   * そのときは "nfc" / "qr" として記録する——実際に依代から来ているので、
+   * 集計で「自分で始めた人」に混ぜると、配った枚数と数が合わなくなる。
+   */
+  kind: OriginKind = "direct"
+): Promise<DirectCreateResult> {
   const limited = await consumeIpQuota(env, "new_character", request, DIRECT_CREATE_DAILY_LIMIT);
   if (!limited.allowed) {
     return {
@@ -200,7 +275,7 @@ export async function createDirectCharacter(env: YorishiroEnv, request: Request)
 
   const characterId = crypto.randomUUID();
   const initData = await env.CHARACTER.getByName(characterId).init("名もなきキャラクター");
-  await recordOrigin(env, characterId, "direct", null);
+  await recordOrigin(env, characterId, kind, null);
   return { ok: true, characterId, ownerToken: initData.ownerToken! };
 }
 

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { env, SELF } from "cloudflare:test";
-import { generateTagId, issueTags, listSpots, listTags, saveSpot } from "../yorishiro";
+import { generateTagId, identifyTag, issueTags, listSpots, listTags, saveSpot } from "../yorishiro";
 
 /**
  * 依代（NFCタグ・QR）の検証。
@@ -79,9 +79,13 @@ describe("依代の読み取り（/t/ と /q/）", () => {
     expect(seen.q.size).toBeGreaterThan(1);
   });
 
-  it("コードが空なら何も作らない", async () => {
+  it("コードが空でも、かざした人の前で行き止まりにしない", async () => {
+    // 以前は 400 を返していた。共通URLを配るようになって、ここは
+    // 「こちらの書き込み設定が足りていない」ときに通る道になった。
+    // 目の前の人にとっては「かざしたのに何も起きない」なので、受け皿へ送る。
     const res = await SELF.fetch(`${BASE}/t/`, { redirect: "manual" });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(302);
+    expect(new URL(res.headers.get("location")!, BASE).searchParams.get("claim")).toBe("tag");
   });
 });
 
@@ -281,5 +285,90 @@ describe("複数の依代で、複数体を育てる", () => {
     const cidA = cidOf(await SELF.fetch(`${BASE}/t/${a}`, { redirect: "manual" }));
     const cidB = cidOf(await SELF.fetch(`${BASE}/q/${b}`, { redirect: "manual" }));
     expect(cidA).not.toBe(cidB);
+  });
+});
+
+/**
+ * 共通URLで配る（UIDミラー）。
+ *
+ * **全部のタグに同じ内容を書き込めないと、キーホルダーを作って売ることが成立しない。**
+ * NTAG21x のUIDミラーを使うと、書き込む内容は同じまま、読まれるURLだけがタグごとに変わる。
+ *
+ * ここでいちばん怖いのは、ミラーの設定を忘れて出荷すること。
+ * そのとき全タグが同じURLを返すので、**買った人全員が同じ分身を共有する**。
+ * 気づくのは苦情が来てから。だから埋め草は必ず弾く。
+ */
+describe("共通URL（UIDミラー）", () => {
+  const u = (path: string) => new URL(`${BASE}${path}`);
+
+  it("UIDが乗っていれば、それで1枚を見分ける", () => {
+    expect(identifyTag(u("/t?u=04a1b2c3d4e5f6"))).toEqual({
+      tagId: "uid-04a1b2c3d4e5f6",
+      source: "uid",
+      suspectedFiller: false,
+    });
+  });
+
+  it("大文字でも、区切りが入っていても同じ1枚として扱う", () => {
+    const a = identifyTag(u("/t?u=04A1B2C3D4E5F6")).tagId;
+    const b = identifyTag(u("/t?u=04:a1:b2:c3:d4:e5:f6")).tagId;
+    expect(a).toBe("uid-04a1b2c3d4e5f6");
+    expect(b).toBe(a);
+  });
+
+  it("カウンタミラーが一緒でも、UIDの部分だけ見る（読むたびに別の子にならない）", () => {
+    const first = identifyTag(u("/t?u=04a1b2c3d4e5f6x000001")).tagId;
+    const later = identifyTag(u("/t?u=04a1b2c3d4e5f6x0004c2")).tagId;
+    expect(first).toBe("uid-04a1b2c3d4e5f6");
+    expect(later).toBe(first);
+  });
+
+  it("**埋め草は弾く。** ミラーが効いていないタグを全部同じ子にしない", () => {
+    for (const bad of ["00000000000000", "0000000000000000", "ffffffffffffff", "xxxxxxxxxxxxxx", "--------------"]) {
+      const got = identifyTag(u(`/t?u=${bad}`));
+      expect(got.tagId).toBeNull();
+      expect(got.suspectedFiller).toBe(true);
+    }
+  });
+
+  it("UIDの長さが合わないものも信用しない", () => {
+    expect(identifyTag(u("/t?u=04a1b2")).tagId).toBeNull();
+    expect(identifyTag(u("/t?u=04a1b2c3d4e5f6a1b2c3")).tagId).toBeNull();
+  });
+
+  it("個別コードが入っていれば、そちらを優先する（従来方式と併用できる）", () => {
+    expect(identifyTag(u("/t/abc123?u=04a1b2c3d4e5f6")).tagId).toBe("abc123");
+  });
+
+  it("何も無ければ、見分けが付かなかったこととして返す", () => {
+    const got = identifyTag(u("/t"));
+    expect(got.tagId).toBeNull();
+    expect(got.suspectedFiller).toBe(false);
+  });
+
+  it("同じUIDを2回読んでも1体のまま、違うUIDなら別の子になる", async () => {
+    const uidA = "04" + crypto.randomUUID().replace(/-/g, "").slice(0, 12);
+    const uidB = "04" + crypto.randomUUID().replace(/-/g, "").slice(0, 12);
+    const first = cidOf(await SELF.fetch(`${BASE}/t?u=${uidA}`, { redirect: "manual" }));
+    const again = cidOf(await SELF.fetch(`${BASE}/t?u=${uidA}`, { redirect: "manual" }));
+    const other = cidOf(await SELF.fetch(`${BASE}/t?u=${uidB}`, { redirect: "manual" }));
+
+    expect(first).not.toBe("");
+    expect(again).toBe(first);
+    expect(other).not.toBe(first);
+  });
+
+  it("見分けが付かないときは、受け皿の画面へ送る（かざしても無反応、にしない）", async () => {
+    const res = await SELF.fetch(`${BASE}/t?u=00000000000000`, { redirect: "manual" });
+    expect(res.status).toBe(302);
+    const to = new URL(res.headers.get("location")!, BASE);
+    expect(to.pathname).toBe("/summon");
+    expect(to.searchParams.get("claim")).toBe("tag");
+  });
+
+  it("QRの共通URLでも同じように受け皿へ送る", async () => {
+    const res = await SELF.fetch(`${BASE}/q`, { redirect: "manual" });
+    const to = new URL(res.headers.get("location")!, BASE);
+    expect(to.searchParams.get("claim")).toBe("qr");
   });
 });

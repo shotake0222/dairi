@@ -179,6 +179,80 @@
     </div>
   </div>
 
+<script>
+/**
+ * 依代をかざしたのに、**どの1枚かを特定できなかった**ときの受け皿（?claim=tag|qr）。
+ *
+ * 起きるのは、共通URLを書き込んだタグでUIDミラーが効いていないとき
+ * （設定漏れ、対応していないチップ、URLを手で短くした、など）。
+ * サーバーからは全部同じURLに見えるので、1枚ずつの区別が付かない。
+ *
+ * **それでも、かざした人の前で「何も起きない」にはしない。**
+ * こちらの設定の都合が、そのまま出会いの失敗になるのは筋が悪い。
+ * この端末に1体を割り当てて、2回目からは同じ子に戻す。
+ *
+ * 割り切っていること: **この端末では、依代を何枚持っていても1体**になる。
+ * 2枚目を育てたい人は /add から作る。1枚1体を成立させたいなら、
+ * タグ側でUIDミラーを設定すること（docs/OPERATIONS.md §5-0）。
+ *
+ * 下の本体スクリプトは cid がある前提なので、ここで引き取ったら動かさない。
+ * 例外で止めると「JSエラーが出ていない」という約束を破るので、旗で伝える。
+ */
+(function () {
+  const params = new URLSearchParams(location.search);
+  const claimKind = params.get("claim");
+  if (!claimKind || params.get("cid")) return;
+
+  window.__waketamaClaiming = true;
+  const CLAIM_KEY = "sodatsukake_tagClaim";
+
+  function fail(text) {
+    const el = document.getElementById("appearText");
+    if (!el) return;
+    el.textContent = text;
+    el.classList.add("show");
+    const hint = document.getElementById("hint");
+    if (hint) hint.textContent = "";
+  }
+
+  (async function () {
+    let known = "";
+    try { known = localStorage.getItem(CLAIM_KEY) || ""; } catch (e) { /* 使えなければ都度つくる */ }
+
+    if (known) {
+      // もうこの端末の子が居る。消されていないかだけ確かめて、居れば会いに行く
+      try {
+        const res = await fetch("/api/character?cid=" + encodeURIComponent(known));
+        if (res.ok) {
+          location.replace("/chat?cid=" + encodeURIComponent(known));
+          return;
+        }
+      } catch (e) { /* 繋がらないときは下で作り直さず、やり直してもらう */ }
+    }
+
+    let res;
+    try {
+      res = await fetch("/api/character/new?from=" + (claimKind === "qr" ? "qr" : "tag"), { method: "POST" });
+    } catch (e) {
+      fail("うまく呼び出せませんでした。もう一度かざしてみてください");
+      return;
+    }
+    if (!res.ok) {
+      fail(res.status === 429
+        ? "今日はもう作れません。明日またかざしてみてください"
+        : "うまく呼び出せませんでした。もう一度かざしてみてください");
+      return;
+    }
+    const data = await res.json();
+    try { localStorage.setItem(CLAIM_KEY, data.characterId); } catch (e) { /* 覚えられなくても続く */ }
+    // ここから先は、ふつうの誕生とまったく同じ流れに乗せる
+    location.replace(
+      "/summon?cid=" + encodeURIComponent(data.characterId) +
+      "&first=1&token=" + encodeURIComponent(data.ownerToken)
+    );
+  })();
+})();
+</script>
 <script src="/gate.js"></script>
 <script>
   // NOTE: 特許ファミリー（撮像画像の表示中にサーバー主導の処理結果を出力する、という共通要件）を
@@ -231,7 +305,9 @@
   infoBtn.addEventListener("click", () => (conceptModal.hidden = false));
   conceptModalClose.addEventListener("click", () => (conceptModal.hidden = true));
 
-  if (!cid) {
+  // 上の受け皿が引き取っている最中は、こちらは何も言わない（一瞬だけ
+  // 「見つかりませんでした」が見えて、すぐ画面が飛ぶ、という見え方になるため）
+  if (!cid && !window.__waketamaClaiming) {
     appearText.textContent = "キャラクターが見つかりませんでした";
   }
 
@@ -282,6 +358,7 @@
   }
 
   (async () => {
+    if (window.__waketamaClaiming) return;
     startCamera();
     // 生まれた直後、名前を付けるより先に同意を取る。
     // ここを飛ばすと、規約を読んでいない人が会話画面まで進んでしまう。

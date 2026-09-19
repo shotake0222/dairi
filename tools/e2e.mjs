@@ -1007,7 +1007,60 @@ console.log("\n[32] 依代を何個でも持てること、書き込むURLの案
     check("依代を使わない入口も案内している", admin.includes("<code>/add</code>"));
     check("限定の姿を設定できる", admin.includes("ここでしか出ない姿にする"));
     check("限定でも個体は選べないと明記", admin.includes("どの子が出るかは指定できません"));
+    check("共通URLで発注できると書いてある", admin.includes("全部に同じものを書き込んで構いません"));
+    check("UIDミラーの設定漏れに注意させている", admin.includes("必ず2枚かざして"));
   }
+}
+
+console.log("\n[33] 全タグ共通のURL（UIDミラー）");
+{
+  const cidOf = async (p) => {
+    const res = await fetch(`${BASE}${p}`, { redirect: "manual" });
+    const loc = res.headers.get("location") || "";
+    return new URL(loc, BASE);
+  };
+  const uid = (n) => "04" + `${Date.now()}${n}`.slice(-12).replace(/[^0-9a-f]/g, "a").padEnd(12, "b");
+
+  // 同じ内容を書き込んだタグでも、チップがUIDを差し替えるので別々の子になる
+  const a = uid(1);
+  const b = uid(2);
+  const first = (await cidOf(`/t?u=${a}`)).searchParams.get("cid");
+  const again = (await cidOf(`/t?u=${a}`)).searchParams.get("cid");
+  const other = (await cidOf(`/t?u=${b}`)).searchParams.get("cid");
+  check("UIDが違えば別の子になる", !!first && !!other && first !== other);
+  check("同じUIDを読み直せば同じ子に戻る", again === first);
+
+  // カウンタミラーが一緒でも、読むたびに別の子にならない
+  const withCounter = (await cidOf(`/t?u=${a}x0004c2`)).searchParams.get("cid");
+  check("カウンタが付いても同じ子のまま", withCounter === first);
+
+  // **設定漏れのタグ**。全員が同じ分身を共有する事故を起こさない
+  const filler1 = await cidOf("/t?u=00000000000000");
+  check("埋め草のUIDは受け皿へ送る", filler1.pathname === "/summon" && filler1.searchParams.get("claim") === "tag");
+  check("埋め草から分身を結び付けない", !filler1.searchParams.get("cid"));
+
+  // 受け皿の画面。かざした人の前で行き止まりにしない
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto(`${BASE}/home`, { waitUntil: "domcontentloaded" });
+  await page.evaluate(() => localStorage.removeItem("sodatsukake_tagClaim"));
+  await page.goto(`${BASE}/summon?claim=tag`, { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(3000);
+  const claimed = await page.evaluate(() => {
+    let v = "";
+    try { v = localStorage.getItem("sodatsukake_tagClaim") || ""; } catch (e) { /* noop */ }
+    return { stored: v, url: location.href };
+  });
+  check("受け皿で1体つくられる", claimed.stored.length > 0, JSON.stringify(claimed));
+  check("そのまま誕生の画面へ進む", claimed.url.includes("cid="), claimed.url.slice(-60));
+  check("受け皿でJavaScriptエラーを出さない", errors.length === 0, errors.join(" / "));
+
+  // 2回目は同じ子に戻る（かざすたびに増えない）
+  await page.goto(`${BASE}/summon?claim=tag`, { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(2500);
+  check("2回目は前の子に戻る",
+    page.url().includes("/chat") && page.url().includes(claimed.stored),
+    page.url().slice(-70));
 }
 
 check("JavaScriptエラーが出ていない", pageErrors.length === 0, pageErrors.join(" / "));
