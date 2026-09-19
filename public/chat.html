@@ -268,6 +268,7 @@
 </style>
 <script src="/gate.js" defer></script>
 <script src="/pulse.js" defer></script>
+<script src="/install-hint.js" defer></script>
 </head>
 <body>
 <header>
@@ -386,6 +387,11 @@
 
 <!-- パルスサーベイ。会話の合間に1問だけ聞く（実装は /pulse.js） -->
 <div id="pulseSlot"></div>
+
+<!-- 「ホーム画面に追加」の案内（実装は /install-hint.js）。
+     依代から来た人はこの画面に居続けるので、ここに出さないと一度も見ないまま
+     キーホルダーを無くして戻れなくなる。生まれた直後には出さない（下の MIN を参照）。 -->
+<div id="installSlot"></div>
 
 <form id="form">
   <input id="input" type="text" placeholder="話しかけてみよう" autocomplete="off" maxlength="400" />
@@ -1122,6 +1128,25 @@
     window.WaketamaPulse.mount({ slot: "#pulseSlot", cid, token });
   }
 
+  /**
+   * 「ホーム画面に追加」の案内。
+   *
+   * 生まれた直後には出さない。名前を付けた次の瞬間に「追加しますか」が出るのは、
+   * 体験としてうるさいし、まだ続けるかも決まっていない。
+   * 少し話して「この子と続ける」と思えたころに、一度だけ出す。
+   */
+  const INSTALL_MIN_INTERACTIONS = 4;
+  let installMounted = false;
+  function maybeMountInstallHint(interactionCount) {
+    if (installMounted || (interactionCount ?? 0) < INSTALL_MIN_INTERACTIONS) return;
+    if (!window.waketamaInstallHint) return;
+    installMounted = true;
+    window.waketamaInstallHint.mount(document.getElementById("installSlot"), {
+      text:
+        "ホーム画面に追加しておくと、依代（キーホルダー）が手元になくても、ここからこの子に会いに来られます。",
+    });
+  }
+
   function renderStatus(data) {
     nameEl.textContent = data.name || "キャラクター";
     const styleLabel = data.speechStyleLabel ? ` / 口調: ${data.speechStyleLabel}` : "";
@@ -1136,6 +1161,7 @@
     applyCharacterVisuals(data);
     renderSocial(data);
     maybeMountPulse(data.interactionCount);
+    maybeMountInstallHint(data.interactionCount);
   }
 
   /**

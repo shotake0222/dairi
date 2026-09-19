@@ -111,6 +111,8 @@
   .ctaNote { display: block; font-size: 12px; color: var(--muted); margin-top: 12px; }
 
   section { padding: 44px 0; border-top: 1px solid var(--line); }
+  /* ヘッダーが追従するので、ページ内リンクで飛ぶと見出しがその下に隠れる */
+  section[id] { scroll-margin-top: 64px; }
   section h2 { font-size: 20px; margin: 0 0 8px; letter-spacing: -0.01em; }
   section .lead { color: var(--muted); font-size: 14px; margin: 0 0 24px; }
 
@@ -175,6 +177,26 @@
   }
   .step h3 { margin: 4px 0 4px; font-size: 15px; }
   .step p { margin: 0; font-size: 13.5px; color: var(--muted); }
+
+  /* 商品（専用NFCキーホルダー）。価格を出す唯一の場所なので、他より強く見せる */
+  .product { background: #fff; }
+  .productCard {
+    display: grid; gap: 22px; grid-template-columns: 1fr;
+    background: #fff; border: 1px solid var(--line); border-radius: 22px; padding: 20px;
+    box-shadow: 0 14px 40px rgba(60,40,130,.08);
+  }
+  @media (min-width: 620px) { .productCard { grid-template-columns: 1fr 1fr; align-items: center; } }
+  .productCard .photo {
+    border-radius: 16px; overflow: hidden; background: var(--brand-soft); aspect-ratio: 4 / 3;
+  }
+  .productCard .photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .productCard h3 { margin: 0 0 6px; font-size: 18px; }
+  .productCard .price { font-size: 30px; font-weight: 800; letter-spacing: -0.01em; margin: 10px 0 2px; }
+  .productCard .price .tax { font-size: 13px; font-weight: 700; color: var(--muted); margin-left: 8px; letter-spacing: 0; }
+  .productCard .spec { margin: 12px 0 0; padding-left: 1.15em; font-size: 13.5px; color: var(--muted); }
+  .productCard .spec li { margin-bottom: 5px; }
+  .productCard .buy { margin-top: 18px; }
+  .productCard .buyNote { display: block; font-size: 12px; color: var(--muted); margin-top: 10px; }
 
   .cards { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
   .card { background: #fff; border: 1px solid var(--line); border-radius: 18px; padding: 20px; }
@@ -465,6 +487,44 @@
   </div>
 </section>
 
+<section class="product" id="product">
+  <div class="wrap">
+    <h2>専用NFCキーホルダー</h2>
+    <p class="lead">分身に会うための依代（よりしろ）です。1つにつき、1体だけが生まれます。</p>
+
+    <div class="productCard">
+      <div class="photo">
+        <!--
+          ★商品写真の差し込み先: public/media/keyholder.jpg
+            いまここに入っているのは**撮影前の仮画像**（設計データから起こしたもの）。
+            現物を撮ったら、同じ名前・同じ場所へ上書きするだけで差し替わる。
+            ページ側は触らなくてよい。
+            ・比率は 4:3（それ以外でも object-fit: cover で収まるが、中心が切れる）
+            ・目安 1200×900 以上、jpg。重いと紹介ページの表示が遅くなるので 300KB 以内に
+            ・別名で置きたいときは、この img の src と E2E（tools/e2e.mjs の [30]）も直すこと
+        -->
+        <img src="/media/keyholder.jpg" width="900" height="675" loading="lazy" decoding="async"
+             alt="わけたまの専用NFCキーホルダー" />
+      </div>
+      <div>
+        <h3>かざすと、その子が生まれる</h3>
+        <div class="price">5,500<span style="font-size:18px">円</span><span class="tax">税込・送料別</span></div>
+        <ul class="spec">
+          <li>スマホをかざすだけ。アプリのインストールも会員登録も要りません</li>
+          <li><strong>1つのキーホルダーから生まれる分身は1体だけ</strong>です</li>
+          <li>姿と色はかざしたときに決まります。<strong>狙って選ぶことはできません</strong></li>
+          <li>なくしても、一度会っていれば分身はホーム画面から呼び出せます</li>
+        </ul>
+        <a class="cta buy" href="#contact" data-buy>お問い合わせで購入する</a>
+        <span class="buyNote">
+          このページでの決済は行っていません。数量とお届け先をうかがってから、
+          お支払い方法を個別にご案内します。
+        </span>
+      </div>
+    </div>
+  </div>
+</section>
+
 <section>
   <div class="wrap">
     <h2>育つ、というのは</h2>
@@ -565,11 +625,11 @@
     <h2>よくある質問</h2>
     <details>
       <summary>お金はかかりますか？</summary>
-      <p>いまのところ、分身と話すのに費用はかかりません。キーホルダーをお持ちの方はそのままお使いいただけます。</p>
+      <p>分身と話すのに費用はかかりません。かかるのは<a href="#product">専用NFCキーホルダー（5,500円・税込／送料別）</a>だけで、買い切りです。月々のお支払いはありません。すでにお持ちの方は、そのままお使いいただけます。</p>
     </details>
     <details>
       <summary>会員登録やログインは必要ですか？</summary>
-      <p>不要です。氏名・メールアドレス・電話番号はお預かりしていません。分身はあなたの端末とキーホルダーに紐づいています。</p>
+      <p>不要です。分身を使うのに、氏名・メールアドレス・電話番号はお預かりしていません。分身はあなたの端末とキーホルダーに紐づいています。キーホルダーをご購入いただくときだけ、お送りするためにお名前とご住所をうかがいます（分身のデータとは結びつけません）。</p>
     </details>
     <details>
       <summary>会話の内容はどうなりますか？</summary>
@@ -664,6 +724,28 @@
       } catch (e) {
         /* 控えが残らないだけなので握りつぶす */
       }
+    });
+  })();
+
+  /**
+   * 「お問い合わせで購入する」から来た人の入力欄に、用件を先に入れておく。
+   *
+   * フォームまで飛ばしただけだと、白紙の入力欄の前で「何を書けばいいのか」で止まる。
+   * こちらも「キーホルダーの話なのか、サービスの質問なのか」が分からず一往復増える。
+   * **すでに何か書いてあるときは上書きしない**（書きかけを消すほうが害が大きい）。
+   */
+  (function () {
+    var buy = document.querySelector("[data-buy]");
+    var message = document.querySelector("#contact #message");
+    if (!buy || !message) return;
+    buy.addEventListener("click", function () {
+      if (message.value.trim() === "") {
+        message.value = "専用NFCキーホルダーの購入を希望します。\n\n希望数量: 1個\nお届け先の都道府県: \nご質問など: ";
+      }
+      // 画面が動いてから合わせる（すぐ focus すると、飛ぶ前に引き戻される端末がある）
+      setTimeout(function () {
+        try { message.focus({ preventScroll: true }); } catch (e) { message.focus(); }
+      }, 700);
     });
   })();
 

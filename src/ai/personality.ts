@@ -47,9 +47,33 @@ export type InteractionSignal = {
 const clamp = (v: number) => Math.max(0, Math.min(100, v));
 
 /**
+ * 軸を動かす。**端に近いほど動きにくく、端から戻るときは動きやすい。**
+ *
+ * なぜこれが要るか（ここが育成の一番大事なところ）:
+ * 前は「positive なら温かさ +1.5」と一律に足していた。すると、
+ * **ふつうに可愛がっているだけで35回ほどで100に張り付き、そこから先は何を話しても動かない。**
+ * 長く育てた分身ほど全部の軸が振り切れて、**育てるほど他の子と見分けが付かなくなっていた**
+ * （育成サービスとして、これは逆立ちしている）。
+ *
+ * そこで、残りの幅で割り引く。50のときは今までどおり、100に近いほど効かず、
+ * 0に近いところからは倍の速さで戻る。
+ *
+ *   v=50 → 係数1.0（従来と同じ）   v=90 → 0.2   v=10 → 1.8（上げる場合）
+ *
+ * 結果として 0 や 100 には**漸近するだけで到達しない**。振り切れないので、
+ * 軸の大小がいつまでも意味を持つ。放置で落ちた分も、戻りが速いので取り返せる。
+ */
+function nudge(value: number, delta: number): number {
+  if (delta === 0) return value;
+  const room = delta > 0 ? 100 - value : value;
+  return clamp(value + delta * (room / 50));
+}
+
+/**
  * 1回のやり取り（インタラクション）を性格パラメータに反映する。
  * 変化量は意図的に小さくし、「じわじわ育つ」感触を出している。
  * バランス調整はこの関数の係数を変えるだけで完結するようにしてある。
+ * 実際に効く量は、上の nudge が端との距離で割り引く。
  */
 export function updatePersonality(
   current: PersonalityTraits,
@@ -62,37 +86,45 @@ export function updatePersonality(
   const intensity = 0.6 + 0.8 * (signal.sentimentIntensity ?? 0.5);
 
   if (signal.sentiment === "positive") {
-    next.warmth = clamp(next.warmth + 1.5 * intensity);
-    next.cheerfulness = clamp(next.cheerfulness + 1.2 * intensity);
-    next.caution = clamp(next.caution - 0.5 * intensity);
+    next.warmth = nudge(next.warmth, 1.5 * intensity);
+    next.cheerfulness = nudge(next.cheerfulness, 1.2 * intensity);
+    next.caution = nudge(next.caution, -0.5 * intensity);
   } else if (signal.sentiment === "negative") {
-    next.caution = clamp(next.caution + 1.5 * intensity);
-    next.cheerfulness = clamp(next.cheerfulness - 1 * intensity);
+    next.caution = nudge(next.caution, 1.5 * intensity);
+    next.cheerfulness = nudge(next.cheerfulness, -1 * intensity);
   }
 
   if (signal.topicNovelty > 0.6 || signal.askedQuestion) {
-    next.curiosity = clamp(next.curiosity + 1.5);
+    next.curiosity = nudge(next.curiosity, 1.5);
   }
 
   if (signal.playful) {
-    next.humor = clamp(next.humor + 1.5);
+    next.humor = nudge(next.humor, 1.5);
   }
 
   if (signal.messageLength > 80) {
     // じっくり長く話しかけてくれる相手には懐きやすくなる（＝自立心はやや下がる）
-    next.warmth = clamp(next.warmth + 0.5);
-    next.independence = clamp(next.independence - 0.3);
+    next.warmth = nudge(next.warmth, 0.5);
+    next.independence = nudge(next.independence, -0.3);
   } else if (signal.messageLength < 8) {
     // そっけないやり取りが続くと、マイペースになっていく
-    next.independence = clamp(next.independence + 0.2);
+    next.independence = nudge(next.independence, 0.2);
   }
 
   if (signal.daysSinceLastVisit >= 3) {
-    // 放置期間が長いほど、寂しさから慎重・マイペースになる（ネグレクト挙動）
-    const neglect = Math.min(signal.daysSinceLastVisit - 2, 10);
-    next.cheerfulness = clamp(next.cheerfulness - neglect * 0.8);
-    next.caution = clamp(next.caution + neglect * 0.6);
-    next.independence = clamp(next.independence + neglect * 0.4);
+    // 放置期間が長いほど、寂しさから慎重・マイペースになる（ネグレクト挙動）。
+    //
+    // **1回の再会で与える打撃を小さくした。** 前は最大で陽気さ −8。
+    // 可愛がっている人の1往復が +1.2 なので、2週間の旅行から帰ってきただけで
+    // 7往復ぶんが吹き飛んでいた。出張や入院で離れた人が、戻ってきた初回に
+    // いちばん冷たい反応を受けることになる。**寂しがるのと、罰するのは別。**
+    //
+    // 上限も 10日ぶん から 7日ぶん に下げた。ひと月放置しても半月放置しても
+    // 同じところで頭打ちになる（それ以上の差は、体験として意味が無い）。
+    const neglect = Math.min(signal.daysSinceLastVisit - 2, 7);
+    next.cheerfulness = nudge(next.cheerfulness, -neglect * 0.35);
+    next.caution = nudge(next.caution, neglect * 0.28);
+    next.independence = nudge(next.independence, neglect * 0.2);
   }
 
   return next;

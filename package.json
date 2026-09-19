@@ -16,6 +16,7 @@
     "persona:fixtures": "node tools/make-persona-fixtures.mjs",
     "persona:check": "node tools/make-persona-fixtures.mjs && node tools/persona-runtime-check.mjs",
     "brand:assets": "python3 tools/make_brand_assets.py",
+    "legal:check": "node tools/legal-check.mjs",
     "deploy:staging": "wrangler deploy --env staging --var APP_VERSION:$(git rev-parse --short HEAD)$(git diff --quiet || echo -dirty) --var BUILT_AT:$(date -u +%Y-%m-%dT%H:%M:%SZ)",
     "setup:staging": "node tools/setup-staging.mjs"
   },

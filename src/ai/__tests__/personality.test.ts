@@ -60,6 +60,67 @@ describe("updatePersonality", () => {
     expect(longGap.independence).toBeGreaterThan(shortGap.independence);
   });
 
+  // --- ここから下が、育成として一番大事な性質 ---------------------------------
+
+  it("可愛がり続けても、軸が100に張り付かない（育てるほど没個性になるのを防ぐ）", () => {
+    let p = { ...DEFAULT_PERSONALITY };
+    for (let i = 0; i < 500; i++) {
+      p = updatePersonality(p, baseSignal({ sentiment: "positive", sentimentIntensity: 1 }));
+    }
+    // 上がってはいるが、振り切れてはいない
+    expect(p.warmth).toBeGreaterThan(80);
+    expect(p.warmth).toBeLessThan(100);
+    expect(p.cheerfulness).toBeLessThan(100);
+  });
+
+  it("端に近いほど動きにくく、端から戻るときは動きやすい", () => {
+    const sig = baseSignal({ sentiment: "positive", sentimentIntensity: 0.5 });
+    const fromLow = updatePersonality({ ...DEFAULT_PERSONALITY, warmth: 10 }, sig).warmth - 10;
+    const fromMid = updatePersonality({ ...DEFAULT_PERSONALITY, warmth: 50 }, sig).warmth - 50;
+    const fromHigh = updatePersonality({ ...DEFAULT_PERSONALITY, warmth: 90 }, sig).warmth - 90;
+    expect(fromLow).toBeGreaterThan(fromMid);
+    expect(fromMid).toBeGreaterThan(fromHigh);
+    expect(fromHigh).toBeGreaterThan(0); // 動かなくなるわけではない
+  });
+
+  it("50のときの変化量は、これまでと同じ（序盤の育ち方を変えていない）", () => {
+    const next = updatePersonality(DEFAULT_PERSONALITY, baseSignal({ sentiment: "positive", sentimentIntensity: 0.5 }));
+    expect(next.warmth).toBeCloseTo(51.5, 5); // 1.5 × intensity1.0 × 係数1.0
+  });
+
+  it("長く空けて戻ってきても、1回で受ける打撃が大きすぎない", () => {
+    // 戻ってきた初回で、可愛がり6往復ぶんより大きく削られないこと
+    const oneHappyTurn =
+      updatePersonality(DEFAULT_PERSONALITY, baseSignal({ sentiment: "positive", sentimentIntensity: 0.5 })).cheerfulness -
+      50;
+    const afterMonth = updatePersonality(DEFAULT_PERSONALITY, baseSignal({ daysSinceLastVisit: 30 }));
+    const damage = 50 - afterMonth.cheerfulness;
+    expect(damage).toBeGreaterThan(0); // 寂しがりはする
+    expect(damage).toBeLessThan(oneHappyTurn * 6);
+  });
+
+  it("放置で落ちた分は、話しかければ取り返せる", () => {
+    const hurt = updatePersonality(DEFAULT_PERSONALITY, baseSignal({ daysSinceLastVisit: 30 }));
+    let p = hurt;
+    for (let i = 0; i < 5; i++) {
+      p = updatePersonality(p, baseSignal({ sentiment: "positive", sentimentIntensity: 0.6 }));
+    }
+    expect(p.cheerfulness).toBeGreaterThan(50); // 元より上まで戻る
+  });
+
+  it("性格が逆の2体は、長く育てても別人のままでいる", () => {
+    // 100に張り付くと、どちらも同じ「全部100」になって見分けが付かなくなる。
+    // それが起きていないことを、軸の開きで見る。
+    let warm = { ...DEFAULT_PERSONALITY };
+    let wary = { ...DEFAULT_PERSONALITY };
+    for (let i = 0; i < 300; i++) {
+      warm = updatePersonality(warm, baseSignal({ sentiment: "positive", sentimentIntensity: 0.9, playful: true }));
+      wary = updatePersonality(wary, baseSignal({ sentiment: "negative", sentimentIntensity: 0.9 }));
+    }
+    expect(warm.cheerfulness - wary.cheerfulness).toBeGreaterThan(40);
+    expect(wary.caution - warm.caution).toBeGreaterThan(40);
+  });
+
   it("never lets any trait go out of the 0-100 range even under repeated extreme input", () => {
     let p = { ...DEFAULT_PERSONALITY };
     for (let i = 0; i < 200; i++) {

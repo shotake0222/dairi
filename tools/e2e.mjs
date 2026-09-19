@@ -873,6 +873,76 @@ console.log("\n[29] 成長グラフと、実画面の写真");
   check("実測値がぶれることを断ってある", biz2.includes("実行のたびに数ポイント動きます"));
 }
 
+console.log("\n[30] キーホルダーの販売案内");
+{
+  const lp5 = await (await fetch(`${BASE}/lp`)).text();
+  check("値段が出ている", lp5.includes("5,500") && lp5.includes("税込・送料別"));
+  // 価格は2箇所（商品セクションとFAQ）に出る。片方だけ直して食い違うのが一番まずい
+  check("FAQの値段と食い違っていない", (lp5.match(/5,500/g) || []).length >= 2);
+  check("このページで決済しないと明記してある", lp5.includes("このページでの決済は行っていません"));
+
+  // 商品写真。差し替えるのは中身だけで、パスは変わらない前提にしてある
+  const photo = await fetch(`${BASE}/media/keyholder.jpg`);
+  check("商品写真が配信される", photo.ok && (photo.headers.get("content-type") || "").includes("image"),
+    `${photo.status} ${photo.headers.get("content-type")}`);
+
+  // 「購入する」を押したら、問い合わせフォームへ行って用件が入っていること
+  await page.goto(`${BASE}/lp`, { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(500);
+  await page.click("[data-buy]");
+  await page.waitForTimeout(1200);
+  const filled = await page.inputValue("#contact #message");
+  check("購入ボタンから用件が先に入る", filled.includes("キーホルダー"), filled.slice(0, 40));
+  const atForm = await page.evaluate(() => {
+    const r = document.querySelector("#contact").getBoundingClientRect();
+    return r.top < window.innerHeight && r.bottom > 0;
+  });
+  check("問い合わせフォームまで移動する", atForm === true);
+
+  // 書きかけを消さないこと（ここを壊すと、書いた文章が消える）
+  await page.goto(`${BASE}/lp`, { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(400);
+  await page.fill("#contact #message", "先に書いていた文章");
+  await page.click("[data-buy]");
+  await page.waitForTimeout(900);
+  check("書きかけは上書きしない", (await page.inputValue("#contact #message")) === "先に書いていた文章");
+}
+
+console.log("\n[31] ホーム画面への追加と、規約の穴");
+{
+  // 案内の実装は1箇所（/install-hint.js）。2箇所に書くと文言も条件も食い違う
+  const hint = await fetch(`${BASE}/install-hint.js`);
+  check("追加の案内スクリプトが配信される", hint.ok, String(hint.status));
+  const hintSrc = await hint.text();
+  check("iOSの手順が書いてある", hintSrc.includes("ホーム画面に追加") && hintSrc.includes("共有"));
+  check("入れられない端末には出さない", hintSrc.includes("beforeinstallprompt") && hintSrc.includes("isIosSafari"));
+
+  for (const [pathname, label] of [["/home", "分身の一覧"], ["/chat", "会話画面"]]) {
+    const html = await (await fetch(`${BASE}${pathname}`)).text();
+    check(`${label}が同じ案内を読み込んでいる`, html.includes("/install-hint.js"));
+    check(`${label}に差し込み先がある`, html.includes('id="installSlot"'));
+  }
+
+  // 規約とポリシー。売り物ができた以上、書いていないと困ることが増えた
+  const terms = await (await fetch(`${BASE}/terms`)).text();
+  check("規約が音声とカメラの扱いに触れている", terms.includes("音声とカメラを使う機能について"));
+  check("規約が他人を無断で撮らないよう求めている", terms.includes("他人の声を録って"));
+  check("規約に依代の値段が書いてある", terms.includes("5,500円"));
+  check("規約がこのサービス上で決済しないと書いている", terms.includes("本サービス上での決済は行っていません"));
+
+  const privacy = await (await fetch(`${BASE}/privacy`)).text();
+  check("ポリシーが音声の扱いに触れている", privacy.includes("音声の扱い"));
+  check("ポリシーが発送時の氏名・住所について書いている", privacy.includes("お送りするときにいただく情報"));
+  check("カード番号を預からないと書いてある", privacy.includes("クレジットカード番号を当方がお預かりすることはありません"));
+
+  // 空欄が残っているあいだは「下書きです」を消さないこと（食い違うと事故になる）
+  for (const [html, label] of [[terms, "規約"], [privacy, "ポリシー"]]) {
+    const blanks = (html.match(/［[^］]*］/g) || []).length;
+    const draft = html.includes("この文書は下書きです");
+    check(`${label}の空欄と但し書きが食い違っていない`, blanks > 0 ? draft : !draft, `空欄${blanks}件`);
+  }
+}
+
 check("JavaScriptエラーが出ていない", pageErrors.length === 0, pageErrors.join(" / "));
 
 await browser.close();

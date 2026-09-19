@@ -75,27 +75,6 @@
   .empty { text-align: center; color: #888; font-size: 13px; padding: 50px 20px; line-height: 1.8; }
   .empty .big { font-size: 32px; margin-bottom: 12px; }
 
-  /* ホーム画面への追加（PWAインストール）の案内。
-     ブラウザがインストール可能と判断したとき（beforeinstallprompt発火時）だけ出す。 */
-  #installCard { display: none; align-items: center; gap: 12px; }
-  #installCard.show { display: flex; }
-  #installCard .installText { flex: 1; font-size: 12px; color: #5b4b99; line-height: 1.7; }
-  #installBtn {
-    border: none; background: #7c5cff; color: #fff; font-size: 12px; font-weight: 700;
-    padding: 9px 16px; border-radius: 999px; cursor: pointer; white-space: nowrap;
-  }
-  /* iOS向けの案内。ボタンで追加できないので、手順を文章で出す。 */
-  #iosInstallCard { display: flex; align-items: flex-start; gap: 12px; }
-  #iosInstallCard[hidden] { display: none; }
-  #iosInstallCard .iosIcon {
-    display: inline-block; border: 1px solid #c8bcff; border-radius: 6px;
-    padding: 0 6px; font-size: 11px; color: #7c5cff; white-space: nowrap;
-  }
-  #iosInstallClose {
-    border: none; background: none; color: #b9b0d8; font-size: 18px; line-height: 1;
-    cursor: pointer; padding: 0 2px; flex-shrink: 0;
-  }
-
   /* フッター。アカウント不要のサービスなので、データの扱いへの導線は常に見える場所に置く。 */
   .addEntry { border-style: dashed; }
   .addIcon { display: grid; place-items: center; font-size: 26px; color: #b7a9e8; }
@@ -116,24 +95,9 @@
 </header>
 
 <main>
-  <div class="card" id="installCard">
-    <div class="installText">
-      ホーム画面に追加しておくと、依代が手元になくても、ここから分身に会いに来られます。
-    </div>
-    <button id="installBtn" type="button">追加する</button>
-  </div>
-
-  <!-- iOS Safari は beforeinstallprompt に非対応で、ボタンからの追加ができない。
-       手順を書いておかないと、iPhoneの人だけ案内が何も出ないことになる。 -->
-  <div class="card" id="iosInstallCard" hidden>
-    <div class="installText">
-      <strong>ホーム画面に追加しておくと便利です。</strong><br />
-      画面下の <span class="iosIcon">共有</span> を押して、
-      「<strong>ホーム画面に追加</strong>」を選んでください。
-      依代が手元になくても、ここから分身に会いに来られます。
-    </div>
-    <button id="iosInstallClose" type="button" title="閉じる">×</button>
-  </div>
+  <!-- 「ホーム画面に追加」の案内。中身は /install-hint.js が作る
+       （会話画面と同じものを出すため。別々に書くと必ず食い違う）。 -->
+  <div id="installSlot"></div>
 
   <div id="grid" class="grid"></div>
   <div id="emptyState" hidden class="empty">
@@ -320,67 +284,14 @@
   render();
 </script>
 
+<script src="/install-hint.js"></script>
 <script>
-  // 「ホーム画面に追加」ボタン。
-  // Chrome系はbeforeinstallpromptが飛んできた時だけ案内を出す（＝インストール可能なときだけ）。
-  // iOS Safariはこのイベントを実装しておらず、共有メニューからの手動追加になるため、ここでは何も出さない。
-  (function setupInstallPrompt() {
-    const card = document.getElementById("installCard");
-    const btn = document.getElementById("installBtn");
-    if (!card || !btn) return;
-    let deferred = null;
-
-    window.addEventListener("beforeinstallprompt", (e) => {
-      e.preventDefault();
-      deferred = e;
-      card.classList.add("show");
-    });
-
-    btn.addEventListener("click", async () => {
-      if (!deferred) return;
-      btn.disabled = true;
-      try {
-        deferred.prompt();
-        await deferred.userChoice;
-      } catch (err) {
-        /* ユーザーが閉じただけなので何もしない */
-      }
-      deferred = null;
-      card.classList.remove("show");
-    });
-
-    // 追加済みになったら案内は不要
-    window.addEventListener("appinstalled", () => card.classList.remove("show"));
-  })();
-
-  // iOS Safari 向けの手動追加の案内。
-  // beforeinstallprompt が実装されていないため、上のカードは永久に出ない。
-  // 何も案内しないと、iPhoneの人だけ「ホーム画面に追加できる」ことを知らないままになる。
-  (function setupIosInstallHint() {
-    const card = document.getElementById("iosInstallCard");
-    const closeBtn = document.getElementById("iosInstallClose");
-    if (!card || !closeBtn) return;
-
-    const DISMISS_KEY = "sodatsukake_iosInstallDismissed";
-    const ua = navigator.userAgent || "";
-    // iPadOSはUAがMacを名乗るため、タッチできるMacintoshもiPadとして扱う
-    const isIos = /iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
-    // Safari以外（Chrome for iOS等）は共有メニューの項目が違うので出さない
-    const isSafari = /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS/.test(ua);
-    // すでにホーム画面から開かれているなら不要
-    const standalone = window.navigator.standalone === true ||
-      (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
-
-    let dismissed = false;
-    try { dismissed = localStorage.getItem(DISMISS_KEY) === "1"; } catch (e) { /* 読めなければ出す */ }
-
-    if (isIos && isSafari && !standalone && !dismissed) card.hidden = false;
-
-    closeBtn.addEventListener("click", () => {
-      card.hidden = true;
-      try { localStorage.setItem(DISMISS_KEY, "1"); } catch (e) { /* 覚えられなくても閉じはする */ }
-    });
-  })();
+  // 「ホーム画面に追加」の案内。出し分けと文面は /install-hint.js にまとめてある。
+  // **1体も居ないうちは出さない。** 戻ってくる先が無い人に「追加しておくと安心です」は、
+  // 何のことか分からないうえ、まだ何も始まっていない画面が案内で埋まる。
+  if (window.waketamaInstallHint && document.querySelectorAll("#grid .entry").length > 0) {
+    window.waketamaInstallHint.mount(document.getElementById("installSlot"));
+  }
 
   // Service Workerの登録。失敗してもアプリ本体の動作には一切影響させない
   // （非対応ブラウザ・プライベートモード・http環境などでは単に登録されないだけ）。
