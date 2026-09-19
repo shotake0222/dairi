@@ -100,13 +100,18 @@
       <div class="narrative" id="narrative"></div>
     </div>
 
-    <div class="card">
+    <div class="card" id="chartCard">
       <h2>性格パラメータの推移</h2>
       <div class="sub" id="chartSub">やり取りを重ねるたびに、少しずつ動いてきた記録です</div>
       <div id="chartWrap">
         <canvas id="chart" width="600" height="320"></canvas>
       </div>
       <div class="legend" id="legend"></div>
+    </div>
+
+    <div class="card" id="chartFallback" hidden>
+      <h2>性格パラメータの推移</h2>
+      <div class="sub">記録がまだ1回分しかないので、線が引けません。もう少し話すと、ここに変化が出てきます。</div>
     </div>
 
     <div class="card">
@@ -301,17 +306,27 @@
     el("headline").textContent = headline;
     el("narrative").textContent = narrative;
 
-    drawChart(el("chart"), history);
-    renderLegend(el("legend"));
     renderDeltas(el("deltaList"), first, last);
 
     el("conceptNote").textContent =
       `この記録は、${data.name}の「魂」にあたる部分です。今は画面の中の姿ですが、` +
       `将来メタバースやロボットなど別の身体に宿るときも、この性格と記憶は引き継がれていく予定です。`;
 
+    // **グラフは、表示してから描くこと。**
+    // hidden のまま描くと親要素の clientWidth が 0 になり、
+    // 幅0の領域へ描いてしまう（画面には「空のグラフ」が出る。読み込み直後だけ起きて、
+    // 画面を回すと直るので気づきにくい。実際に紹介動画を撮るまで残っていた）。
     el("content").hidden = false;
 
-    window.addEventListener("resize", () => drawChart(el("chart"), history));
+    if (history.length < 2) {
+      // 点が1つしかないと、線が引けず白紙に見える。グラフごと出さずに理由を書く。
+      el("chartCard").hidden = true;
+      el("chartFallback").hidden = false;
+    } else {
+      drawChart(el("chart"), history);
+      renderLegend(el("legend"));
+      window.addEventListener("resize", () => drawChart(el("chart"), history));
+    }
   })();
 </script>
 

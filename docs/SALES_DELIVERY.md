@@ -50,12 +50,15 @@
 
 ここが他社と一番違うところ。**言語モデルが要らない。**
 「人格 → 振る舞い」の翻訳はこちらのサーバ（`src/persona/avatarProfile.ts`）で済ませてあるので、
-渡すのは**数値と識別子だけの数百バイト**（実測240〜250バイト）。ESP32やRaspberry Pi Picoでも動く。
+渡すのは**数値と識別子だけの数百バイト**（実測で1体あたり約250バイト）。ESP32やRaspberry Pi Picoでも動く。
+
+実際の書き出し（`npm run persona:fixtures` で作った検査用の1体。256バイト）:
 
 ```json
-{"v":1,"id":"edge-bol","n":"さきがけ","m":[82,66,90,410,1080,59],
- "p":[1.3,0.7],"e":[66,16],"t":[50,90,82,20,50,50],
- "c":["prefer_novel_options","tolerate_open_plans"]}
+{"v":1,"id":"5b0a7533","n":"さきがけ","m":[77,73,85,458,1212,65],
+ "p":[1.3,0.7],"e":[65,17],"t":[55,88,74,26,84,66],
+ "c":["prefer_novel_options","offer_choices_not_answers","track_progress",
+      "prioritize_enjoyment","tolerate_open_plans","take_initiative"]}
 ```
 
 会話・覚え書き・属性は**1文字も含まない**。これは方針ではなく、

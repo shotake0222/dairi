@@ -829,6 +829,50 @@ console.log("\n[28] 紹介動画・声・かざして話す");
   check("たたんでもキャラクターは消えない", stageH > 40, `${Math.round(stageH)}px`);
 }
 
+console.log("\n[29] 成長グラフと、実画面の写真");
+{
+  // **読み込んだ直後にグラフが描けていること。**
+  // 以前は hidden のまま描いていたので、親の幅が0になり「空のグラフ」が出ていた。
+  // 画面を回すと直るので、人が見ても気づきにくい。ここで毎回押さえる。
+  await page.goto(`${BASE}/history?cid=${newCid}`, { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(1600);
+  const chart = await page.evaluate(() => {
+    const el = document.getElementById("chart");
+    if (!el || el.offsetParent === null) return { drawn: false, why: "グラフが出ていない" };
+    const ctx = el.getContext("2d");
+    const { data } = ctx.getImageData(0, 0, el.width, el.height);
+    let painted = 0;
+    for (let i = 0; i < data.length; i += 4) if (data[i + 3] > 0) painted++;
+    return { drawn: painted > 500, painted, w: el.width };
+  });
+  // 記録が1回ぶんしか無い分身ではグラフを出さない（線が引けず白紙に見えるため）
+  const fallbackShown = await page.evaluate(() => {
+    const el = document.getElementById("chartFallback");
+    return !!el && !el.hidden;
+  });
+  check("成長グラフが読み込み直後に描けている", chart.drawn === true || fallbackShown === true,
+    JSON.stringify(chart));
+
+  // LPと法人ページに載せた実画面の写真が、実際に配信されていること
+  for (const name of ["home", "chat", "history", "profile"]) {
+    const res = await fetch(`${BASE}/media/shots/${name}.webp`);
+    check(`実画面の写真が配信される(${name})`, res.ok && (res.headers.get("content-type") || "").includes("image"),
+      `${res.status} ${res.headers.get("content-type")}`);
+  }
+  const lp4 = await (await fetch(`${BASE}/lp`)).text();
+  check("LPに実画面の写真が載っている", lp4.includes("/media/shots/chat.webp"));
+  check("LPが「つながっていなくても動く」と書いている", lp4.includes("電波が届かない場所でも"));
+
+  const biz2 = await (await fetch(`${BASE}/biz`)).text();
+  check("法人ページにエッジ向けの節がある", biz2.includes('id="edge"'));
+  check("法人ページが機種ごとの線引きを出している",
+    biz2.includes("ESP32 (WROOM-32)") && biz2.includes("Raspberry Pi Pico 2 W"));
+  check("法人ページが実際の書き出しを載せている", biz2.includes("persona.min.json"));
+  check("法人ページも同じ勾玉のロゴを使っている", biz2.includes("M59.7 13.8 C61.1"));
+  // 数字は測り直すと動く。断定して載せていないか
+  check("実測値がぶれることを断ってある", biz2.includes("実行のたびに数ポイント動きます"));
+}
+
 check("JavaScriptエラーが出ていない", pageErrors.length === 0, pageErrors.join(" / "));
 
 await browser.close();

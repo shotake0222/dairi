@@ -24,6 +24,8 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
+import { launchOptions, makeShooter, seedDemo, seedDeviceList } from "./demo.mjs";
+
 const BASE = process.env.E2E_BASE_URL || "http://127.0.0.1:8787";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, "..", "..");
@@ -46,104 +48,8 @@ rmSync(WORK, { recursive: true, force: true });
 mkdirSync(WORK, { recursive: true });
 mkdirSync(OUT_DIR, { recursive: true });
 
-const post = async (p, body) => {
-  const res = await fetch(`${BASE}${p}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error(`${p} → ${res.status} ${(await res.text()).slice(0, 160)}`);
-  return res.json().catch(() => ({}));
-};
-
-// ---- 1. 撮影用の分身を1体つくる -------------------------------------------
-//
-// 「育った分身」でないと、成長段階も厚みも初期値のままで、見せる意味が無い。
-// 会話の中身は用意した文章だが、そこから計算される値（段階・厚み・声）は本物。
-
-const DEMO = {
-  name: "こだま",
-  species: "mofukuru",
-  color: "peach",
-  interactionCount: 168,
-  growthStage: "相棒期",
-  personality: { warmth: 78, curiosity: 71, cheerfulness: 66, caution: 38, independence: 52, humor: 63 },
-  notesSeed: "・柴犬のコタロウを飼っている\n・朝がとても弱い\n・写真を撮るのが好き",
-  notes: "・週末は近所の川沿いを散歩する\n・コーヒーは深煎りが好み\n・来月、引っ越しを考えている",
-  turns: [
-    ["ただいま。今日はずっと会議だった", "おかえり。ずっと画面越しだと疲れるよね。コタロウは待ちくたびれてなかった？"],
-    ["散歩には行けたよ。川沿いまで", "いいね、あそこ気持ちいいもんね。写真は撮った？"],
-    ["撮ったけど、曇ってていまいち", "曇りの日のほうが色が出ることもあるよ。あとで見せて"],
-    ["来月の引っ越し、まだ何も決まってない", "急がなくていいと思うけど、内見だけ先に入れておくと気が楽かも"],
-    ["明日は早起きしないといけない", "朝、弱いもんね。today の分だけでも先に準備しておこうか"],
-  ],
-  profile: {
-    ageBand: ["30代"],
-    region: ["首都圏"],
-    hobbies: ["カメラ", "散歩"],
-    chronotype: ["夜型"],
-    wantedRelation: ["相棒として"],
-    futureBody: ["小さなロボット"],
-  },
-  psycho: {
-    psy_stimulation: "絶対はじめての店",
-    psy_benevolence: "すぐ連絡して会いに行く",
-    psy_selfDirection: "自分で決めたい",
-    psy_hedonism: "前からやりたかったことをする",
-  },
-};
-
 console.log("撮影用の分身を用意しています…");
-const tapped = await fetch(`${BASE}/t/lpvideo-${Date.now()}`, { redirect: "manual" });
-const loc = new URL(tapped.headers.get("location") || "", BASE);
-const cid = loc.searchParams.get("cid");
-const token = loc.searchParams.get("token");
-if (!cid || !token) throw new Error("分身を作れませんでした");
-
-await post("/api/character/import", {
-  characterId: cid,
-  token,
-  package: {
-    formatVersion: "1.1",
-    exportedAt: Date.now(),
-    character: {
-      id: cid,
-      name: DEMO.name,
-      species: DEMO.species,
-      color: DEMO.color,
-      createdAt: Date.now() - 120 * 24 * 3600 * 1000,
-      growthStage: DEMO.growthStage,
-      interactionCount: DEMO.interactionCount,
-    },
-    personality: DEMO.personality,
-    personalityHistory: Array.from({ length: 8 }, (_, i) => ({
-      t: Date.now() - (8 - i) * 12 * 24 * 3600 * 1000,
-      interactionCount: Math.round((DEMO.interactionCount / 8) * i),
-      personality: Object.fromEntries(
-        Object.entries(DEMO.personality).map(([k, v]) => [k, Math.round(50 + (v - 50) * (i / 7))])
-      ),
-    })),
-    memory: {
-      shortTerm: "",
-      longTerm: [],
-      profileNotes: DEMO.notes,
-      recentTurns: DEMO.turns.flatMap(([u, c], i) => [
-        { role: "user", text: u, t: Date.now() - (DEMO.turns.length - i) * 3600000 },
-        { role: "character", text: c, t: Date.now() - (DEMO.turns.length - i) * 3600000 + 30000 },
-      ]),
-    },
-    meta: { generator: "waketama", note: "紹介動画の撮影用" },
-  },
-});
-await post("/api/consent", { characterId: cid, token, consent: { terms: true, profile: true, aggregate: true } });
-await post("/api/profile", { characterId: cid, token, answers: DEMO.profile });
-for (const [id, value] of Object.entries(DEMO.psycho)) {
-  await post("/api/survey/answer", { characterId: cid, token, id, values: [value] });
-}
-await post("/api/notes", { characterId: cid, token, part: "seed", notes: DEMO.notesSeed });
-
-// 実際に計算された値を、キャプションに使うために引いておく
-const state = await (await fetch(`${BASE}/api/character?cid=${cid}`)).json();
+const { cid, token, state } = await seedDemo(BASE);
 const depth = await (
   await fetch(`${BASE}/api/survey/next?cid=${cid}&token=${encodeURIComponent(token)}`)
 ).json();
@@ -151,68 +57,14 @@ console.log(`  ${state.name} / ${state.growthStage} / 会話${state.interactionC
 
 // ---- 2. 実際の画面を撮る ---------------------------------------------------
 
-const browser = await chromium.launch({
-  ...(process.env.PLAYWRIGHT_CHROMIUM_PATH ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH } : {}),
-  // キャラクターは3Dモデル（model-viewer）で出している。
-  // 既定のヘッドレスだとGPUが無くて何も描かれず、**キャラの居ない紹介動画**になる。
-  // ソフトウェアで描かせる（遅いが確実）。
-  args: [
-    "--use-gl=angle",
-    "--use-angle=swiftshader",
-    "--enable-unsafe-swiftshader",
-    "--ignore-gpu-blocklist",
-  ],
-});
+const browser = await chromium.launch(launchOptions());
 const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
-
-async function shot(name, url, opts = {}) {
-  await phone.goto(`${BASE}${url}`, { waitUntil: "domcontentloaded" });
-  // 同意はもう記録済みだが、端末に印が無い状態で開くと出るので通しておく
-  await phone.evaluate(
-    ([c, t]) => localStorage.setItem(`sodatsukake_token_${c}`, t),
-    [cid, token]
-  );
-  if (opts.reload !== false) await phone.reload({ waitUntil: "domcontentloaded" });
-  // 3Dモデルは読み込みに時間がかかる。描き終わる前に撮ると、キャラの居ない絵になる。
-  await phone
-    .waitForFunction(() => {
-      const mv = document.querySelector("model-viewer");
-      return !mv || mv.loaded === true;
-    }, { timeout: 15000 })
-    .catch(() => {});
-  await phone.waitForTimeout(opts.wait ?? 2200);
-  // 3Dが描けない環境では2Dへ落ちる。その切り替えを待ってから撮る
-  if (opts.before) await opts.before(phone);
-  const file = path.join(WORK, `${name}.png`);
-  await phone.screenshot({ path: file });
-  return file;
-}
+const shot = makeShooter(BASE, phone, { cid, token }, WORK);
 
 console.log("画面を撮っています…");
 const shots = {};
 
-// 一覧は、この端末で開いたことのある分身しか並ばない。
-// 何もしないと「まだ1体も居ません」の画面が撮れてしまい、動画の1枚目がそれになる。
-await phone.goto(`${BASE}/home`, { waitUntil: "domcontentloaded" });
-await phone.evaluate(
-  ([c, t, d]) => {
-    localStorage.setItem(`sodatsukake_token_${c}`, t);
-    localStorage.setItem("sodatsukake_myCharacters", JSON.stringify([d]));
-  },
-  [
-    cid,
-    token,
-    {
-      cid,
-      name: DEMO.name,
-      species: DEMO.species,
-      color: DEMO.color,
-      growthStage: DEMO.growthStage,
-      interactionCount: DEMO.interactionCount,
-      lastVisit: Date.now() - 3600000,
-    },
-  ]
-);
+await seedDeviceList(BASE, phone, { cid, token });
 shots.home = await shot("home", "/home");
 shots.chat = await shot("chat", `/chat?cid=${cid}`, { wait: 7000 });
 shots.profile = await shot("profile", `/profile?cid=${cid}`, { wait: 2600 });

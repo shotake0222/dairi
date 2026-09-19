@@ -166,8 +166,22 @@
   .target h3 { margin: 7px 0 3px; font-size: 13.5px; }
   .target p { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.75; }
 
+  /* 実画面の写真。モックではなく、本物のサービスを撮ったもの
+     （撮り直しは tools/lp-video/make_shots.mjs。画面を直したら一緒に撮り直すこと）。 */
+  .shots { display: flex; gap: 14px; overflow-x: auto; padding: 4px 20px 12px; margin: 0 -20px; }
+  .shot { flex: 0 0 190px; }
+  .shot img {
+    width: 100%; display: block; border-radius: 16px; border: 1px solid var(--line);
+    background: var(--panel);
+  }
+  .shot .cap { font-size: 12px; color: var(--muted); margin: 9px 2px 0; line-height: 1.7; }
+  .shot .cap b { color: var(--ink); display: block; font-size: 12.5px; }
+
   .scroll { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  /* 列が多い表は、幅に押し込むと1文字ずつ折り返して読めなくなる。
+     狭い画面では横に流してもらう（親の .scroll が受ける）。 */
+  table.wide { min-width: 540px; }
   th, td { border: 1px solid var(--line); padding: 10px 12px; text-align: left; vertical-align: top; }
   th { background: var(--panel); color: var(--ink); font-size: 12.5px; }
   td { color: var(--muted); }
@@ -205,12 +219,13 @@
   <div class="wrap">
     <div class="logo">
       <!--
-        勾玉（まがたま）のロゴ。大きい円の右半分に頭の円を足し、尾の円を引いて、頭に紐穴を開けている。
-        作図の詳細は public/icons/mark.svg。アイコンとOGPも同じ形から作っている
-        （tools/make_brand_assets.py）。形を変えるときは3箇所すべてを揃えること。
+        勾玉（まがたま）のロゴ。作図の詳細は public/icons/mark.svg。
+        アイコンとOGPも同じ形から作っている（tools/make_brand_assets.py）。
+        **他のページと同じ path を使うこと。** ここだけ古い簡略版が残っていて、
+        個人向けと法人向けでロゴの形が違っていた（同じサービスに見えない）。
       -->
-      <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <path fill-rule="evenodd" d="M24 7A17 17 0 0 1 24 41A6 6 0 0 0 24 29A11 11 0 0 1 24 7ZM28.6 18A4.6 4.6 0 1 1 19.4 18A4.6 4.6 0 1 1 28.6 18Z"/>
+      <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path fill-rule="evenodd" d="M59.7 13.8 C61.1 14.9 65.5 17.8 68.1 20.4 C70.6 22.9 73.1 26.0 74.9 29.0 C76.6 32.1 77.8 35.3 78.5 38.7 C79.1 42.1 79.3 45.9 78.7 49.4 C78.0 52.9 76.7 56.7 74.8 59.7 C72.9 62.7 70.3 65.4 67.4 67.3 C64.5 69.2 60.8 70.7 57.5 71.1 C54.1 71.5 50.2 71.2 47.1 69.9 C44.0 68.6 40.1 64.6 38.7 63.5 A5.0 5.0 0 0 1 45.1 55.8 C45.6 56.1 46.9 57.1 48.0 57.4 C49.0 57.7 50.2 57.8 51.2 57.6 C52.3 57.4 53.5 56.9 54.4 56.3 C55.3 55.7 56.0 54.8 56.5 53.8 C57.0 52.9 57.3 51.7 57.3 50.6 C57.3 49.6 57.0 48.3 56.5 47.4 C56.0 46.5 55.0 45.5 54.1 45.2 C53.2 44.9 51.7 45.6 51.2 45.7 A16.5 16.5 0 0 1 59.7 13.8 Z M47.5 29.7a7.9 7.9 0 1 0 15.8 0a7.9 7.9 0 1 0 -15.8 0Z"/>
       </svg>
       <div>わけ<span>たま</span><span class="biz">FOR BUSINESS</span></div>
     </div>
@@ -223,8 +238,8 @@
 <div class="wrap">
   <div class="hero">
     <!-- メインビジュアル背景の勾玉ロゴ -->
-    <svg class="hero-logo-bg" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-      <path fill-rule="evenodd" d="M24 7A17 17 0 0 1 24 41A6 6 0 0 0 24 29A11 11 0 0 1 24 7ZM28.6 18A4.6 4.6 0 1 1 19.4 18A4.6 4.6 0 1 1 28.6 18Z"/>
+    <svg class="hero-logo-bg" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <path fill-rule="evenodd" d="M59.7 13.8 C61.1 14.9 65.5 17.8 68.1 20.4 C70.6 22.9 73.1 26.0 74.9 29.0 C76.6 32.1 77.8 35.3 78.5 38.7 C79.1 42.1 79.3 45.9 78.7 49.4 C78.0 52.9 76.7 56.7 74.8 59.7 C72.9 62.7 70.3 65.4 67.4 67.3 C64.5 69.2 60.8 70.7 57.5 71.1 C54.1 71.5 50.2 71.2 47.1 69.9 C44.0 68.6 40.1 64.6 38.7 63.5 A5.0 5.0 0 0 1 45.1 55.8 C45.6 56.1 46.9 57.1 48.0 57.4 C49.0 57.7 50.2 57.8 51.2 57.6 C52.3 57.4 53.5 56.9 54.4 56.3 C55.3 55.7 56.0 54.8 56.5 53.8 C57.0 52.9 57.3 51.7 57.3 50.6 C57.3 49.6 57.0 48.3 56.5 47.4 C56.0 46.5 55.0 45.5 54.1 45.2 C53.2 44.9 51.7 45.6 51.2 45.7 A16.5 16.5 0 0 1 59.7 13.8 Z M47.5 29.7a7.9 7.9 0 1 0 15.8 0a7.9 7.9 0 1 0 -15.8 0Z"/>
     </svg>
     
     <span class="eyebrow">PERSONA DATA FOR SMALL MODELS</span>
@@ -237,6 +252,7 @@
     <div class="heroCtas">
       <a class="cta" href="#contact">資料・データについて相談する</a>
       <a class="cta ghost" href="#format">フォーマットを見る</a>
+      <a class="cta ghost" href="#edge">エッジでの実測を見る</a>
     </div>
   </div>
 </div>
@@ -429,14 +445,16 @@ ollama run    waketama-persona</pre>
       </div>
       <div class="target">
         <h3>⑥ 数百バイトで機器へ</h3>
-        <p>数値と識別子だけ、実測240〜250バイト。<strong>会話も覚え書きも属性も含みません</strong>（渡す直前に機械で検査します）。ESP32やRaspberry Pi Picoにも載ります。</p>
+        <p>数値と識別子だけ、実測で1体あたり約250バイト。<strong>会話も覚え書きも属性も含みません</strong>（渡す直前に機械で検査します）。ESP32やRaspberry Pi Picoにも載ります。</p>
       </div>
     </div>
 
     <p class="lead" style="margin-top:14px">
-      <strong>実測（性格が逆の2体・同じファームウェア）:</strong>
-      返すまでの間 410ms / 930ms、身振り 2回 / 1回、待機の揺らぎ ±10.8度 / ±2.3度、
-      心地よい距離 1.3m / 1.6m、近づくか「自分から寄る」/「寄らない」。
+      <strong>実測（性格が逆の2体・同じファームウェア。2026-09-19）:</strong>
+      返すまでの間 458ms / 890ms、身振り 2回 / 1回、待機の揺らぎ ±10.2度 / ±3.6度、
+      心地よい距離 1.3m / 1.4m、近づくか「自分から寄る」/「寄らない」。
+      2体は検査用に毎回その場で作り直しており、性格の抽出をAIが行うため
+      <strong>値は実行のたびに数ポイント動きます</strong>（差の向きは変わりません）。
       <br /><strong>この6段のうち、⑥だけが機器側の仕事です。</strong>
       新しいロボットへ載せるときは、9項目をアクチュエータへ割り当てるだけで、人格の解釈をやり直す必要がありません。
     </p>
@@ -444,6 +462,125 @@ ollama run    waketama-persona</pre>
       限界も先に申し上げます。観測しているのは言葉だけで、実際の歩行速度や声量は測っていません。
       ④の対応づけは設計時に置いた初期値であり、実機を見ながら調整する前提です。
       また、会話35回に満たない分身では差がほとんど出ません。
+    </p>
+  </div>
+</section>
+
+<section id="edge">
+  <div class="wrap">
+    <h2>エッジAI・スタンドアロンAIで使う</h2>
+    <p class="lead">
+      前節の①〜⑤はこちらのサーバーで済ませてあります。機器へ渡るのは⑥の数値だけなので、
+      <strong>言語モデルを積んでいない機器でも、通信が無い場所でも、人格の差が出ます。</strong>
+      以下はすべて、手元で回して出た値をそのまま載せています。
+    </p>
+
+    <div class="thesis">
+      <div class="big">機器へ渡るのは <em>256バイト</em>。LLMも、通信も、日本語処理も要りません。</div>
+      <p>
+        「エッジで動くAI」と言うとき、多くは小さな言語モデルを機器に載せる話です。
+        こちらはそこを分けています。<strong>喋ることと、その人らしく振る舞うことは別の問題</strong>で、
+        後者は数値の分岐で足ります。言葉が要る場面だけ、モデルなり通信なりを足せばよい。
+      </p>
+    </div>
+
+    <h3 style="font-size:15.5px;margin:26px 0 6px">「動く」を3段階に分けています</h3>
+    <div class="scroll"><table class="wide">
+      <tr><th style="width:22%">段階</th><th>確かめること</th><th style="width:22%">必要な機材</th><th style="width:12%">LLM</th></tr>
+      <tr><td><strong>A. 振る舞い</strong></td><td>人格の違いが、動き・間合い・距離の違いとして出るか</td><td>Pico / ESP32 でも可</td><td><strong>不要</strong></td></tr>
+      <tr><td><strong>B. 言葉</strong></td><td>その子らしい喋り方になるか</td><td>Raspberry Pi 4 以上（8GB推奨）</td><td>必要（ローカル）</td></tr>
+      <tr><td><strong>C. 常時オフライン</strong></td><td>ネットが無くても A+B が成立するか</td><td>Raspberry Pi 5 / 4 8GB</td><td>必要（ローカル）</td></tr>
+    </table></div>
+
+    <h3 style="font-size:15.5px;margin:26px 0 6px">機種ごとの現実的な線引き</h3>
+    <div class="scroll"><table class="wide">
+      <tr><th style="width:34%">機種</th><th style="width:14%">RAM</th><th>ローカルLLM</th><th style="width:12%">段階A</th><th style="width:12%">段階B</th></tr>
+      <tr><td>Raspberry Pi 5 (8GB)</td><td>8GB</td><td>○ 3B〜8B（Q4）。8Bで概ね 4〜7 tok/s</td><td><strong>○</strong></td><td>○ 実用</td></tr>
+      <tr><td>Raspberry Pi 4 (8GB)</td><td>8GB</td><td>△ 3B（Q4）で 2〜4 tok/s</td><td><strong>○</strong></td><td>△</td></tr>
+      <tr><td>Raspberry Pi 4 (4GB)</td><td>4GB</td><td>△ 1B〜3B（Q4）。8Bは載らない</td><td><strong>○</strong></td><td>△</td></tr>
+      <tr><td>Raspberry Pi Zero 2 W</td><td>512MB</td><td>×</td><td><strong>○</strong></td><td>×</td></tr>
+      <tr><td>Raspberry Pi Pico 2 W</td><td>520KB</td><td>×（MicroPython）</td><td><strong>○</strong></td><td>×</td></tr>
+      <tr><td>ESP32 (WROOM-32)</td><td>520KB</td><td>×（Arduino）</td><td><strong>○</strong></td><td>×</td></tr>
+    </table></div>
+    <p class="lead" style="margin:10px 0 0">
+      数値は目安で、量子化・熱・電源で大きく変わります。<strong>段階Aが全機種で成立する</strong>のがこの設計の要点です。
+      逆に、Pico や ESP32 に小さなLLMを載せるのは勧めません。動いたとしても1文に数十秒かかり、
+      人格の違い以前に会話として成立しません。
+    </p>
+
+    <h3 style="font-size:15.5px;margin:26px 0 6px">機器へ焼くデータ（実物）</h3>
+    <p class="lead">
+      検査用に作った「刺激・自律が高い1体」の書き出しです。これで全部で、これ以外は渡しません。
+    </p>
+<pre><span class="c">// persona.min.json — 256バイト</span>
+{<span class="k">"v"</span>:1,<span class="k">"id"</span>:"5b0a7533",<span class="k">"n"</span>:"さきがけ",
+ <span class="k">"m"</span>:[77,73,85,458,1212,65],   <span class="c">// 動き・身振り・揺らぎ・間(ms)・目線(ms)・姿勢</span>
+ <span class="k">"p"</span>:[1.3,0.7],                 <span class="c">// 心地よい距離(m)・近づく速さ(m/s)</span>
+ <span class="k">"e"</span>:[65,17],                   <span class="c">// 表情の基準・まばたき/分</span>
+ <span class="k">"t"</span>:[55,88,74,26,84,66],      <span class="c">// 口調の特徴</span>
+ <span class="k">"c"</span>:[<span class="k">"prefer_novel_options"</span>,<span class="k">"offer_choices_not_answers"</span>,
+      <span class="k">"track_progress"</span>,<span class="k">"prioritize_enjoyment"</span>,
+      <span class="k">"tolerate_open_plans"</span>,<span class="k">"take_initiative"</span>]}</pre>
+    <p class="lead" style="margin-top:10px">
+      会話・覚え書き・属性は<strong>1文字も入りません</strong>。これは方針ではなく、
+      書き出しの直前に機械で検査していて（<code>auditCompact</code>）、
+      引っかかったものは配信しない作りです。部屋に置く機器や、人に配るデバイスに、
+      その人の生活が焼かれることは起きません。
+    </p>
+
+    <h3 style="font-size:15.5px;margin:26px 0 6px">同じファームに載せて、動きが分かれたところ</h3>
+    <p class="lead">
+      参照実装（<code>tools/edge/rule_runtime.py</code>）の出力です。LLMは1回も呼んでいません。
+    </p>
+<pre><span class="c">$ python3 tools/edge/rule_runtime.py bold.min.json careful.min.json --diff</span>
+
+=== さきがけ ===                    === ひだまり ===
+[idle]                             [idle]
+  body_sway ±10.2 deg / 2460ms       body_sway ±3.6 deg / 3160ms
+[approach] 相手との距離 2.0m        [approach] 相手との距離 2.0m
+  drive forward 0.7m/s               head tilt toward
+                                     （自分からは寄らない）
+[greet]                            [greet]
+  wait 458ms                         wait 890ms
+  arm wave 1/2, 2/2                  arm wave 1/1
+  gaze hold 1212ms                   gaze hold 1488ms
+[change] 予定を変えようと言われた   [change] 予定を変えようと言われた
+  head nod fast                      head shake slight
+  → 乗る                             → まず確かめる</pre>
+    <p class="lead" style="margin-top:10px">
+      2体は <code>npm run persona:fixtures</code> がその場で作ります。性格の抽出をAIが行うため
+      <strong>数値は実行のたびに数ポイント動きますが、差の向きは変わりません。</strong>
+      手順は <code>docs/EDGE_DEVICE_TEST.md</code> に、サーボ1個・LED1個の配線から書いてあります。
+      参照実装は Python / Arduino / MicroPython の3つを同梱しています。
+    </p>
+
+    <h3 style="font-size:15.5px;margin:26px 0 6px">この数値の出どころは、この画面です</h3>
+    <p class="lead">
+      モックではありません。実際に育った分身を1体用意して、その画面をそのまま撮ったものです。
+    </p>
+    <div class="shots">
+      <div class="shot">
+        <img src="/media/shots/chat.webp" width="390" height="844" loading="lazy" decoding="async"
+             alt="わけたまの会話画面。キャラクターとやり取りが並んでいる" />
+        <div class="cap"><b>入力はこれだけ</b>テキストの往復。カメラも加速度計もありません。</div>
+      </div>
+      <div class="shot">
+        <img src="/media/shots/history.webp" width="390" height="844" loading="lazy" decoding="async"
+             alt="性格6軸が会話とともに動いた折れ線グラフ" />
+        <div class="cap"><b>① 性格6軸</b>168回の会話で、温かさが 50 → 78。ここが翻訳の入口です。</div>
+      </div>
+      <div class="shot">
+        <img src="/media/shots/profile.webp" width="390" height="844" loading="lazy" decoding="async"
+             alt="データの使い道を項目ごとに選ぶ画面" />
+        <div class="cap"><b>③ 本人の同意</b>何に使ってよいかは、本人が項目ごとに選びます。</div>
+      </div>
+    </div>
+
+    <p class="lead" style="margin:6px 0 0">
+      <strong>先に申し上げておくこと。</strong>
+      段階Aは全機種で動きますが、④の対応づけは設計時に置いた初期値で、実機の可動域に合わせた調整は
+      共同で行う前提です。段階B（ローカルLLMでの喋り方）の品質は載せ先のモデル次第で、
+      こちらで保証できるのは「人格データが漏れなく届いていること」までです。
     </p>
   </div>
 </section>

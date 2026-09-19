@@ -121,7 +121,8 @@
 数値と識別子だけの数百バイトに落とす。**会話も覚え書きも属性も入らない**
 （渡す直前に機械で検査し、落ちたら配信しない）。
 
-実測 240〜250バイト。ESP32でも Raspberry Pi Pico でも載る。
+実測で1体あたり約250バイト（下の2体で 256 / 259 バイト）。
+ESP32でも Raspberry Pi Pico でも載る。
 
 ## 6. 機器側 — イベントから動作へ
 
@@ -138,18 +139,31 @@
 | 予定が変わる | `confirm_before_change` / `prefer_novel_options` | 確かめるか、乗るか |
 | 沈黙が続く | `take_initiative` / `follow_the_lead` | 自分から切り出すか、待つか |
 
-### 実測（性格が逆の2体・同じファーム）
+### 実測（性格が逆の2体・同じファーム。2026-09-19 の実行）
 
 ```
-                さきがけ        しずか
-返すまでの間     410ms          930ms
+                さきがけ        ひだまり
+書き出しの大きさ  256バイト       259バイト
+返すまでの間     458ms          890ms
 身振り           2回            1回
-待機の揺らぎ     ±10.8度        ±2.3度
-心地よい距離     1.3m           1.6m
+待機の揺らぎ     ±10.2度        ±3.6度
+心地よい距離     1.3m           1.4m
 近づくか         自分から寄る    寄らない
 ```
 
-`python3 tools/edge/rule_runtime.py bold.min.json careful.min.json --diff` で再現できる。
+> **この数字は実行のたびに少し動く。** 2体は `npm run persona:fixtures` が
+> 毎回その場で作っており、性格の抽出をAIが行うため、同じ回答を入れても
+> 数ポイントぶれる。**差の向き（さきがけのほうが速く、大きく動く）は変わらない**が、
+> 「458ms」のような値をそのまま仕様として引用しないこと。
+
+次の3コマンドで再現できる（`wrangler dev` を起動した状態で）。
+
+```bash
+npm run persona:fixtures
+node tools/edge/make_compact.mjs tools/.persona-out/seeker.json -o bold.min.json
+node tools/edge/make_compact.mjs tools/.persona-out/keeper.json -o careful.min.json
+python3 tools/edge/rule_runtime.py bold.min.json careful.min.json --diff
+```
 
 ---
 

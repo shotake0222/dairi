@@ -6,3 +6,7 @@ dist/
 .DS_Store
 tools/.e2e-out/
 tools/.persona-out/
+# 紹介素材の作業用（撮った生のPNGと中間の動画）。
+# 出来上がりの public/media/ だけを追跡する。
+tools/lp-video/.work/
+tools/lp-video/.shots/

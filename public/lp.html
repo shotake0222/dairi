@@ -129,6 +129,21 @@
     background: #efeaff; box-shadow: 0 14px 40px rgba(60,40,130,.16); margin-top: 6px;
   }
   .introVideo .videoNote { font-size: 12px; color: #9a90c0; margin: 10px 0 0; }
+
+  /* 実画面の写真。合成やモックではなく、本物のサービスを撮ったもの
+     （撮り直しは tools/lp-video/make_shots.mjs。画面を直したら一緒に撮り直すこと）。
+     狭い画面では横に流して見てもらう。 */
+  .shots { display: flex; gap: 14px; overflow-x: auto; padding: 4px 20px 14px; margin: 0 -20px;
+           scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; }
+  .shot { flex: 0 0 168px; scroll-snap-align: center; }
+  @media (min-width: 520px) { .shot { flex-basis: 200px; } }
+  .shot img {
+    width: 100%; display: block; border-radius: 18px; border: 1px solid var(--line);
+    background: #fff; box-shadow: 0 10px 26px rgba(60,40,130,.12);
+  }
+  .shot .cap { font-size: 12.5px; color: var(--muted); margin: 10px 2px 0; line-height: 1.7; }
+  .shot .cap b { color: var(--ink); display: block; font-size: 13px; }
+  .shotNote { font-size: 12px; color: #9a90c0; margin: 2px 0 0; }
   .origin .body { font-size: 14.5px; }
   .origin .body strong { color: var(--brand); }
 
@@ -323,6 +338,34 @@
     <p class="videoNote">
       音声はありません。会話の文面のみ、紹介用に用意したものを表示しています。
     </p>
+
+    <h2 style="margin-top:34px">実際の画面</h2>
+    <p class="lead">
+      作り込んだ見本ではありません。育った分身を1体用意して、その画面をそのまま撮っています。
+    </p>
+    <div class="shots">
+      <div class="shot">
+        <img src="/media/shots/home.webp" width="390" height="844" loading="lazy" decoding="async"
+             alt="分身の一覧画面。こだまという分身が1体並んでいる" />
+        <div class="cap"><b>会いに行く</b>キーホルダーが手元になくても、ここから開けます。</div>
+      </div>
+      <div class="shot">
+        <img src="/media/shots/chat.webp" width="390" height="844" loading="lazy" decoding="async"
+             alt="会話画面。キャラクターが上に固定表示され、下にやり取りが並んでいる" />
+        <div class="cap"><b>話す</b>その子はいつも見えたまま。過去のやり取りは畳んであります。</div>
+      </div>
+      <div class="shot">
+        <img src="/media/shots/history.webp" width="390" height="844" loading="lazy" decoding="async"
+             alt="成長記録の画面。6つの性格パラメータが時間とともに動いた折れ線グラフ" />
+        <div class="cap"><b>育ちが見える</b>168回の会話で、温かさが 50 → 78 まで動いた記録です。</div>
+      </div>
+      <div class="shot">
+        <img src="/media/shots/profile.webp" width="390" height="844" loading="lazy" decoding="async"
+             alt="データの使い道を選ぶ画面。同意の項目ごとに切り替えられる" />
+        <div class="cap"><b>自分で決める</b>何に使ってよいかは項目ごとに選べて、あとから変えられます。</div>
+      </div>
+    </div>
+    <p class="shotNote">横にスワイプできます。</p>
   </div>
 </section>
 
@@ -482,12 +525,30 @@
       </p>
       <p>
         たとえば「慎重な子」は、<strong>話しかけられてから動き出すまでが少し長く</strong>なります。
-        実際に測ると、のんびりした子は0.9秒、勢いのある子は0.4秒。
+        実際に測ると、のんびりした子は0.9秒、勢いのある子は0.5秒。
         身振りの回数も、待機中の揺れ方も、近づいてよいと感じる距離も変わります。
       </p>
       <p style="margin-bottom:0">
-        この数字は<strong>数百バイト</strong>しかないので、小さな機械にもそのまま入ります。
-        インターネットが繋がっていなくても、その子らしさは消えません。
+        この数字は<strong>1体でおよそ250バイト</strong>しかありません。
+        メール1通よりずっと小さいので、小さな機械にもそのまま入ります。
+      </p>
+    </div>
+
+    <div class="body" style="margin-top:14px">
+      <h3>電波が届かない場所でも</h3>
+      <p>
+        身体が動くところに、いつも電波があるとは限りません。山の中、地下、機内、
+        通信を切っている部屋。<strong>その数字は機械の中に入っているので、
+        つながっていなくてもその子らしく動きます。</strong>
+      </p>
+      <p>
+        毎回どこかへ問い合わせる作りだと、電波が切れた瞬間にただの箱になります。
+        わけたまはそうならないように、<strong>考える部分と、その子らしさの部分を分けて</strong>
+        持たせています。言葉でのおしゃべりが要るときだけ、つながりに行きます。
+      </p>
+      <p style="margin-bottom:0">
+        <strong>あなたの分身が、どこかの会社のサーバーの中にしか居ない、という状態を作りません。</strong>
+        育てた中身は、いつでも1つのファイルとして持ち出せます。
       </p>
     </div>
 
