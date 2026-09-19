@@ -79,6 +79,8 @@ NFCタグへのURL書き込みには、iPhoneなら「NFC TagWriter」、Android
 src/
   index.ts                    # ルーティング（/t/:code, /q/:code, /api/*, 静的配信、OGPのURL絶対化）
   yorishiro.ts                # 依代（NFCタグ・QR）の台帳と配布元、依代を持たない人の入口
+  delivery.ts                 # 納品（何を売るのかの定義・引換券の発行と検証・取り出す中身）
+  mcp.ts                      # MCPの口（相手がAIのときの納品形。読み取りだけ）
   call.ts                     # その場限りの通話（何も保存しない会話経路・SSEストリーミング）
   talk.ts                     # かざして話す（カメラ映像を出したまま声で会話。保存され、育つ）
   vision.ts                   # 「これ見て」— 見せられた1枚を言葉に変える（保存しない）
@@ -168,6 +170,10 @@ tools/
 | `GET /api/spot` | その依代がどこで配られたか（画面に出す範囲だけ） |
 | `GET/POST /api/admin/tags` | 依代の台帳と発行（管理画面の中だけ） |
 | `GET/POST/DELETE /api/admin/spots` | 配布元（特別な場所）の管理 |
+| `GET /api/delivery` | 買い手が引換券で取り出す口（`scope=card\|behavior\|mcp\|bundle`） |
+| `POST /mcp` | MCP（相手がAIのとき）。読み取りだけ。`Authorization: Bearer <引換券>` |
+| `GET /api/admin/skus` | 商品の定義（`src/delivery.ts` の `SKUS`） |
+| `GET/POST/DELETE /api/admin/grants` | 引換券の発行・一覧・失効 |
 | `POST /api/contact` | 法人向けページ・復旧の窓口からの問い合わせ |
 | `GET /api/admin/recovery/lookup` / `POST .../issue` | 復旧（本人確認用の情報の照会と、引き継ぎコードの発行） |
 | `GET/POST /api/market/*` | マーケット（一覧・出品・問い合わせ・集約セグメント統計） |
@@ -202,6 +208,27 @@ tools/
 
 管理画面の「依代（タグ・QR）」タブで、発行・CSV書き出し・QR画像の生成までできる
 （QRの生成は `public/vendor/qrcode.js`。外部のQR生成サイトに貼ると、どのコードを刷ったかが他所に残る）。
+
+## 何を売るのか（納品）
+
+売るのは分身そのものではなく、**その人格を相手の環境で動かせる形にした写し**と、
+それを取り出す権利（引換券）。所有権は持ち主のまま動かない。
+
+| 商品 | 買い手 | 渡すもの |
+| --- | --- | --- |
+| 人格カード（`card`） | 自前のLLM基盤を持っている相手 | JSON / systemPrompt / Modelfile / README |
+| 振る舞いプロファイル（`behavior`） | **AIを積んでいない機器**を作っている相手 | 数値だけの数百バイト＋参照実装。**LLM不要** |
+| MCP接続（`mcp`） | 自社のAIエージェントから参照したい相手 | `/mcp` と引換券。読み取りだけ |
+| 持ち出し一式（`bundle`） | ネットに繋がない環境 | 上をまとめた1ファイル |
+
+定義元は `src/delivery.ts` の `SKUS`。管理画面の「納品」タブはこの配列を表示しているだけなので、
+**営業資料と実装がずれない**。詳しくは [docs/SALES_DELIVERY.md](docs/SALES_DELIVERY.md)。
+
+引換券（`delivery_grants`）は1枚が1体に紐づき、範囲と期限を持つ。平文は発行時の1回しか出ない
+（保存しているのはハッシュ）。持ち主トークンは買い手に一切渡さない——渡すと名前の変更も削除もできてしまう。
+
+MCPの `persona_reply` は**何も保存しない経路**（`beginEphemeralTurn`）を通る。
+買い手との会話で持ち主の分身が育つ実装にはしないこと。
 
 ## 実機（Raspberry Pi / ESP32）で動かす
 

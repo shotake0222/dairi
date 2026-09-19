@@ -52,6 +52,17 @@ import {
   saveSpot,
   spotOfTag,
 } from "./yorishiro";
+import {
+  buildDelivery,
+  DELIVERY_SCOPES,
+  DeliveryScope,
+  issueGrant,
+  listGrants,
+  revokeGrant,
+  SKUS,
+  verifyGrant,
+} from "./delivery";
+import { handleMcp } from "./mcp";
 import { LogContext, newRequestId } from "./lib/log";
 
 export { CharacterState };
@@ -205,6 +216,35 @@ export default {
       return handleCallStream(env, body, { ...log, characterId: typeof body.characterId === "string" ? body.characterId : undefined });
     }
 
+    // --- 納品（買い手が引換券で取り出す口。持ち主トークンは使わせない） ---
+    //
+    // 持ち主トークンで取り出す /api/persona/card とは経路を分けてある。
+    // 同じ関数から本人向けと買い手向けを出すと、片方だけ範囲を変えたときに事故る。
+    if (url.pathname === "/api/delivery" && request.method === "GET") {
+      const scopeParam = url.searchParams.get("scope") || "card";
+      const scope = (DELIVERY_SCOPES as string[]).includes(scopeParam) ? (scopeParam as DeliveryScope) : null;
+      if (!scope) return json({ error: "scope は card / behavior / mcp / bundle のいずれかです" }, { status: 400 });
+
+      const grant = await verifyGrant(env, url.searchParams.get("token"), scope);
+      if (!grant.ok) return json({ error: grant.error }, { status: grant.status });
+
+      const payload = await buildDelivery(env, grant.characterId, scope, url.searchParams.get("format") || "json");
+      if (!payload) return json({ error: "取り出せませんでした" }, { status: 404 });
+
+      return new Response(payload.body, {
+        headers: {
+          "content-type": payload.contentType,
+          "cache-control": "no-store",
+          "content-disposition": `attachment; filename="${encodeURIComponent(payload.filename)}"`,
+        },
+      });
+    }
+
+    // 相手がAIのときの口。読み取りだけで、分身には何も保存しない（src/mcp.ts）
+    if (url.pathname === "/mcp") {
+      return handleMcp(env, request, url);
+    }
+
     // --- 管理画面のAPI（adminGate を通過したリクエストだけがここに来る） ---
     if (url.pathname === "/api/admin/overview" && request.method === "GET") {
       return handleAdminOverview(env, log);
@@ -244,6 +284,23 @@ export default {
     if (url.pathname === "/api/admin/spots" && request.method === "POST") {
       const result = await saveSpot(env, await request.json<Record<string, unknown>>());
       return result.ok ? json({ spot: result.spot }) : json({ error: result.error }, { status: result.status });
+    }
+    // 納品（何を売るのかの定義と、買い手に渡す引換券）
+    if (url.pathname === "/api/admin/skus" && request.method === "GET") {
+      return json({ skus: SKUS, scopes: DELIVERY_SCOPES });
+    }
+    if (url.pathname === "/api/admin/grants" && request.method === "GET") {
+      return json({ grants: await listGrants(env) });
+    }
+    if (url.pathname === "/api/admin/grants" && request.method === "POST") {
+      const result = await issueGrant(env, await request.json<Record<string, unknown>>());
+      if (!result.ok) return json({ error: result.error }, { status: result.status });
+      // 引換券の平文を出せるのはこの1回だけ（保存しているのはハッシュ）
+      return json({ token: result.token, expiresAt: result.expiresAt });
+    }
+    if (url.pathname === "/api/admin/grants" && request.method === "DELETE") {
+      const body = await request.json<{ tokenHash?: string }>();
+      return json(await revokeGrant(env, body.tokenHash));
     }
     if (url.pathname === "/api/admin/spots" && request.method === "DELETE") {
       const body = await request.json<{ code?: string }>();

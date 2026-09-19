@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { buildPersonaCard } from "../personaCard";
 import { emptyPsychographics } from "../../analysis/psychographics";
 import { DEFAULT_PERSONALITY } from "../../ai/personality";
-// @ts-expect-error -- 機器側と同じ実装をそのまま検証するため、JSのまま読み込む
+// 機器側と同じ実装をそのまま検証する（型は tools/edge/compact.d.mts）
 import { auditCompact, toCompact } from "../../../tools/edge/compact.mjs";
 
 /**

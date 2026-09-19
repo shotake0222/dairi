@@ -84,6 +84,7 @@
     <button class="tab" data-panel="requests" type="button">購入希望</button>
     <button class="tab" data-panel="contacts" type="button">問い合わせ</button>
     <button class="tab" data-panel="questions" type="button">設問</button>
+    <button class="tab" data-panel="delivery" type="button">納品</button>
     <button class="tab" data-panel="yorishiro" type="button">依代（タグ・QR）</button>
     <button class="tab" data-panel="recovery" type="button">分身の復旧</button>
   </div>
@@ -226,6 +227,45 @@
     </section>
   </div>
 
+
+  <div class="panel" id="panel-delivery" hidden>
+    <section>
+      <h2>何を売るのか</h2>
+      <p class="lead">
+        売るのは<strong>分身そのものではなく、その人格を相手の環境で動かせる形にしたもの</strong>と、
+        それを取り出す権利（引換券）です。所有権は持ち主のまま動きません。
+        <br /><strong>相手がAIなら MCP、AIを積んでいない機器なら振る舞いプロファイル</strong>——
+        という具合に、相手によって渡す形が変わります。
+      </p>
+      <div id="skuList"></div>
+    </section>
+
+    <section>
+      <h2>引換券を発行する</h2>
+      <p class="lead">
+        1枚が1体に紐づきます。<strong>平文が出るのは発行の1回きり</strong>（保存しているのはハッシュだけ）なので、
+        その場で控えてください。渡し間違えたら失効させて出し直します。
+      </p>
+      <div class="formGrid">
+        <label>分身のID<input type="text" id="grantCid" placeholder="cid" /></label>
+        <label>渡し先のメモ<input type="text" id="grantLabel" placeholder="○○株式会社 / ロボット試作" /></label>
+        <label>有効日数<input type="number" id="grantDays" value="90" min="1" max="730" /></label>
+      </div>
+      <div class="row" id="grantScopes" style="margin-top:6px"></div>
+      <div class="row">
+        <button id="issueGrantBtn" type="button">発行する</button>
+        <span class="lead" id="grantStatus"></span>
+      </div>
+      <div id="grantToken" hidden class="note" style="margin-top:12px"></div>
+      <div class="scroll" style="margin-top:12px"><table id="grantTable"></table></div>
+    </section>
+
+    <section>
+      <h2>渡し方（そのまま先方に送れる文面）</h2>
+      <p class="lead">引換券を発行すると、ここに相手へ送る手順が出ます。</p>
+      <pre id="grantHowTo" style="white-space:pre-wrap;font-size:12px;background:#f7f5ff;padding:12px 14px;border-radius:10px;color:#4a4266">引換券を発行すると、ここに出ます。</pre>
+    </section>
+  </div>
   <div class="panel" id="panel-yorishiro" hidden>
     <section>
       <h2>依代（よりしろ）とは</h2>
@@ -365,6 +405,7 @@
       if (tab.dataset.panel === "contacts") loadContacts();
       if (tab.dataset.panel === "questions") loadQuestions();
       if (tab.dataset.panel === "yorishiro") loadYorishiro();
+      if (tab.dataset.panel === "delivery") loadDelivery();
     });
   });
 
@@ -988,6 +1029,147 @@
       a.click();
     };
     img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(source)));
+  }
+
+  // ---- 納品 ----
+  // 「何を売るのか」の定義はサーバ側（src/delivery.ts の SKUS）が唯一の定義元。
+  // ここで書き写すと、営業資料と実装がずれる。
+  let skus = [];
+
+  async function loadDelivery() {
+    const data = await api("/api/admin/skus");
+    skus = data.skus || [];
+
+    const host = document.getElementById("skuList");
+    host.innerHTML = "";
+    for (const sku of skus) {
+      const box = el("div");
+      box.style.cssText = "border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:10px";
+      const title = el("div", `${sku.name}（${sku.id}）`);
+      title.style.cssText = "font-weight:700;margin-bottom:4px";
+      box.appendChild(title);
+      box.appendChild(Object.assign(el("div", `買い手: ${sku.buyer}`), { className: "lead" }));
+      const ul = el("ul");
+      ul.style.cssText = "margin:6px 0;padding-left:1.2em;font-size:12.5px;color:#4a4266";
+      for (const line of sku.delivers) ul.appendChild(el("li", line));
+      box.appendChild(ul);
+      box.appendChild(Object.assign(el("div", `相手の環境に必要: ${sku.requires}`), { className: "lead" }));
+      box.appendChild(Object.assign(el("div", `渡らないもの: ${sku.excludes}`), { className: "lead" }));
+      host.appendChild(box);
+    }
+
+    const scopeRow = document.getElementById("grantScopes");
+    if (!scopeRow.dataset.built) {
+      for (const sku of skus) {
+        const label = el("label");
+        label.style.cssText = "display:inline-flex;align-items:center;gap:5px;font-size:12.5px";
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.value = sku.id;
+        cb.className = "scopeBox";
+        if (sku.id === "card") cb.checked = true;
+        label.append(cb, document.createTextNode(sku.name));
+        scopeRow.appendChild(label);
+      }
+      scopeRow.dataset.built = "1";
+    }
+
+    await loadGrants();
+  }
+
+  async function loadGrants() {
+    const data = await api("/api/admin/grants");
+    const rows = data.grants || [];
+    table("grantTable", ["発行日", "分身", "範囲", "渡し先", "期限", "使用", ""], rows, (g) => {
+      const tr = el("tr");
+      tr.appendChild(el("td", new Date(g.createdAt).toLocaleDateString("ja-JP")));
+      tr.appendChild(el("td", g.characterId.slice(0, 8)));
+      tr.appendChild(el("td", g.scopes.join(", ")));
+      tr.appendChild(el("td", g.label || "—"));
+      const expired = g.expiresAt < Date.now();
+      tr.appendChild(el("td", g.revokedAt ? "失効済" : expired ? "期限切れ" : new Date(g.expiresAt).toLocaleDateString("ja-JP")));
+      // 一度も使われていない＝先方が繋ぎ方で詰まっている可能性がある
+      tr.appendChild(el("td", g.usedCount === 0 ? "未使用" : `${g.usedCount}回`));
+
+      const td = el("td");
+      if (!g.revokedAt) {
+        const btn = el("button", "失効させる");
+        btn.className = "ghost";
+        btn.addEventListener("click", async () => {
+          if (!confirm("この引換券を失効させますか？ 先方は取り出せなくなります。")) return;
+          await api("/api/admin/grants", {
+            method: "DELETE",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ tokenHash: g.tokenHash }),
+          });
+          await loadGrants();
+        });
+        td.appendChild(btn);
+      }
+      tr.appendChild(td);
+      return tr;
+    });
+  }
+
+  document.getElementById("issueGrantBtn").addEventListener("click", async () => {
+    const status = document.getElementById("grantStatus");
+    const scopes = [...document.querySelectorAll(".scopeBox")].filter((b) => b.checked).map((b) => b.value);
+    try {
+      const data = await api("/api/admin/grants", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          characterId: document.getElementById("grantCid").value.trim(),
+          label: document.getElementById("grantLabel").value,
+          days: Number(document.getElementById("grantDays").value),
+          scopes,
+        }),
+      });
+      status.textContent = "発行しました";
+
+      const box = document.getElementById("grantToken");
+      box.hidden = false;
+      box.textContent = `引換券: ${data.token}　（この画面を閉じると二度と出せません。いま控えてください）`;
+      document.getElementById("grantHowTo").textContent = howTo(data.token, scopes);
+      await loadGrants();
+    } catch (e) {
+      status.textContent = e.message;
+    }
+  });
+
+  /** 先方にそのまま送れる手順。毎回書くと抜けが出るので、ここで作る。 */
+  function howTo(token, scopes) {
+    const base = location.origin;
+    const lines = [`引換券: ${token}`, ""];
+    if (scopes.includes("card")) {
+      lines.push("■ 人格カード（自前のLLMで動かす場合）");
+      lines.push(`  curl -o persona_card.json "${base}/api/delivery?scope=card&token=${token}"`);
+      lines.push(`  curl -o Modelfile          "${base}/api/delivery?scope=card&format=modelfile&token=${token}"`);
+      lines.push("  ollama create mypersona -f Modelfile");
+      lines.push("");
+    }
+    if (scopes.includes("behavior")) {
+      lines.push("■ 振る舞いプロファイル（LLMを積んでいない機器向け・数百バイト）");
+      lines.push(`  curl -o persona.min.json "${base}/api/delivery?scope=behavior&token=${token}"`);
+      lines.push("  参照実装（Python / Arduino / MicroPython）は別途お渡しします");
+      lines.push("");
+    }
+    if (scopes.includes("bundle")) {
+      lines.push("■ 持ち出し一式（ネットに繋がない環境向け）");
+      lines.push(`  curl -o bundle.json "${base}/api/delivery?scope=bundle&token=${token}"`);
+      lines.push("  files の各キーがそのままファイル名です");
+      lines.push("");
+    }
+    if (scopes.includes("mcp")) {
+      lines.push("■ MCP（そちらのAIエージェントから参照する場合）");
+      lines.push(`  エンドポイント: ${base}/mcp`);
+      lines.push(`  認証: Authorization: Bearer ${token}`);
+      lines.push("  道具: persona_profile / persona_behavior / persona_reply");
+      lines.push("  ※ 読み取りだけです。呼んでも、こちらの人格は変わりません");
+      lines.push("");
+    }
+    lines.push("※ 引換券には期限があります。期限後は取り出せなくなります。");
+    return lines.join("\n");
   }
 
   loadOverview().catch((e) => {
