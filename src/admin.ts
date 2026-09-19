@@ -140,7 +140,7 @@ interface OverviewRow {
 /** 管理画面の1画面ぶんの数字をまとめて返す（画面側で何度も叩かなくて済むように）。 */
 export async function handleAdminOverview(env: AdminEnv, log: LogContext): Promise<Response> {
   try {
-    const [registryCount, segmentRows, personalityRow, valueRow, consentRow, profileRow, listingRow, requestRow, metricRows, tagRow] =
+    const [registryCount, segmentRows, personalityRow, valueRow, consentRow, profileRow, metricRows, tagRow] =
       await env.DB.batch([
         env.DB.prepare("SELECT COUNT(*) AS n FROM persona_registry"),
         env.DB.prepare(
@@ -153,13 +153,11 @@ export async function handleAdminOverview(env: AdminEnv, log: LogContext): Promi
           "SELECT AVG(v_achievement) AS achievement, AVG(v_benevolence) AS benevolence, AVG(v_hedonism) AS hedonism, AVG(v_security) AS security, AVG(v_stimulation) AS stimulation, AVG(v_selfdirection) AS selfDirection, AVG(v_tradition) AS tradition, AVG(v_power) AS power FROM persona_registry"
         ),
         env.DB.prepare(
-          "SELECT SUM(consent_aggregate) AS aggregate, SUM(consent_marketplace) AS marketplace FROM persona_registry"
+          "SELECT SUM(consent_aggregate) AS aggregate FROM persona_registry"
         ),
         env.DB.prepare(
           "SELECT AVG(profile_completion) AS avg_completion, COUNT(CASE WHEN profile_completion > 0 THEN 1 END) AS answered FROM persona_registry"
         ),
-        env.DB.prepare("SELECT status, COUNT(*) AS n FROM market_listings GROUP BY status"),
-        env.DB.prepare("SELECT status, COUNT(*) AS n FROM purchase_requests GROUP BY status"),
         env.DB.prepare("SELECT day, metric, value FROM analytics_daily ORDER BY day DESC LIMIT 200"),
         env.DB.prepare("SELECT COUNT(*) AS n FROM nfc_tags"),
       ]);
@@ -192,17 +190,15 @@ export async function handleAdminOverview(env: AdminEnv, log: LogContext): Promi
       totals: {
         // nfc_tags は同意に関係なく作られるので、これがサービス全体の分身の数になる
         characters: (tagRow.results?.[0] as { n?: number } | undefined)?.n ?? 0,
-        // レジストリに載っているのは、集約か出品に同意した分身だけ
+        // レジストリに載っているのは、集約に同意した分身だけ
         registered: (registryCount.results?.[0] as { n?: number } | undefined)?.n ?? 0,
       },
-      consent: consentRow.results?.[0] ?? { aggregate: 0, marketplace: 0 },
+      consent: consentRow.results?.[0] ?? { aggregate: 0 },
       profile: profileRow.results?.[0] ?? { avg_completion: 0, answered: 0 },
       segments,
       personalityAverage: personalityRow.results?.[0] ?? {},
       valueAverage: valueRow.results?.[0] ?? {},
       valueLabels: Object.fromEntries(VALUE_AXES.map((a) => [a, VALUE_LABELS[a]])),
-      listings: listingRow.results ?? [],
-      purchaseRequests: requestRow.results ?? [],
       daily: [...daily.entries()]
         .sort((a, b) => (a[0] < b[0] ? 1 : -1))
         .slice(0, 21)
@@ -243,30 +239,9 @@ export async function handleAdminPersonas(env: AdminEnv, url: URL): Promise<Resp
   return json({ personas: rows.results ?? [] });
 }
 
-/** 購入の申し込み一覧と、対応済みへの変更。 */
-export async function handleAdminRequests(env: AdminEnv, request: Request, url: URL): Promise<Response> {
-  if (request.method === "POST") {
-    const body = await request
-      .json<{ requestId?: string; status?: string }>()
-      .catch(() => ({}) as { requestId?: string; status?: string });
-    if (!body.requestId) return json({ error: "requestId is required" }, 400);
-    const status = body.status === "new" ? "new" : "handled";
-    await env.DB.prepare("UPDATE purchase_requests SET status = ? WHERE request_id = ?")
-      .bind(status, body.requestId)
-      .run();
-    return json({ ok: true, status });
-  }
-
-  const limit = Math.min(200, Math.max(1, Number(url.searchParams.get("limit") ?? 50) || 50));
-  const rows = await env.DB.prepare(
-    `SELECT r.request_id, r.listing_id, r.contact, r.message, r.created_at, r.status, l.title
-     FROM purchase_requests r LEFT JOIN market_listings l ON l.listing_id = r.listing_id
-     ORDER BY r.created_at DESC LIMIT ?1`
-  )
-    .bind(limit)
-    .all();
-  return json({ requests: rows.results ?? [] });
-}
+// 購入の申し込み一覧（handleAdminRequests）は削除した。
+// 本人による出品を畳んだので、申し込みの発生源そのものが無くなっている。
+// 企業からの相談は /api/contact（問い合わせ）に一本化した。
 
 /**
  * 設問の一覧・編集。

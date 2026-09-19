@@ -17,7 +17,7 @@ describe("hasConsent", () => {
   it("honours an explicit yes at the current version", () => {
     const consent = { ...EMPTY_CONSENT, version: CONSENT_VERSION, aggregate: true };
     expect(hasConsent(consent, "aggregate")).toBe(true);
-    expect(hasConsent(consent, "marketplace")).toBe(false);
+    expect(hasConsent(consent, "terms")).toBe(false);
   });
 
   it("invalidates consent given against an older version of the wording", () => {
@@ -31,18 +31,18 @@ describe("hasConsent", () => {
 describe("normalizeConsent", () => {
   it("defaults every purpose to false", () => {
     const consent = normalizeConsent({});
+    expect(consent.terms).toBe(false);
     expect(consent.profile).toBe(false);
     expect(consent.aggregate).toBe(false);
-    expect(consent.marketplace).toBe(false);
     expect(consent.version).toBe(CONSENT_VERSION);
   });
 
   it("keeps purposes the user already agreed to when they are not mentioned", () => {
     const previous = { ...EMPTY_CONSENT, version: CONSENT_VERSION, profile: true, aggregate: true };
-    const consent = normalizeConsent({ marketplace: true }, previous);
+    const consent = normalizeConsent({ terms: true }, previous);
     expect(consent.profile).toBe(true);
     expect(consent.aggregate).toBe(true);
-    expect(consent.marketplace).toBe(true);
+    expect(consent.terms).toBe(true);
   });
 
   it("does not carry over consent given against an older version", () => {
@@ -53,10 +53,10 @@ describe("normalizeConsent", () => {
   });
 
   it("ignores values that are not booleans", () => {
-    const consent = normalizeConsent({ profile: "yes", aggregate: 1, marketplace: null });
+    const consent = normalizeConsent({ profile: "yes", aggregate: 1, terms: null });
     expect(consent.profile).toBe(false);
     expect(consent.aggregate).toBe(false);
-    expect(consent.marketplace).toBe(false);
+    expect(consent.terms).toBe(false);
   });
 
   it("can turn a purpose back off", () => {

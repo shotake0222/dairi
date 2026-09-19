@@ -265,7 +265,7 @@
   <button id="startBtn" type="button">はじめる</button>
   <div class="note">
     カメラとマイクを使います。<strong>映像は送信も保存もされません</strong>。<br />
-    「👁 これ見て」を押したときだけ、その瞬間の1枚を分身に見せます。
+    「👁 これ見て」を押した瞬間の1枚だけを、分身に見せます。押さないかぎり、映像は送られません。
   </div>
 </div>
 
@@ -276,7 +276,7 @@
       カメラ映像は<strong>あなたの端末の中だけ</strong>で表示していて、サーバーには送っていません。
     </p>
     <p>
-      「👁 これ見て」を押したときだけ、その瞬間の静止画を1枚だけ送り、何が写っているかを言葉に変えます。
+      「👁 これ見て」を押した瞬間の静止画を1枚だけ送り、何が写っているかを言葉に変えます。押すまでは何も送りません。
       画像も、その説明文も保存されません。
     </p>
     <p>
@@ -612,7 +612,13 @@
   }
 
   // ---- 1ターン ----
-  async function sendTurn(text) {
+  /**
+   * 1往復を送る。
+   *
+   * @param text  話しかけた言葉
+   * @param opts.image  添える静止画（base64）。渡さなければ「これ見て」の予約状態を見る
+   */
+  async function sendTurn(text, opts) {
     const message = (text || "").trim();
     if (!message || busy || !cid) return;
 
@@ -622,10 +628,14 @@
     setStatus("");
     showBubble("…", characterName);
 
-    // 「これ見て」が押されていれば、この瞬間の1枚を添える（押されていなければ何も送らない）。
-    let image = null;
-    if (showNext) {
+    // 明示的に渡された1枚を優先する。
+    // 以前はここでしか画像を送っていなかったため、「これ見て」を押しただけでは何も起きず、
+    // **そのあと声で話しかけるまで沈黙する**状態だった。押した時点で送るのが期待どおり。
+    let image = opts && opts.image ? opts.image : null;
+    if (!image && showNext) {
       image = captureFrame();
+    }
+    if (showNext) {
       showNext = false;
       lookBtn.classList.remove("on");
       lookBtn.textContent = "👁 これ見て";
@@ -665,17 +675,38 @@
     else startListening();
   });
 
-  lookBtn.addEventListener("click", () => {
-    if (!cameraReady) return;
-    showNext = !showNext;
-    lookBtn.classList.toggle("on", showNext);
-    lookBtn.textContent = showNext ? "👁 見せる準備OK" : "👁 これ見て";
-    if (showNext) {
-      setStatus("このまま話しかけると、いま映っているものを見せます");
-      // 何も言わずに見せたいときのために、押しっぱなしでも成立するようにしておく。
-      if (!listening && !busy && handsFree) startListening();
-    } else {
-      setStatus("");
+  /**
+   * 「これ見て」。**押したその場で、いま映っているものを見せる。**
+   *
+   * 以前は「次に話しかけたときに添える」予約ボタンだった。
+   * カメラに何かを映して押しても、声を出すまで何も起きないので、
+   * 「押しても反応がない」としか見えない——実際その報告が来た。
+   * 見せる操作は、押した瞬間に結果が返るのが自然なので、その場で送る形に変えた。
+   */
+  lookBtn.addEventListener("click", async () => {
+    if (busy) return;
+
+    if (!cameraReady) {
+      // 黙って何もしないのが一番よくない。なぜ効かないのかを言う。
+      setStatus("カメラが映っていないので、見せられません（カメラの許可を確認してください）");
+      return;
+    }
+
+    const image = captureFrame();
+    if (!image) {
+      setStatus("うまく写せませんでした。もう一度押してみてください");
+      return;
+    }
+
+    // 声を使わずに押した人にも成立するよう、こちらで一言を補う。
+    lookBtn.classList.add("on");
+    lookBtn.textContent = "👁 見ています…";
+    setStatus("いま映っているものを見せました");
+    try {
+      await sendTurn("これ見て", { image });
+    } finally {
+      lookBtn.classList.remove("on");
+      lookBtn.textContent = "👁 これ見て";
     }
   });
 

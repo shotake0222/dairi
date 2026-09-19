@@ -1043,34 +1043,9 @@ export class CharacterState extends DurableObject<Env> {
     return { ok: true, card };
   }
 
-  /** マーケットに載せてよい範囲だけの要約（購入者に見せる情報。記憶や属性は含めない）。 */
-  async getListingSummary(): Promise<{
-    ok: boolean;
-    name: string;
-    species: SpeciesKey;
-    color: ColorKey;
-    growthStage: string;
-    interactionCount: number;
-    personality: PersonalityTraits;
-    speechStyleLabel: string;
-    segment: SegmentResult;
-    consented: boolean;
-  } | null> {
-    const data = await this.ctx.storage.get<CharacterData>("data");
-    if (!data) return null;
-    return {
-      ok: true,
-      name: data.name,
-      species: data.species,
-      color: data.color,
-      growthStage: data.growthStage,
-      interactionCount: data.interactionCount,
-      personality: data.personality,
-      speechStyleLabel: deriveSpeechStyle(data.personality).label,
-      segment: this.segmentOf(data),
-      consented: hasConsent(data.consent, "marketplace"),
-    };
-  }
+  // 出品用の要約（getListingSummary）は削除した。
+  // 本人がマーケットへ出す機能そのものを畳んだので、購入者に見せる要約という概念が無くなった。
+  // 企業への提供は、運営が引換券で個別に行う形（src/delivery.ts）に一本化している。
 
   /** ガード節でreplyなしの応答を返すための共通フィールドまとめ */
   private toSummary(data: CharacterData) {
@@ -1083,8 +1058,9 @@ export class CharacterState extends DurableObject<Env> {
       color: data.color,
       socialOptIn: data.socialOptIn ?? false,
       lastMeeting: data.lastMeeting,
-      // 読み上げに使う「この子の声」。characterIdから決まるので、いつどの端末で聞いても同じ声になる。
-      voice: deriveVoiceProfile(this.ctx.id.name ?? "unknown", data.personality),
+      // 読み上げに使う「この子の声」。種族・色・characterId・性格から決まるので、
+      // いつどの端末で聞いても同じ声で、かつ種族と色ごとに違う声になる。
+      voice: deriveVoiceProfile(this.ctx.id.name ?? "unknown", data.personality, data.species, data.color),
     };
   }
 

@@ -81,7 +81,6 @@
   <div class="tabs">
     <button class="tab on" data-panel="overview" type="button">概況</button>
     <button class="tab" data-panel="personas" type="button">人格データ</button>
-    <button class="tab" data-panel="requests" type="button">購入希望</button>
     <button class="tab" data-panel="contacts" type="button">問い合わせ</button>
     <button class="tab" data-panel="questions" type="button">設問</button>
     <button class="tab" data-panel="delivery" type="button">納品</button>
@@ -113,17 +112,13 @@
       <div class="scroll"><table id="dailyTable"></table></div>
     </section>
 
-    <section>
-      <h2>出品の状況</h2>
-      <div class="scroll"><table id="listingTable"></table></div>
-    </section>
   </div>
 
   <div class="panel" id="panel-personas" hidden>
     <section>
       <h2>人格データ一覧</h2>
       <p class="lead">
-        集約または出品に同意した分身だけが並びます。
+        集約に同意した分身だけが並びます。
         <strong>会話の本文・記憶・覚え書きは、管理者からも見えません。</strong>
       </p>
       <div class="scroll"><table id="personaTable"></table></div>
@@ -219,13 +214,6 @@
     </section>
   </div>
 
-  <div class="panel" id="panel-requests" hidden>
-    <section>
-      <h2>購入の問い合わせ</h2>
-      <p class="lead">決済は繋がっていないため、ここに届いた連絡先へ個別に対応します。</p>
-      <div class="scroll"><table id="requestTable"></table></div>
-    </section>
-  </div>
 
 
   <div class="panel" id="panel-delivery" hidden>
@@ -258,6 +246,41 @@
       </div>
       <div id="grantToken" hidden class="note" style="margin-top:12px"></div>
       <div class="scroll" style="margin-top:12px"><table id="grantTable"></table></div>
+    </section>
+
+    <section>
+      <h2>下見（商談の場で中身を見せる）</h2>
+      <p class="lead">
+        引換券を発行せずに、実際に渡るものをそのまま表示します。
+        <br /><strong>「自分専用のSLM」は Small Language Model のことです。</strong>
+        SML は Standard ML という別物の言語名なので、資料でも SLM と書いてください。
+        <br /><strong>Jev（TypeSafe AI）は他社の製品で、作ることはできません。</strong>
+        こちらが渡すのは、判断特化AIへ流し込む「この人の判断の癖」です。
+      </p>
+      <div class="formGrid">
+        <label>分身のID<input type="text" id="previewCid" placeholder="cid" /></label>
+        <label>種類
+          <select id="previewScope">
+            <option value="decision">判断プロファイル</option>
+            <option value="slm">自分専用のSLM一式</option>
+            <option value="behavior">振る舞いプロファイル</option>
+            <option value="card">人格カード</option>
+          </select>
+        </label>
+        <label>SLMの土台
+          <select id="previewBase">
+            <option value="qwen2.5:0.5b-instruct">Qwen2.5 0.5B（Pi 4でも動く）</option>
+            <option value="qwen2.5:1.5b-instruct" selected>Qwen2.5 1.5B（Pi 5 / ノートPC）</option>
+            <option value="qwen2.5:3b-instruct">Qwen2.5 3B</option>
+            <option value="llama3.1:8b-instruct">Llama 3.1 8B</option>
+          </select>
+        </label>
+      </div>
+      <div class="row">
+        <button id="previewBtn" type="button">表示する</button>
+        <span class="lead" id="previewStatus"></span>
+      </div>
+      <pre id="previewOut" style="white-space:pre-wrap;font-size:11.5px;background:#f7f5ff;padding:12px 14px;border-radius:10px;color:#4a4266;max-height:420px;overflow:auto"></pre>
     </section>
 
     <section>
@@ -401,7 +424,6 @@
       document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("on", t === tab));
       document.querySelectorAll(".panel").forEach((p) => { p.hidden = p.id !== `panel-${tab.dataset.panel}`; });
       if (tab.dataset.panel === "personas") loadPersonas();
-      if (tab.dataset.panel === "requests") loadRequests();
       if (tab.dataset.panel === "contacts") loadContacts();
       if (tab.dataset.panel === "questions") loadQuestions();
       if (tab.dataset.panel === "yorishiro") loadYorishiro();
@@ -425,9 +447,8 @@
     const profile = data.profile || {};
     const cards = [
       { k: "分身の総数", v: data.totals.characters, s: "依代に紐づいた数" },
-      { k: "データ提供に同意", v: data.totals.registered, s: "集約または出品に同意" },
+      { k: "データ提供に同意", v: data.totals.registered, s: "集約に同意" },
       { k: "集約に同意", v: consent.aggregate || 0, s: "統計の母集団" },
-      { k: "出品に同意", v: consent.marketplace || 0, s: "マーケットに出せる" },
       { k: "属性を回答", v: profile.answered || 0, s: `平均 ${Math.round(profile.avg_completion || 0)}% 回答` },
     ];
     for (const c of cards) {
@@ -473,12 +494,6 @@
       return tr;
     });
 
-    table("listingTable", ["状態", "件数"], data.listings, (row) => {
-      const tr = el("tr");
-      tr.appendChild(el("td", row.status));
-      tr.appendChild(el("td", row.n));
-      return tr;
-    });
   }
 
   async function loadPersonas() {
@@ -491,7 +506,7 @@
         const tr = el("tr");
         tr.appendChild(el("td", (p.character_id || "").slice(0, 8)));
         tr.appendChild(el("td", new Date(p.updated_at).toLocaleDateString("ja-JP")));
-        // 厚み: 人格データとして使える水準か。60以上を出品・提供の目安にしている
+        // 厚み: 人格データとして使える水準か。60以上を提供の目安にしている
         const depth = el("td", `${p.depth_score ?? 0}`);
         if ((p.depth_score ?? 0) >= 60) depth.style.fontWeight = "700";
         tr.appendChild(depth);
@@ -509,33 +524,6 @@
         return tr;
       }
     );
-  }
-
-  async function loadRequests() {
-    const data = await api("/api/admin/requests?limit=100");
-    table("requestTable", ["日時", "出品", "連絡先", "内容", "状態", ""], data.requests, (r) => {
-      const tr = el("tr");
-      tr.appendChild(el("td", new Date(r.created_at).toLocaleString("ja-JP")));
-      tr.appendChild(el("td", r.title || r.listing_id.slice(0, 8)));
-      tr.appendChild(el("td", r.contact));
-      const msg = el("td", r.message || "-");
-      msg.className = "wrap";
-      tr.appendChild(msg);
-      tr.appendChild(el("td", r.status));
-      const actionCell = el("td");
-      const btn = el("button", r.status === "new" ? "対応済みにする" : "未対応に戻す");
-      btn.addEventListener("click", async () => {
-        await api("/api/admin/requests", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ requestId: r.request_id, status: r.status === "new" ? "handled" : "new" }),
-        });
-        loadRequests();
-      });
-      actionCell.appendChild(btn);
-      tr.appendChild(actionCell);
-      return tr;
-    });
   }
 
   // ---- 分身の復旧 ----
@@ -1111,6 +1099,26 @@
     });
   }
 
+  document.getElementById("previewBtn").addEventListener("click", async () => {
+    const status = document.getElementById("previewStatus");
+    const out = document.getElementById("previewOut");
+    const scope = document.getElementById("previewScope").value;
+    const cid = document.getElementById("previewCid").value.trim();
+    if (!cid) { status.textContent = "分身のIDを入れてください"; return; }
+    status.textContent = "読み込み中…";
+    try {
+      const format = scope === "slm" ? document.getElementById("previewBase").value : "json";
+      const res = await fetch(`/api/admin/preview?cid=${encodeURIComponent(cid)}&scope=${scope}&format=${encodeURIComponent(format)}`);
+      const text = await res.text();
+      if (!res.ok) throw new Error(text.slice(0, 200));
+      out.textContent = text;
+      status.textContent = `${new TextEncoder().encode(text).length} バイト`;
+    } catch (e) {
+      status.textContent = e.message;
+      out.textContent = "";
+    }
+  });
+
   document.getElementById("issueGrantBtn").addEventListener("click", async () => {
     const status = document.getElementById("grantStatus");
     const scopes = [...document.querySelectorAll(".scopeBox")].filter((b) => b.checked).map((b) => b.value);
@@ -1158,6 +1166,21 @@
       lines.push("■ 持ち出し一式（ネットに繋がない環境向け）");
       lines.push(`  curl -o bundle.json "${base}/api/delivery?scope=bundle&token=${token}"`);
       lines.push("  files の各キーがそのままファイル名です");
+      lines.push("");
+    }
+    if (scopes.includes("slm")) {
+      lines.push("■ 自分専用のSLM（手元の小さなモデルで喋らせる場合）");
+      lines.push(`  curl -o slm.json "${base}/api/delivery?scope=slm&token=${token}"`);
+      lines.push("  files の各キーがそのままファイル名です。まず Modelfile だけで動かせます:");
+      lines.push("    ollama create mypersona -f Modelfile && ollama run mypersona");
+      lines.push("  ※ SLM = Small Language Model です（SML は別物の言語名）");
+      lines.push("");
+    }
+    if (scopes.includes("decision")) {
+      lines.push("■ 判断プロファイル（Jev等の判断特化AIへ『誰の判断か』を渡す場合）");
+      lines.push(`  curl -o decision_profile.json "${base}/api/delivery?scope=decision&token=${token}"`);
+      lines.push("  Choice / Score / Noul の問いと、この人の既定の答えが入っています");
+      lines.push("  ※ Jev そのものはお作りできません（TypeSafe AI の製品のため）");
       lines.push("");
     }
     if (scopes.includes("mcp")) {

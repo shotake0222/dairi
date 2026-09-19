@@ -152,6 +152,11 @@
     width: 100%; height: 100%; --poster-color: transparent; cursor: pointer;
     animation: idleBob 3.4s ease-in-out infinite; transform-origin: center bottom;
   }
+  #modelFallback {
+    position: absolute; inset: 0; margin: auto; max-height: 88%; max-width: 62%;
+    object-fit: contain; animation: idleBob 3.4s ease-in-out infinite; transform-origin: center bottom;
+  }
+  #modelStage.mini #modelFallback { max-height: 80%; }
   #modelStage model-viewer.interacting { animation-play-state: paused; }
   #modelStage model-viewer.poked { animation: pokeSquish 0.5s ease-in-out; }
   @keyframes idleBob {
@@ -169,8 +174,21 @@
     position: absolute; top: 8px; right: 8px; border: 1px solid #ddd; background: rgba(255,255,255,0.9);
     color: #7c5cff; font-size: 11px; padding: 4px 10px; border-radius: 999px; z-index: 2;
   }
-  #modelStage.collapsed { height: 0; border-bottom: none; }
-  #modelStage.collapsed model-viewer { visibility: hidden; }
+  /* **キャラクターは常に見えている。**
+     以前は「たたむ」で高さ0まで消せたが、会話が伸びると画面から居なくなり、
+     話している相手が見えないまま文字だけが流れる状態になっていた。
+     たたむ＝小さくする（消えない）に変え、スクロールしても上に残るようにしている。 */
+  #modelStage { position: sticky; top: 0; z-index: 3; transition: height .22s ease; }
+  #modelStage.mini { height: 92px; }
+  #modelStage.mini #modelToggle { top: 4px; }
+
+  /* これまでの会話。既定は畳んでおく（開いた瞬間に過去ログで埋まらないように） */
+  .pastToggle {
+    align-self: center; border: 1px solid var(--line, #e9e5f7); background: #fff; color: #7c5cff;
+    font-size: 12.5px; padding: 7px 16px; border-radius: 999px; cursor: pointer; font-family: inherit;
+  }
+  .pastWrap { display: flex; flex-direction: column; gap: 10px; }
+  .pastWrap[hidden] { display: none; }
 
   /* タップ（なでる/つつく）した時の一言リアクション用の吹き出し */
   #reactionBubble {
@@ -248,6 +266,7 @@
   #growthBar i { display: block; height: 100%; background: linear-gradient(90deg,#a78bfa,#7c5cff); transition: width .4s ease; }
   #growthNote { font-size: 11px; color: #9a90c0; margin-top: 4px; }
 </style>
+<script src="/gate.js" defer></script>
 <script src="/pulse.js" defer></script>
 </head>
 <body>
@@ -336,8 +355,11 @@
 
 <!-- 会話しながら見られる3Dモデル表示エリア -->
 <div id="modelStage">
-  <button id="modelToggle" type="button">たたむ ▴</button>
+  <button id="modelToggle" type="button">小さく ▴</button>
   <div id="reactionBubble"></div>
+  <!-- 3Dが描けない端末のための代わり。WebGLが無効・GPUが無い環境では model-viewer は
+       黙って何も描かないので、キャラクターが居ない画面になってしまう。 -->
+  <img id="modelFallback" alt="" hidden />
   <model-viewer id="model" camera-controls disable-zoom auto-rotate auto-rotate-delay="1500"
     rotation-per-second="12deg" interaction-prompt="none" shadow-intensity="0" exposure="1.1"
     ar ar-modes="webxr scene-viewer quick-look">
@@ -419,6 +441,7 @@
   const toggleTraitsBtn = document.getElementById("toggleTraits");
   const avatarIcon = document.getElementById("avatarIcon");
   const modelEl = document.getElementById("model");
+  const modelFallback = document.getElementById("modelFallback");
   const modelStage = document.getElementById("modelStage");
   const modelToggle = document.getElementById("modelToggle");
   const reactionBubble = document.getElementById("reactionBubble");
@@ -791,25 +814,43 @@
     return Math.max(min, Math.min(max, v));
   }
 
-  // 性格パラメータで声の表情に少しだけ差をつける（陽気さ→速さ、温かさ→高さ）。
-  // 「育て方でこの子らしさが声にも表れる」という体験を、追加のTTSコストなしで実現するための工夫。
+  /**
+   * 読み上げ。
+   *
+   * 声はサーバー側（src/ai/voiceProfile.ts）が、**種族・色・個体・性格**から決めている。
+   * 以前ここでは性格からその場で計算していたので、
+   * 種族も色も違う子が全員ほぼ同じ声で喋っていた（その報告が来た）。
+   * 声の決め方を2箇所に持たない——ここは受け取った値を当てるだけにする。
+   */
   function speak(text) {
     if (!speechSupported || !text) return;
     try {
       speechSynthesis.cancel(); // 連打時に前の発話が重ならないようにする
       const utter = new SpeechSynthesisUtterance(text);
       utter.lang = "ja-JP";
-      if (japaneseVoices.length > 0) utter.voice = japaneseVoices[0];
-      const p = currentPersonality || {};
-      const cheer = p.cheerfulness ?? 50;
-      const warmth = p.warmth ?? 50;
-      utter.rate = clamp(0.85 + (cheer / 100) * 0.35, 0.8, 1.3);
-      utter.pitch = clamp(0.85 + (warmth / 100) * 0.35, 0.8, 1.3);
+      if (japaneseVoices.length > 0) {
+        // 端末に日本語の声が複数あるなら、種族ごとに違うものを掴む。
+        // 高さだけで差を付けるより、元の声が違うほうがはっきり別人に聞こえる。
+        const idx = voiceProfile ? voiceProfile.voiceIndex % japaneseVoices.length : 0;
+        utter.voice = japaneseVoices[idx] || japaneseVoices[0];
+      }
+      if (voiceProfile) {
+        utter.rate = voiceProfile.rate;
+        utter.pitch = voiceProfile.pitch;
+      } else {
+        // まだ声が届いていないときだけの保険（初回の描画より前に読み上げた場合）
+        const p = currentPersonality || {};
+        utter.rate = clamp(0.9 + ((p.cheerfulness ?? 50) / 100) * 0.3, 0.8, 1.4);
+        utter.pitch = clamp(1.25 + ((p.warmth ?? 50) / 100) * 0.3, 1.0, 2.0);
+      }
       speechSynthesis.speak(utter);
     } catch (e) {
       // 音声合成に対応していない/失敗する環境でも、テキストでの会話自体は問題なく続けられるようにする
     }
   }
+
+  // サーバーが決めたこの子の声。/api/character と /api/chat の応答に入ってくる。
+  let voiceProfile = null;
 
   const AUTO_SPEAK_KEY = "sodatsukake_autoSpeak";
   let autoSpeak = false;
@@ -947,8 +988,9 @@
   });
 
   modelToggle.addEventListener("click", () => {
-    const collapsed = modelStage.classList.toggle("collapsed");
-    modelToggle.textContent = collapsed ? "3Dを見る ▾" : "たたむ ▴";
+    // 消さずに小さくする。話している相手が画面から居なくならないようにするため。
+    const mini = modelStage.classList.toggle("mini");
+    modelToggle.textContent = mini ? "大きく ▾" : "小さく ▴";
   });
 
   // --- モデルをタップ（なでる/つつく）すると、性格に合わせた一言と、ちょこっと跳ねるアニメーションを返す ---
@@ -1044,6 +1086,24 @@
     avatarIcon.hidden = false;
     modelEl.src = `${base}.glb`;
     modelEl.setAttribute("alt", data.name || "キャラクター");
+
+    // 3Dが描けない環境（WebGLが無効、GPUが無い、モデルの読み込みに失敗）では、
+    // model-viewer は例外も投げずにただ何も描かない。**キャラクターの居ない会話画面**になるので、
+    // 一定時間たっても読み込めていなければ、2Dの絵に差し替える。
+    // 「常にこの子が見えている」ことがこの画面の要なので、ここは黙って諦めない。
+    modelFallback.src = `${base}.png`;
+    modelFallback.alt = data.name || "キャラクター";
+    const showFallback = () => {
+      if (modelEl.loaded) return;
+      modelFallback.hidden = false;
+      modelEl.style.visibility = "hidden";
+    };
+    modelEl.addEventListener("load", () => {
+      modelFallback.hidden = true;
+      modelEl.style.visibility = "";
+    }, { once: true });
+    modelEl.addEventListener("error", showFallback, { once: true });
+    setTimeout(showFallback, 6000);
   }
 
   // --- パルスサーベイ ---
@@ -1071,6 +1131,8 @@
       renderPersonality(data.personality);
       currentPersonality = data.personality; // 読み上げの速さ・高さに反映する
     }
+    // この子の声。種族・色・個体・性格から、サーバー側で決まっている
+    if (data.voice) voiceProfile = data.voice;
     applyCharacterVisuals(data);
     renderSocial(data);
     maybeMountPulse(data.interactionCount);
@@ -1137,6 +1199,18 @@
   }
 
   async function loadInitial() {
+    // 規約への同意が無いうちは会話を始めない。
+    // 「あとで読む」を作らないのは、あとで読む人がいないから。
+    if (cid && window.waketamaGate) {
+      const agreed = await window.waketamaGate.require(cid, getOwnerToken());
+      if (!agreed) {
+        statusEl.textContent = "同意がないため、会話を始められません";
+        addMessage("利用規約とプライバシーポリシーに同意いただくと、ここで話しはじめられます。", "system");
+        input.disabled = true;
+        input.placeholder = "同意すると入力できます";
+        return;
+      }
+    }
     if (!cid) {
       statusEl.textContent = "キャラクターIDが指定されていません";
       return;
@@ -1197,12 +1271,50 @@
     if (!token) return false;
     try {
       const res = await fetch(
-        `/api/character/history?cid=${encodeURIComponent(cid)}&token=${encodeURIComponent(token)}&limit=40`
+        `/api/character/dialogue?cid=${encodeURIComponent(cid)}&token=${encodeURIComponent(token)}&limit=40`
       );
       if (!res.ok) return false;
       const data = await res.json();
       const turns = data.turns || [];
       if (turns.length === 0) return false;
+
+      // 過去の会話は**畳んでおく**。
+      // 全部そのまま並べると、開いた瞬間に画面が古いやり取りで埋まって、
+      // いまどこから話しはじめればいいのか分からなくなる。
+      // ただし「無かったこと」にもしない——何件あるか、いつまでの分かは出す。
+      const recentCount = Math.min(4, turns.length);
+      const past = turns.slice(0, turns.length - recentCount);
+      const recent = turns.slice(turns.length - recentCount);
+
+      if (past.length > 0) {
+        const wrap = document.createElement("div");
+        wrap.className = "pastWrap";
+        wrap.hidden = true;
+
+        const toggle = document.createElement("button");
+        toggle.type = "button";
+        toggle.className = "pastToggle";
+        toggle.textContent = `これまでの会話を見る（${past.length}件）`;
+        toggle.addEventListener("click", () => {
+          wrap.hidden = !wrap.hidden;
+          toggle.textContent = wrap.hidden
+            ? `これまでの会話を見る（${past.length}件）`
+            : "これまでの会話を畳む";
+          if (!wrap.hidden) wrap.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+
+        log.appendChild(toggle);
+        log.appendChild(wrap);
+        // addMessage は log へ直に足すので、いったん log に出してから wrap へ移す
+        for (const turn of past) {
+          addMessage(turn.text, turn.role === "user" ? "user" : "char");
+          wrap.appendChild(log.lastElementChild);
+        }
+      }
+
+      for (const turn of recent) {
+        addMessage(turn.text, turn.role === "user" ? "user" : "char");
+      }
 
       // 「ここから上は前回まで」の区切り。無いと、今日の会話と昨日の会話が地続きに見える。
       const divider = document.createElement("div");
@@ -1211,10 +1323,6 @@
       divider.textContent = last?.t
         ? `ここまでが前回まで（${new Date(last.t).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}）`
         : "ここまでが前回まで";
-
-      for (const turn of turns) {
-        addMessage(turn.text, turn.role === "user" ? "user" : "char");
-      }
       log.appendChild(divider);
       log.scrollTop = log.scrollHeight;
       return true;

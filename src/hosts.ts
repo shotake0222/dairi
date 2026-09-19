@@ -28,7 +28,6 @@ const APP_ONLY_PATHS = new Set([
   "/profile",
   "/history",
   "/friends",
-  "/market",
   "/recover",
 ]);
 

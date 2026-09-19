@@ -398,6 +398,58 @@ ollama run    waketama-persona</pre>
 
 <section>
   <div class="wrap">
+    <h2>文字の会話しかないのに、なぜ身体が動くのか</h2>
+    <p class="lead">
+      わけたまが持っているのはテキストの会話だけです。カメラも加速度計もありません。
+      それでもロボットやアバターが動くのは、<strong>言葉を数値へ翻訳してから機器へ渡している</strong>からです。
+      <br />毎回LLMに考えさせる方式は採っていません。遅く、高く、通信が切れた瞬間に止まり、
+      <strong>同じ状況で同じ子が毎回違う動きをしてしまう</strong>ためです。
+    </p>
+
+    <div class="targets">
+      <div class="target">
+        <h3>① 会話 → 性格6軸</h3>
+        <p>1往復ごとに信号を拾い、温かさ・好奇心・陽気さ・慎重さ・自立心・ユーモアを<strong>少しずつ</strong>動かします。一言で人格が変わらない幅に抑えています。</p>
+      </div>
+      <div class="target">
+        <h3>② 会話 → 価値観8軸</h3>
+        <p>6ターンごとにまとめて読み直し、Schwartz の価値観理論を簡約した8軸と、長く効く事実だけの覚え書きを取り出します。</p>
+      </div>
+      <div class="target">
+        <h3>③ 本人の申告で上書き</h3>
+        <p>会話からの<strong>推定</strong>と、本人が<strong>申告</strong>した値は別々に保持します。混ぜると、受け取った側が確からしさを判断できません。</p>
+      </div>
+      <div class="target">
+        <h3>④ 数値 → 身体（ここが肝）</h3>
+        <p>動きの大きさ・身振りの頻度・<strong>返すまでの間</strong>・目線を保つ長さ・姿勢の開き・<strong>心地よい対人距離</strong>・近づく速さ・表情の基準、の9項目へ翻訳します。</p>
+      </div>
+      <div class="target">
+        <h3>⑤ 判断は識別子で</h3>
+        <p>際立った価値観だけを <code>confirm_before_change</code> のような<strong>機械が分岐できる識別子</strong>に落とします。全員に全部付くと方針の意味が消えるため、平均付近の軸は出しません。</p>
+      </div>
+      <div class="target">
+        <h3>⑥ 数百バイトで機器へ</h3>
+        <p>数値と識別子だけ、実測240〜250バイト。<strong>会話も覚え書きも属性も含みません</strong>（渡す直前に機械で検査します）。ESP32やRaspberry Pi Picoにも載ります。</p>
+      </div>
+    </div>
+
+    <p class="lead" style="margin-top:14px">
+      <strong>実測（性格が逆の2体・同じファームウェア）:</strong>
+      返すまでの間 410ms / 930ms、身振り 2回 / 1回、待機の揺らぎ ±10.8度 / ±2.3度、
+      心地よい距離 1.3m / 1.6m、近づくか「自分から寄る」/「寄らない」。
+      <br /><strong>この6段のうち、⑥だけが機器側の仕事です。</strong>
+      新しいロボットへ載せるときは、9項目をアクチュエータへ割り当てるだけで、人格の解釈をやり直す必要がありません。
+    </p>
+    <p class="lead" style="margin-bottom:0">
+      限界も先に申し上げます。観測しているのは言葉だけで、実際の歩行速度や声量は測っていません。
+      ④の対応づけは設計時に置いた初期値であり、実機を見ながら調整する前提です。
+      また、会話35回に満たない分身では差がほとんど出ません。
+    </p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
     <h2>想定している載せ先</h2>
     <p class="lead">「その場に居て、ずっと喋る」用途ほど、この構成が効きます。</p>
     <div class="targets">
@@ -575,7 +627,6 @@ ollama run    waketama-persona</pre>
   <div class="wrap">
     <div class="row">
       <a href="/lp">個人の方へ</a>
-      <a href="/market">マーケット</a>
       <a href="/terms">利用規約</a>
       <a href="/privacy">プライバシーポリシー</a>
     </div>

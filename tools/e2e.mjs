@@ -60,11 +60,32 @@ const page = await browser.newPage({ viewport: { width: 390, height: 820 }, devi
 page.on("pageerror", (e) => pageErrors.push(String(e.message)));
 page.on("dialog", (d) => d.accept()); // 削除の確認ダイアログは自動で承諾する
 
-console.log("\n[1] NFCタップ → 召喚 → チャット");
+/**
+ * はじめる前の同意。
+ *
+ * 会話も召喚も、同意していないと先へ進まない作りにした（public/gate.js）。
+ * E2Eでも実際の人と同じ手順を踏む——ここを迂回できるようにすると、
+ * 「同意しなくても使えてしまう」不具合をテストが素通りする。
+ */
+async function acceptGateIfShown(label) {
+  const btn = page.locator(".wtGate button:not(.ghost)");
+  try {
+    await btn.waitFor({ state: "visible", timeout: 4000 });
+  } catch (e) {
+    return false;
+  }
+  await btn.click();
+  await page.locator(".wtGate").waitFor({ state: "detached", timeout: 8000 });
+  if (label) check(label, true);
+  return true;
+}
+
+console.log("\n[1] はじめる前の同意 → 依代 → 召喚 → チャット");
 const tagId = `e2e-${Date.now()}`;
 await page.goto(`${BASE}/t/${tagId}`, { waitUntil: "networkidle" });
 const summonUrl = new URL(page.url());
 check("タップで召喚ページに遷移する", summonUrl.pathname === "/summon", summonUrl.pathname);
+await acceptGateIfShown("同意しないと先へ進めない画面が出る");
 check("持ち主トークンがURLから消えている（localStorageへ退避済み）", summonUrl.searchParams.get("token") === null);
 
 const cid = summonUrl.searchParams.get("cid");
@@ -73,6 +94,7 @@ const storedToken = await page.evaluate((c) => localStorage.getItem(`sodatsukake
 check("持ち主トークンがこの端末に保存されている", Boolean(storedToken));
 
 await page.goto(`${BASE}/chat?cid=${cid}`, { waitUntil: "networkidle" });
+await acceptGateIfShown();
 await page.waitForTimeout(700);
 
 console.log("\n[2] スマホ幅でのレイアウト");
@@ -118,8 +140,9 @@ check("削除済みの分身を開いても行き止まりにならない", stat
 check("削除済みの分身には話しかけられない", await page.isDisabled("#input"));
 await page.screenshot({ path: path.join(OUT_DIR, "chat-deleted.png") });
 
-console.log("\n[5] 同じNFCタグの再利用");
+console.log("\n[5] 同じ依代の再利用（削除したあと）");
 await page.goto(`${BASE}/t/${tagId}`, { waitUntil: "networkidle" });
+await acceptGateIfShown();
 const newCid = new URL(page.url()).searchParams.get("cid");
 check("再タップで新しい分身が発行される", Boolean(newCid) && newCid !== cid);
 
@@ -231,14 +254,15 @@ const privacyHtml = await (await fetch(`${BASE}/privacy`)).text();
 check("プライバシーポリシーが配信される", privacyHtml.includes("プライバシーポリシー"));
 check("カメラ映像の扱いが書かれている", privacyHtml.includes("カメラ映像の扱い"));
 
-console.log("\n[11] LP・マーケット・管理画面");
+console.log("\n[11] LP・管理画面");
 const lpHtml = await (await fetch(`${BASE}/lp`)).text();
 check("LPが配信される", lpHtml.includes("御霊"));
 // LPは一般向けの入口。人格データの売買の話は表に出さない方針にしている
 check("LPに人格データ販売の話が出ていない", !lpHtml.includes("販売") && !lpHtml.includes("マーケット"));
 
-const marketHtml = await (await fetch(`${BASE}/market`)).text();
-check("マーケットが配信される", marketHtml.includes("人格マーケット"));
+// 出品の機能は畳んだ。消したつもりで残っていないことを、ここで押さえる
+check("マーケットのページは無くなっている", (await fetch(`${BASE}/market`)).status === 404);
+check("出品のAPIも無くなっている", (await fetch(`${BASE}/api/market/listings`)).status === 404);
 
 const adminRes = await fetch(`${BASE}/admin`);
 // 合言葉(ADMIN_PASSCODE)を設定していない状態が既定。素通しになっていないこと
@@ -254,7 +278,26 @@ const profileToken = claimed.ownerToken || (await page.evaluate((c) => localStor
 // それ以降の節は、こちらの「いま有効なトークン」を使うこと。
 let currentToken = profileToken;
 const ownerView = await (await fetch(`${BASE}/api/profile?cid=${newCid}&token=${profileToken}`)).json();
-check("初期状態では何にも同意していない", ownerView.consent === null, JSON.stringify(ownerView.consent));
+// この分身は同意画面を通っているので terms だけが立っている。
+// 任意の項目（属性・統計）は、こちらから何もしていない以上オフのままであること。
+check(
+  "はじめる前の同意だけが記録されていて、任意の項目はオフ",
+  ownerView.consent === null ||
+    (ownerView.consent.terms === true &&
+      ownerView.consent.profile === false &&
+      ownerView.consent.aggregate === false),
+  JSON.stringify(ownerView.consent)
+);
+
+// 同意画面を通っていない分身は、本当に何も同意していない
+{
+  const fresh = await fetch(`${BASE}/t/consent-fresh-${Date.now()}`, { redirect: "manual" });
+  const fl = new URL(fresh.headers.get("location"), BASE);
+  const freshView = await (
+    await fetch(`${BASE}/api/profile?cid=${fl.searchParams.get("cid")}&token=${fl.searchParams.get("token")}`)
+  ).json();
+  check("同意画面を通る前は、何にも同意していない", freshView.consent === null, JSON.stringify(freshView.consent));
+}
 
 const noAuth = await fetch(`${BASE}/api/profile?cid=${newCid}`);
 check("持ち主トークンなしでは属性を読めない", noAuth.status === 403, String(noAuth.status));
@@ -338,8 +381,11 @@ check("会話の中身が管理画面に出ないと書かれている", privacy
 console.log("\n[17] 利用規約・LP・法人向けページ");
 const termsHtml = await (await fetch(`${BASE}/terms`)).text();
 check("利用規約が配信される", termsHtml.includes("利用規約"));
-check("マーケットの扱いが書かれている", termsHtml.includes("マーケットについて"));
-check("決済を提供していないことが明記されている", termsHtml.includes("決済機能は提供していません"));
+check("当方によるデータ利用が書かれている", termsHtml.includes("当方によるデータの利用"));
+check("個人情報を預からないと明記されている", termsHtml.includes("個人情報をお預かりしません"));
+check("運営がデータを使う範囲が明記されている", termsHtml.includes("当方が次の目的で利用することがあります"));
+check("同意したうえで開始する形になっている", termsHtml.includes("同意いただいたうえで、サービスのご利用を開始"));
+check("利用者どうしの売り買いは提供していないと書かれている", termsHtml.includes("マーケット」は提供していません"));
 
 const lp2 = await (await fetch(`${BASE}/lp`)).text();
 check("LPで分け御霊の由来を説明している", lp2.includes("分 け 御 霊") || lp2.includes("分け御霊"));
@@ -540,6 +586,7 @@ console.log("\n[23] パルスサーベイ（1問ずつ聞く）");
   // 他の節で使い回すと、同意済み・所有権が移ったあと、といった状態が混ざり、
   // 「同意前は聞かない」のような肝心の確認ができなくなる。
   await page.goto(`${BASE}/t/survey-${Date.now()}`, { waitUntil: "networkidle" });
+  await acceptGateIfShown();
   const sCid = new URL(page.url()).searchParams.get("cid");
   const sToken = await page.evaluate((c) => localStorage.getItem(`sodatsukake_token_${c}`), sCid);
   const q = (t) => `cid=${encodeURIComponent(sCid)}&token=${encodeURIComponent(t)}`;
@@ -610,14 +657,14 @@ console.log("\n[23] パルスサーベイ（1問ずつ聞く）");
 }
 
 console.log("\n[24] ロゴと行き止まり");
-for (const [pathname, label] of [["/lp", "LP"], ["/home", "分身の一覧"], ["/market", "マーケット"]]) {
+for (const [pathname, label] of [["/lp", "LP"], ["/home", "分身の一覧"], ["/add", "分身を増やす"]]) {
   const html = await (await fetch(`${BASE}${pathname}`)).text();
   // 勾玉ロゴは同じ座標をHTMLに直接埋め込んである（public/icons/mark.svg と同じ形）
   check(`${label}に勾玉のロゴが入っている`, html.includes("M59.7 13.8 C61.1"));
 }
 check("ロゴのSVGが単体でも配信される", (await fetch(`${BASE}/icons/mark.svg`)).ok);
 
-for (const [pathname, label] of [["/summon", "召喚"], ["/market", "マーケット"], ["/recover", "復旧"]]) {
+for (const [pathname, label] of [["/summon", "召喚"], ["/add", "分身を増やす"], ["/recover", "復旧"]]) {
   await page.goto(`${BASE}${pathname}?cid=${newCid}`, { waitUntil: "domcontentloaded" });
   await page.waitForTimeout(400);
   const hasExit = await page.evaluate(() => {
@@ -730,11 +777,56 @@ console.log("\n[27] 覚え書きの土台と、前回までの会話");
 
   // 前回までの会話が画面に戻ること
   await page.goto(`${BASE}/chat?cid=${newCid}`, { waitUntil: "domcontentloaded" });
+  await acceptGateIfShown();
   await page.waitForTimeout(1500);
   const chatText = await page.textContent("#log");
   check("前に話した内容が残っている", chatText.length > 0 && chatText.includes("ここまでが前回まで"), chatText.slice(0, 80));
   check("育ちの進み具合が出ている", Boolean(await page.$("#growthBar")));
   await page.screenshot({ path: path.join(OUT_DIR, "chat-history.png") });
+}
+
+console.log("\n[28] 紹介動画・声・かざして話す");
+{
+  // 紹介動画。LPに置いた以上、実際に配信されていないと意味が無い
+  const lp3 = await (await fetch(`${BASE}/lp`)).text();
+  check("LPに紹介動画が置かれている", lp3.includes('src="/media/intro.mp4"'));
+  check("動画は勝手に落とさない（preload=none）", lp3.includes('preload="none"'));
+  const video = await fetch(`${BASE}/media/intro.mp4`);
+  check("動画が実際に配信される", video.ok, String(video.status));
+  check("動画のcontent-typeが正しい", (video.headers.get("content-type") || "").includes("video/mp4"),
+    video.headers.get("content-type") || "");
+
+  // 声。種族・色ごとに変わっていること（同じ声で全員喋る状態に戻っていないか）
+  const voices = new Set();
+  for (let i = 0; i < 6; i++) {
+    const res = await fetch(`${BASE}/t/voice-${Date.now()}-${i}`, { redirect: "manual" });
+    const vcid = new URL(res.headers.get("location"), BASE).searchParams.get("cid");
+    const st = await (await fetch(`${BASE}/api/character?cid=${vcid}`)).json();
+    check(`声のパラメータが返る(${i})`, typeof st.voice?.pitch === "number" && typeof st.voice?.label === "string");
+    voices.add(`${st.voice.pitch}/${st.voice.rate}`);
+  }
+  // 6体すべて同じなら、種族・色が効いていない
+  check("分身ごとに声が違う", voices.size > 1, `${voices.size}種類`);
+
+  // 「これ見て」。押した時点で送る作りになっていること（予約ボタンに戻っていないか）
+  await page.goto(`${BASE}/talk?cid=${newCid}`, { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(900);
+  const talkText = await page.textContent("body");
+  check("押した瞬間に見せる、と書かれている", talkText.includes("押した瞬間"), talkText.slice(0, 60));
+  // カメラが無い環境で押しても、黙って何もしないのではなく理由を出す
+  await page.evaluate(() => document.getElementById("lookBtn").click());
+  await page.waitForTimeout(500);
+  const lookStatus = (await page.textContent("#status")) || "";
+  check("カメラが無いときは理由を出す", lookStatus.length > 0, lookStatus);
+
+  // 会話画面で、キャラクターが消えないこと
+  await page.goto(`${BASE}/chat?cid=${newCid}`, { waitUntil: "domcontentloaded" });
+  await acceptGateIfShown();
+  await page.waitForTimeout(1200);
+  await page.evaluate(() => document.getElementById("modelToggle").click());
+  await page.waitForTimeout(500);
+  const stageH = await page.evaluate(() => document.getElementById("modelStage").getBoundingClientRect().height);
+  check("たたんでもキャラクターは消えない", stageH > 40, `${Math.round(stageH)}px`);
 }
 
 check("JavaScriptエラーが出ていない", pageErrors.length === 0, pageErrors.join(" / "));

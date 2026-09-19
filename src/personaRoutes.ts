@@ -97,7 +97,7 @@ export async function handleSetConsent(
     characterId: body.characterId,
     profile: result.consent.profile,
     aggregate: result.consent.aggregate,
-    marketplace: result.consent.marketplace,
+    terms: result.consent.terms,
   });
   return json({ consent: result.consent });
 }

@@ -80,6 +80,8 @@ src/
   index.ts                    # ルーティング（/t/:code, /q/:code, /api/*, 静的配信、OGPのURL絶対化）
   yorishiro.ts                # 依代（NFCタグ・QR）の台帳と配布元、依代を持たない人の入口
   delivery.ts                 # 納品（何を売るのかの定義・引換券の発行と検証・取り出す中身）
+  slm.ts                      # 自分専用のSLM一式と、判断特化AI向けの判断プロファイル
+  insights.ts                 # 匿名集約のセグメント統計（出品機能は廃止済み）
   mcp.ts                      # MCPの口（相手がAIのときの納品形。読み取りだけ）
   call.ts                     # その場限りの通話（何も保存しない会話経路・SSEストリーミング）
   talk.ts                     # かざして話す（カメラ映像を出したまま声で会話。保存され、育つ）
@@ -217,6 +219,8 @@ tools/
 | 商品 | 買い手 | 渡すもの |
 | --- | --- | --- |
 | 人格カード（`card`） | 自前のLLM基盤を持っている相手 | JSON / systemPrompt / Modelfile / README |
+| 自分専用のSLM（`slm`） | 手元の小さなモデルで喋らせたい相手 | Modelfile ＋ LoRA学習データ ＋ 手順書 |
+| 判断プロファイル（`decision`） | Jev等の判断特化AIに繋ぎたい相手 | Choice / Score / Noul と既定の答え |
 | 振る舞いプロファイル（`behavior`） | **AIを積んでいない機器**を作っている相手 | 数値だけの数百バイト＋参照実装。**LLM不要** |
 | MCP接続（`mcp`） | 自社のAIエージェントから参照したい相手 | `/mcp` と引換券。読み取りだけ |
 | 持ち出し一式（`bundle`） | ネットに繋がない環境 | 上をまとめた1ファイル |
@@ -237,7 +241,12 @@ MCPの `persona_reply` は**何も保存しない経路**（`beginEphemeralTurn`
 この形なら ESP32 や Pico でも動き、**LLMは要らない**（「人格→振る舞い」の翻訳は
 `src/persona/avatarProfile.ts` がサーバ側で済ませている）。
 
-手順・機種ごとの線引き・合格基準は [docs/EDGE_DEVICE_TEST.md](docs/EDGE_DEVICE_TEST.md)。
+手順・機種ごとの線引き・合格基準は [docs/EDGE_DEVICE_TEST.md](docs/EDGE_DEVICE_TEST.md)、
+**会話のテキストがどうやって動作になるのか**（6段の変換過程と、その限界）は
+[docs/TEXT_TO_BEHAVIOR.md](docs/TEXT_TO_BEHAVIOR.md)。
+
+> **用語**: SLM は Small Language Model。SML（Standard ML）ではない。
+> **Jev は TypeSafe AI の製品**で、こちらでは作れない。渡せるのは判断プロファイルまで。
 
 ```bash
 curl -o card.json "https://app.waketama.com/api/character/card?format=json&cid=<CID>&token=<TOKEN>"

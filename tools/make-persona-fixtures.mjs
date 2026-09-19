@@ -158,7 +158,7 @@ for (const persona of PERSONAS) {
       meta: { generator: "waketama", note: "検証用の固定データ" },
     },
   });
-  await post("/api/consent", { characterId: cid, token, consent: { profile: true, aggregate: true, marketplace: true } });
+  await post("/api/consent", { characterId: cid, token, consent: { terms: true, profile: true, aggregate: true } });
   await post("/api/profile", { characterId: cid, token, answers: persona.profile });
 
   for (const [id, value] of Object.entries(persona.psycho)) {

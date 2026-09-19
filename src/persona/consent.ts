@@ -1,14 +1,16 @@
 /**
  * 同意の管理。
  *
- * ここが、これから足す「属性の取得」「集約データの提供」「人格の出品」すべての入口になる。
+ * ここが「サービスを始めてよいか」「属性を取ってよいか」「集約に混ぜてよいか」の入口になる。
  * 設計の前提を先に書いておく。
  *
- * 1. **既定はすべてオフ**。同意していない分身のデータは、集計にもマーケットにも一切載らない。
+ * 1. **terms だけは必須で、それ以外は既定オフ。**
+ *    terms は「利用規約とプライバシーポリシーを読んで、始めてよい」という同意で、
+ *    これが無いと会話を始めない。残り（profile / aggregate）は、
  *    「オプトアウトできます」ではなく「オプトインしない限り出ない」を守る。
  *
  * 2. **用途ごとに分ける**。「データを使ってよいか」をひとまとめの1個のチェックにしない。
- *    属性を保存することと、それを統計に混ぜることと、人格を売りに出すことは、
+ *    始めてよいことと、属性を保存することと、それを統計に混ぜることは、
  *    利用者から見て全く違う話なので、別々に取る。
  *
  * 3. **版を持つ**。同意した時点の文面の版を記録する。文面を変えたら、
@@ -24,31 +26,50 @@
  * 同意文面の版。**用途を増やしたり文面の意味を変えたら、必ず上げること。**
  * 上げると、既存の同意は自動的に無効になり、次に開いたときに取り直しになる。
  */
-export const CONSENT_VERSION = 1;
+export const CONSENT_VERSION = 2;
 
-export type ConsentPurpose = "profile" | "aggregate" | "marketplace";
+/**
+ * 2 で何が変わったか（版を上げた理由をここに残す。上げた事実だけだと後から追えない）:
+ * - **出品（marketplace）を廃止した。** 本人が自分の分身を他人へ出す仕組みは畳んだ。
+ *   人格が他人の手に渡る経路を開けたままにすると、「誰に渡ってよいか」の運用を
+ *   固める前に取り返しのつかない事故が起きうるため。企業への提供は、
+ *   運営が引換券で個別に行う形（src/delivery.ts）へ一本化した。
+ * - **terms を足した。** 始める前に、規約とプライバシーポリシーへの同意を取る。
+ */
+export type ConsentPurpose = "terms" | "profile" | "aggregate";
 
 export interface ConsentState {
   version: number;
   updatedAt: number;
+  /** 利用規約とプライバシーポリシーに同意して、サービスを始めてよい（**必須**） */
+  terms: boolean;
   /** 属性情報（年代・地域など、本人が任意で入れたもの）を保存してよい */
   profile: boolean;
   /** 匿名化・集約したうえで、統計や第三者提供に含めてよい */
   aggregate: boolean;
-  /** 育てた人格パッケージをマーケットに出品してよい */
-  marketplace: boolean;
 }
 
 export const EMPTY_CONSENT: ConsentState = {
   version: CONSENT_VERSION,
   updatedAt: 0,
+  terms: false,
   profile: false,
   aggregate: false,
-  marketplace: false,
 };
 
 /** 画面と同意記録で同じ文面を使うための定義（説明を2箇所に書くと必ずズレるため）。 */
 export const CONSENT_TEXTS: Record<ConsentPurpose, { title: string; body: string; note: string }> = {
+  terms: {
+    title: "はじめる前に",
+    body:
+      "わけたまは、**氏名・メールアドレス・電話番号などの個人情報をお預かりしません。**" +
+      "アカウント登録もありません。分身の持ち主かどうかは、この端末のブラウザに保存される印だけで判断しています。" +
+      "一方で、分身との会話から生まれた性格・価値観・覚え書きは、" +
+      "**運営がサービスの改善や、個人が特定されない形での企業向け提供に使うことがあります。**",
+    note:
+      "会話の本文がそのまま外へ出ることはありません。いつでも設定から使い道を変えられますし、" +
+      "分身ごと削除すれば、すべて消えます。詳しくは利用規約とプライバシーポリシーをご覧ください。",
+  },
   profile: {
     title: "あなたのことを分身に覚えさせる",
     body:
@@ -63,14 +84,13 @@ export const CONSENT_TEXTS: Record<ConsentPurpose, { title: string; body: string
       "会話の本文そのものが渡ることはありません。",
     note: "一定人数に満たないグループは、そもそも統計として出しません。いつでも取り消せます。",
   },
-  marketplace: {
-    title: "育てた分身を出品する",
-    body:
-      "あなたが育てた人格パッケージを、他の人が使えるようにマーケットへ出せるようになります。" +
-      "出品するかどうか、いくらにするかは、そのつど自分で決めます。",
-    note: "ここをオンにしただけでは公開されません。出品操作をするまで、誰にも見えません。",
-  },
 };
+
+/**
+ * サービスを始めるのに、最低限これだけは要る同意。
+ * 画面側はこれを見て入口を閉じる（項目を増やしたときに、画面の判定を書き忘れないように）。
+ */
+export const REQUIRED_CONSENT: ConsentPurpose[] = ["terms"];
 
 /** 保存されている同意が「いま有効か」を判定する。版が古ければ同意していない扱いにする。 */
 export function hasConsent(consent: ConsentState | undefined, purpose: ConsentPurpose): boolean {
@@ -90,8 +110,8 @@ export function normalizeConsent(raw: unknown, previous?: ConsentState): Consent
   return {
     version: CONSENT_VERSION,
     updatedAt: Date.now(),
+    terms: pick("terms"),
     profile: pick("profile"),
     aggregate: pick("aggregate"),
-    marketplace: pick("marketplace"),
   };
 }

@@ -177,7 +177,7 @@
   <section id="depthSection">
     <h2>この分身の厚み</h2>
     <p class="lead">
-      分身をこの端末の外へ持ち出したり、マーケットに出したりできる水準に届いているかの目安です。
+      分身をこの端末の外へ持ち出せる水準に届いているかの目安です。
       <strong>会話・属性・価値観・覚えていること</strong>の4つを別々に数えています。
     </p>
     <div class="meter"><div id="depthFill"></div></div>
@@ -265,15 +265,6 @@
     </p>
   </section>
 
-  <section id="marketSection">
-    <h2>マーケットに出す</h2>
-    <p class="lead">育てた分身を、他の人が使えるように出品できます。</p>
-    <div id="marketLocked" class="empty">
-      上の「育てた分身を出品する」をオンにすると、出品ページへ進めます。
-    </div>
-    <a class="action" id="marketLink" href="/market" style="display:none; text-decoration:none">出品ページへ →</a>
-  </section>
-
   <p style="text-align:center;font-size:12px">
     <a class="link" href="/terms">利用規約</a> ・ <a class="link" href="/privacy">プライバシーポリシー</a>
   </p>
@@ -301,8 +292,6 @@
   const consentList = document.getElementById("consentList");
   const groupsEl = document.getElementById("groups");
   const profileLocked = document.getElementById("profileLocked");
-  const marketLocked = document.getElementById("marketLocked");
-  const marketLink = document.getElementById("marketLink");
   const notesEl = document.getElementById("notes");
   const notesSeedEl = document.getElementById("notesSeed");
   const segmentEl = document.getElementById("segment");
@@ -313,7 +302,6 @@
 
   document.getElementById("backLink").href = cid ? `/chat?cid=${encodeURIComponent(cid)}` : "/home";
   document.getElementById("eyesLink").href = cid ? `/eyes?cid=${encodeURIComponent(cid)}` : "/eyes";
-  marketLink.href = cid ? `/market?cid=${encodeURIComponent(cid)}` : "/market";
 
   let schema = null;
   let state = null;
@@ -339,6 +327,24 @@
       const item = document.createElement("div");
       item.className = "consentItem";
       const on = consent.version === schema.consentVersion && consent[key] === true;
+
+      // 規約への同意だけはトグルにしない。
+      // ここを切れる形にすると「切った直後にまた同意を求められる」という往復になるうえ、
+      // 実際にやめたい人が欲しいのはトグルではなく削除。行き先を削除に向ける。
+      if (key === "terms") {
+        item.innerHTML = `
+          <div class="consentHead"><h3></h3><span class="tag"></span></div>
+          <p class="body"></p>
+          <p class="note"></p>`;
+        item.querySelector("h3").textContent = texts.title;
+        item.querySelector(".tag").textContent = on ? "同意済み" : "未同意";
+        item.querySelector(".body").textContent = texts.body.replace(/\*\*/g, "");
+        item.querySelector(".note").textContent =
+          texts.note + "　やめるときは、チャット画面の設定から分身を削除してください（すべて消えます）。";
+        consentList.appendChild(item);
+        continue;
+      }
+
       item.innerHTML = `
         <div class="consentHead">
           <h3></h3>
@@ -354,6 +360,8 @@
 
     consentList.querySelectorAll("input[data-consent]").forEach((input) => {
       input.addEventListener("change", async () => {
+        // terms はトグルが無いので、ここで集めると false になって同意が消える。
+        // 触っていない項目は送らない（サーバー側が前の値を引き継ぐ）。
         const next = {};
         consentList.querySelectorAll("input[data-consent]").forEach((el) => {
           next[el.dataset.consent] = el.checked;
@@ -713,10 +721,6 @@
     setNotesEditing(false);
     setSeedEditing(false);
 
-    const c = state.consent || {};
-    const canMarket = c.version === schema.consentVersion && c.marketplace === true;
-    marketLocked.style.display = canMarket ? "none" : "block";
-    marketLink.style.display = canMarket ? "inline-block" : "none";
   }
 
   // ---- 厚み（人格データとしての充実度）----
@@ -725,7 +729,7 @@
     document.getElementById("depthFill").style.width = `${Math.max(2, depth.score)}%`;
     document.getElementById("depthScore").textContent = String(depth.score);
     document.getElementById("depthSellable").textContent = depth.sellable
-      ? "マーケットに出せる水準です"
+      ? "外へ持ち出せる水準です"
       : "もう少し話すと、外へ持ち出しやすくなります";
     const parts = document.getElementById("depthParts");
     parts.innerHTML = "";

@@ -8,7 +8,7 @@ import { handleHealth } from "./health";
 import { handleTranscribe, handleSpeak } from "./voice";
 import { issueTransferCode, claimTransferCode } from "./transfer";
 import { stagingGate, applyStagingHeaders } from "./stagingGuard";
-import { adminGate, applyAdminHeaders, handleAdminOverview, handleAdminPersonas, handleAdminRequests } from "./admin";
+import { adminGate, applyAdminHeaders, handleAdminOverview, handleAdminPersonas } from "./admin";
 import {
   handleGetOwnerView,
   handlePersonaCard,
@@ -18,13 +18,7 @@ import {
   handleSetNotes,
   handleSetProfile,
 } from "./personaRoutes";
-import {
-  handleBrowseListings,
-  handleInsights,
-  handleMyListing,
-  handlePurchaseRequest,
-  handleSaveListing,
-} from "./market";
+import { handleInsights } from "./insights";
 import { handleIme } from "./ime";
 import {
   handleSurveyAnswer,
@@ -252,9 +246,6 @@ export default {
     if (url.pathname === "/api/admin/personas" && request.method === "GET") {
       return handleAdminPersonas(env, url);
     }
-    if (url.pathname === "/api/admin/requests") {
-      return handleAdminRequests(env, request, url);
-    }
     if (url.pathname === "/api/admin/contacts") {
       return handleAdminContacts(env, request, url);
     }
@@ -298,6 +289,19 @@ export default {
       // 引換券の平文を出せるのはこの1回だけ（保存しているのはハッシュ）
       return json({ token: result.token, expiresAt: result.expiresAt });
     }
+    // 商談の場で中身を見せるための下見。引換券を発行せずに、同じものを出す。
+    // 管理画面の中だけなので、外からは見えない。
+    if (url.pathname === "/api/admin/preview" && request.method === "GET") {
+      const scopeParam = url.searchParams.get("scope") || "decision";
+      const scope = (DELIVERY_SCOPES as string[]).includes(scopeParam) ? (scopeParam as DeliveryScope) : null;
+      const cid = url.searchParams.get("cid") || "";
+      if (!scope || !cid) return json({ error: "cid と scope が要ります" }, { status: 400 });
+      const payload = await buildDelivery(env, cid, scope, url.searchParams.get("format") || "json");
+      if (!payload) return json({ error: "取り出せませんでした" }, { status: 404 });
+      return new Response(payload.body, {
+        headers: { "content-type": payload.contentType, "cache-control": "no-store" },
+      });
+    }
     if (url.pathname === "/api/admin/grants" && request.method === "DELETE") {
       const body = await request.json<{ tokenHash?: string }>();
       return json(await revokeGrant(env, body.tokenHash));
@@ -329,8 +333,14 @@ export default {
     }
 
     // --- 会話の履歴（画面に前回までのやり取りを戻すため） ---
+    //
     // 会話の本文そのものなので、cidだけでは読めない。必ず持ち主トークンを要求する。
-    if (url.pathname === "/api/character/history" && request.method === "GET") {
+    //
+    // **/api/character/history ではなく /api/character/dialogue。**
+    // 前者は先に「性格の変遷（成長グラフ）」が使っていた名前で、
+    // ここで同じ名前を先に登録してしまい、成長ページが静かに空になっていた。
+    // 同じ「履歴」でも、性格の履歴と会話の履歴は別物なので、名前を分ける。
+    if (url.pathname === "/api/character/dialogue" && request.method === "GET") {
       const cid = url.searchParams.get("cid");
       if (!cid) return json({ error: "cid is required" }, { status: 400 });
       const limit = Math.min(60, Math.max(1, Number(url.searchParams.get("limit") ?? 40) || 40));
@@ -368,18 +378,11 @@ export default {
     }
 
     // --- マーケット ---
-    if (url.pathname === "/api/market/listing" && request.method === "POST") {
-      return handleSaveListing(env, await request.json(), log);
-    }
-    if (url.pathname === "/api/market/listing" && request.method === "GET") {
-      return handleMyListing(env, url);
-    }
-    if (url.pathname === "/api/market/listings" && request.method === "GET") {
-      return handleBrowseListings(env, url);
-    }
-    if (url.pathname === "/api/market/request" && request.method === "POST") {
-      return handlePurchaseRequest(env, await request.json(), log);
-    }
+    // 匿名集約のセグメント統計。
+    // **本人による出品の機能は畳んだ**ので、/api/market/* のうち残っているのはここだけ。
+    // 出品を消した理由は、人格を他人が使う仕組みを開けたままにすると、
+    // 「誰に渡ってよいか」の運用を先に固めない限り、取り返しがつかない事故になりうるため。
+    // 企業への提供は、運営が引換券で個別に行う形（src/delivery.ts）に一本化した。
     if (url.pathname === "/api/market/insights" && request.method === "GET") {
       return handleInsights(env, log);
     }
@@ -546,7 +549,7 @@ export default {
         meetingHistory: state.meetingHistory,
         speechStyleLabel: deriveSpeechStyle(state.personality).label,
         // 読み上げに使う「この子の声」。保存はせず、characterIdと性格から毎回導出する。
-        voice: deriveVoiceProfile(characterId, state.personality),
+        voice: deriveVoiceProfile(characterId, state.personality, state.species, state.color),
       });
     }
 

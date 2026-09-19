@@ -311,6 +311,7 @@ PERSONA_LLM_URL=http://raspberrypi.local:11434/v1/chat/completions \
 | 目的 | 場所 |
 |---|---|
 | 人格 → 振る舞いの翻訳（サーバ側） | `src/persona/avatarProfile.ts` |
+| その翻訳の全体像（会話→数値→動作） | `docs/TEXT_TO_BEHAVIOR.md` |
 | 人格カードの組み立て | `src/persona/personaCard.ts` |
 | 機器用の最小形への変換 | `tools/edge/compact.mjs` |
 | 変換のCLI（漏れの確認つき） | `tools/edge/make_compact.mjs` |

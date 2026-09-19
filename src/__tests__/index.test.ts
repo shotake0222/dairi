@@ -565,3 +565,42 @@ describe("静的ファイル配信とPWA/OGP", () => {
     expect(Array.from(bytes.slice(0, 4))).toEqual([0x89, 0x50, 0x4e, 0x47]);
   });
 });
+
+/**
+ * ルートの取り合い。
+ *
+ * 「会話の履歴」と「性格の履歴」を、どちらも /api/character/history という名前で
+ * 登録してしまい、**先に書いたほうが勝って成長ページが静かに空になった**ことがある。
+ * 例外も出ず、画面に「記録が見つかりませんでした」と出るだけなので、気づきにくい。
+ * 同じ名前を二度登録していないことを、ここで押さえる。
+ */
+describe("履歴の2つのAPIが取り合っていないこと", () => {
+  it("性格の変遷は cid だけで読める（成長ページが使う）", async () => {
+    const res = await SELF.fetch(`${BASE}/t/route-history-${crypto.randomUUID().slice(0, 8)}`, {
+      redirect: "manual",
+    });
+    const cid = new URL(res.headers.get("location")!, BASE).searchParams.get("cid")!;
+
+    const history = await SELF.fetch(`${BASE}/api/character/history?cid=${cid}`);
+    expect(history.status).toBe(200);
+    const body = await history.json<{ history?: unknown[]; turns?: unknown[] }>();
+    // 性格の履歴が返ること。会話の履歴（turns）が返ってきたら、名前を取られている
+    expect(Array.isArray(body.history)).toBe(true);
+    expect(body.turns).toBeUndefined();
+  });
+
+  it("会話の履歴は別の名前で、持ち主トークンが要る", async () => {
+    const res = await SELF.fetch(`${BASE}/t/route-dialogue-${crypto.randomUUID().slice(0, 8)}`, {
+      redirect: "manual",
+    });
+    const loc = new URL(res.headers.get("location")!, BASE);
+    const cid = loc.searchParams.get("cid")!;
+    const token = loc.searchParams.get("token")!;
+
+    expect((await SELF.fetch(`${BASE}/api/character/dialogue?cid=${cid}`)).status).toBe(403);
+
+    const mine = await SELF.fetch(`${BASE}/api/character/dialogue?cid=${cid}&token=${token}`);
+    expect(mine.status).toBe(200);
+    expect(Array.isArray((await mine.json<{ turns: unknown[] }>()).turns)).toBe(true);
+  });
+});

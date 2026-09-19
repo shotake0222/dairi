@@ -17,6 +17,7 @@
  */
 
 import { auditCompact, toCompact } from "../tools/edge/compact.mjs";
+import { buildDecisionProfile, buildSlmPackage, DEFAULT_SLM_BASE, SLM_BASES } from "./slm";
 import { renderOllamaModelfile, renderReadme } from "./persona/personaCard";
 import type { PersonaCard } from "./persona/personaCard";
 import type { CharacterState } from "./durable-objects/characterState";
@@ -26,9 +27,9 @@ export interface DeliveryEnv {
   CHARACTER: DurableObjectNamespace<CharacterState>;
 }
 
-export type DeliveryScope = "card" | "behavior" | "mcp" | "bundle";
+export type DeliveryScope = "card" | "behavior" | "mcp" | "bundle" | "slm" | "decision";
 
-export const DELIVERY_SCOPES: DeliveryScope[] = ["card", "behavior", "mcp", "bundle"];
+export const DELIVERY_SCOPES: DeliveryScope[] = ["card", "behavior", "mcp", "bundle", "slm", "decision"];
 
 export interface Sku {
   id: DeliveryScope;
@@ -84,6 +85,33 @@ export const SKUS: Sku[] = [
     excludes:
       "書き込みの口は開けない（読み取りだけ）。persona_reply も分身側には一切保存しないので、" +
       "呼んでも人格は変わらない。会話の全文ログと持ち主の連絡先は含まれない",
+  },
+  {
+    id: "slm",
+    name: "自分専用のSLM（小さな言語モデル）一式",
+    buyer: "クラウドに繋がず、手元の小さなモデルでこの人格を喋らせたい相手",
+    delivers: [
+      "Modelfile（土台のSLM＋人格。ollama create だけで動く）",
+      "train.jsonl / eval.jsonl（口調をさらに寄せたいとき用のLoRA学習データ）",
+      "README.md（0.5B〜8Bの選び方、学習手順、移ったかどうかの確かめ方）",
+    ],
+    requires: "Ollama が動く環境。0.5BならRaspberry Pi 4でも回る",
+    excludes:
+      "会話の全文ログ、持ち主の連絡先、機微な属性。" +
+      "※ SLM は Small Language Model。SML（Standard ML という別の言語）ではない",
+  },
+  {
+    id: "decision",
+    name: "判断プロファイル（判断特化AI向け）",
+    buyer: "Jev のような『文章を書かない判断特化モデル』に、誰の判断かを与えたい相手",
+    delivers: [
+      "decision_profile.json（Choice / Score / Noul の問いと、この人の既定の答え）",
+      "既定値の根拠（どの軸から来ているか）と、確からしさ（confidence）",
+    ],
+    requires: "判断特化モデルのAPI、または自前の分岐ロジック",
+    excludes:
+      "**Jev そのものは作れません**（TypeSafe AI の製品で、重みもファインチューンの口も非公開）。" +
+      "渡すのは、判断特化モデルへ流し込む『この人の判断の癖』です",
   },
   {
     id: "bundle",
@@ -312,6 +340,40 @@ export async function buildDelivery(
         null,
         2
       ),
+    };
+  }
+
+  if (scope === "slm") {
+    const base = SLM_BASES.some((b) => b.id === format) ? format : DEFAULT_SLM_BASE;
+    const pkg = buildSlmPackage(card, base);
+    return {
+      contentType: "application/json; charset=utf-8",
+      filename: `${safeName}_slm.json`,
+      body: JSON.stringify(
+        {
+          format: "waketama.slm-package",
+          formatVersion: "1.0",
+          generatedAt: Date.now(),
+          stats: pkg.stats,
+          files: {
+            Modelfile: pkg.modelfile,
+            "train.jsonl": pkg.trainJsonl,
+            "eval.jsonl": pkg.evalJsonl,
+            "README.md": pkg.readme,
+          },
+          note: "files の各キーがそのままファイル名です。まず Modelfile だけで動かしてみてください。",
+        },
+        null,
+        2
+      ),
+    };
+  }
+
+  if (scope === "decision") {
+    return {
+      contentType: "application/json; charset=utf-8",
+      filename: `${safeName}_decision_profile.json`,
+      body: JSON.stringify(buildDecisionProfile(card), null, 2),
     };
   }
 

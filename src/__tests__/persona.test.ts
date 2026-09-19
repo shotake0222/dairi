@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { env, SELF, runInDurableObject } from "cloudflare:test";
 import type { CharacterData } from "../durable-objects/characterState";
 import { CONSENT_VERSION } from "../persona/consent";
-import { MIN_COHORT_SIZE } from "../market";
+import { MIN_COHORT_SIZE } from "../insights";
 
 /**
  * 同意・属性・人格カード・マーケット・管理画面の通しの検証。
@@ -71,7 +71,7 @@ describe("同意（/api/consent）", () => {
     const data = await res.json<{ consent: Record<string, unknown> }>();
     expect(data.consent.profile).toBe(true);
     expect(data.consent.aggregate).toBe(false);
-    expect(data.consent.marketplace).toBe(false);
+    expect(data.consent.terms).toBe(false);
     expect(data.consent.version).toBe(CONSENT_VERSION);
   });
 });
@@ -168,16 +168,14 @@ describe("集計用レジストリ（同意が無ければ行ごと存在しな�
     expect(row!.age_band).toBe("30代");
   });
 
-  it("registers for the marketplace without leaking the demographics", async () => {
-    const cid = freshCid("market-only");
+  it("出品の同意は廃止されたので、集約に同意していない分身は一切載らない", async () => {
+    const cid = freshCid("no-market");
     const token = await createCharacter(cid);
-    await post("/api/consent", { characterId: cid, token, consent: { profile: true, marketplace: true } });
+    // かつては marketplace への同意だけでもレジストリに行ができていた。
+    // 出品を畳んだので、載る条件は集約への同意ひとつだけになった。
+    await post("/api/consent", { characterId: cid, token, consent: { profile: true, terms: true } });
     await post("/api/profile", { characterId: cid, token, answers: { ageBand: ["30代"] } });
-
-    const row = await registryRow(cid);
-    expect(row!.consent_marketplace).toBe(1);
-    // 出品への同意は、統計に属性を載せてよいという意味ではない
-    expect(row!.age_band).toBeNull();
+    expect(await registryRow(cid)).toBeNull();
   });
 
   it("never stores accessibility settings in the registry", async () => {
@@ -233,93 +231,32 @@ describe("人格カード（/api/persona/card）", () => {
   });
 });
 
-describe("マーケット", () => {
-  it("refuses to create a listing before the user consented", async () => {
-    const cid = freshCid("listing-consent");
-    const token = await createCharacter(cid);
-
-    const res = await post("/api/market/listing", {
-      characterId: cid,
-      token,
-      title: "うちの子",
-      description: "とても良い子に育ちました",
-      action: "list",
-    });
-    expect(res.status).toBe(403);
+describe("匿名集約のセグメント統計（出品機能は廃止済み）", () => {
+  it("本人による出品の口は、もう存在しない", async () => {
+    // 畳んだ機能のURLが生きていると、古いクライアントや検証環境から呼ばれ続ける。
+    // 「404であること」をテストにしておかないと、消したつもりで残る。
+    for (const path of ["/api/market/listing", "/api/market/listings", "/api/market/request"]) {
+      const res = await SELF.fetch(`${BASE}${path}`);
+      expect(res.status).toBe(404);
+    }
   });
 
-  it("publishes only after an explicit 公開 action", async () => {
-    const cid = freshCid("listing-flow");
-    const token = await createCharacter(cid, "でるこ");
-    await post("/api/consent", { characterId: cid, token, consent: { marketplace: true } });
-
-    type Browse = { listings: Array<{ title: string }> };
-    // 同意しただけでは載らない
-    let browse = await (await SELF.fetch(`${BASE}/api/market/listings`)).json<Browse>();
-    const before = browse.listings.length;
-
-    await post("/api/market/listing", {
-      characterId: cid,
-      token,
-      title: "おっとりした子",
-      description: "毎日のできごとを聞いてくれます",
-      action: "save",
-    });
-    browse = await (await SELF.fetch(`${BASE}/api/market/listings`)).json<Browse>();
-    expect(browse.listings.length).toBe(before); // 下書きは公開されない
-
-    await post("/api/market/listing", {
-      characterId: cid,
-      token,
-      title: "おっとりした子",
-      description: "毎日のできごとを聞いてくれます",
-      action: "list",
-    });
-    browse = await (await SELF.fetch(`${BASE}/api/market/listings`)).json<Browse>();
-    expect(browse.listings.some((l) => l.title === "おっとりした子")).toBe(true);
+  it("出品ページそのものも無くなっている", async () => {
+    const res = await SELF.fetch(`${BASE}/market`);
+    expect(res.status).toBe(404);
   });
 
-  it("does not expose the character id or the owner in the public listing", async () => {
-    const cid = freshCid("listing-privacy");
-    const token = await createCharacter(cid);
-    await post("/api/consent", { characterId: cid, token, consent: { marketplace: true } });
-    await post("/api/market/listing", {
-      characterId: cid,
-      token,
-      title: "ひみつの子",
-      description: "説明はここに書きます",
-      action: "list",
-    });
-
-    const body = await (await SELF.fetch(`${BASE}/api/market/listings`)).text();
-    expect(body).not.toContain(cid);
-    expect(body).not.toContain(token);
-  });
-
-  it("suppresses segments below the minimum cohort size", async () => {
-    // 同意した分身が少数しかいない状態で統計を出すと、条件次第で個人が分かってしまう
-    const cid = freshCid("k-anon");
-    const token = await createCharacter(cid);
-    await post("/api/consent", { characterId: cid, token, consent: { aggregate: true } });
-
+  it("人数が足りないグループは統計に出さない", async () => {
     const data = await (await SELF.fetch(`${BASE}/api/market/insights`)).json<{
-      insights: unknown[];
       minCohortSize: number;
-      suppressedSegments: number;
+      insights: unknown[];
     }>();
+    // 個人が特定できる粒度を、そもそも出さない
     expect(data.minCohortSize).toBe(MIN_COHORT_SIZE);
-    expect(data.insights).toHaveLength(0);
-    expect(data.suppressedSegments).toBeGreaterThan(0);
+    expect(Array.isArray(data.insights)).toBe(true);
   });
 });
 
-/**
- * 管理画面の入口。
- *
- * 合言葉の有無を、テストの中で明示的に切り替えている。
- * 開発時に .dev.vars へ ADMIN_PASSCODE を書いていると、環境によって結果が変わってしまうため
- * （実際それで落ちた）。「未設定なら開かない」は最も守りたい性質なので、環境に依存させない。
- */
 describe("管理画面の入口", () => {
   type MutableEnv = { ADMIN_PASSCODE?: string };
 

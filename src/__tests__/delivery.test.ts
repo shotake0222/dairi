@@ -237,3 +237,73 @@ describe("MCP（相手がAIのとき）", () => {
     expect((after!.recentTurns ?? []).length).toBe((before!.recentTurns ?? []).length);
   });
 });
+
+/**
+ * 「自分専用のSLM」と「判断プロファイル」。
+ *
+ * 用語の扱いも、ここで固定しておく。
+ * SLM は Small Language Model で、SML（Standard ML という別の言語）ではない。
+ * Jev は TypeSafe AI の製品で、**こちらでは作れない**。作れるのは、
+ * 判断特化モデルへ渡す「この人の判断の癖」まで。
+ * 資料と実装がずれると商談で嘘をつくことになるので、文言もテストで縛る。
+ */
+describe("自分専用のSLM / 判断プロファイル", () => {
+  it("SLMの説明で、SMLと取り違えていない", () => {
+    const slm = SKUS.find((s) => s.id === "slm")!;
+    expect(slm.name).toContain("SLM");
+    // 「SML」という並びが本文のどこにも無いこと（打ち間違いを機械で止める）
+    expect(`${slm.name}${slm.buyer}${slm.delivers.join("")}${slm.requires}`).not.toMatch(/SML/);
+  });
+
+  it("Jevを『作れる』とは書いていない", () => {
+    const d = SKUS.find((s) => s.id === "decision")!;
+    expect(d.excludes).toContain("作れません");
+  });
+
+  it("SLM一式は、そのまま ollama create できる形で出る", async () => {
+    const { cid } = await makeCharacter("slm");
+    const issued = await issueGrant(env, { characterId: cid, scopes: ["slm"] });
+    if (!issued.ok) return;
+
+    const res = await SELF.fetch(`${BASE}/api/delivery?scope=slm&token=${issued.token}`);
+    expect(res.status).toBe(200);
+    const pkg = await res.json<{ files: Record<string, string>; stats: { base: string; enough: boolean } }>();
+    expect(pkg.files.Modelfile).toContain("FROM ");
+    expect(pkg.files["README.md"]).toContain("ollama create");
+    // 会話が浅い分身は学習データが足りない。そこを黙って十分と言わないこと
+    expect(pkg.stats.enough).toBe(false);
+  });
+
+  it("判断プロファイルは Choice / Score / Noul の形で出て、確からしさを隠さない", async () => {
+    const { cid } = await makeCharacter("decision");
+    const issued = await issueGrant(env, { characterId: cid, scopes: ["decision"] });
+    if (!issued.ok) return;
+
+    const res = await SELF.fetch(`${BASE}/api/delivery?scope=decision&token=${issued.token}`);
+    const profile = await res.json<{
+      confidence: number;
+      questions: Array<{ type: string; prior: number; because: string }>;
+      note: string;
+    }>();
+
+    expect(profile.questions.length).toBeGreaterThan(4);
+    for (const q of profile.questions) {
+      expect(["choice", "score", "noul"]).toContain(q.type);
+      expect(typeof q.prior).toBe("number");
+      // 既定値の根拠が無いと、受け取った側が信じてよいのか判断できない
+      expect(q.because.length).toBeGreaterThan(0);
+    }
+    // 生まれたての分身なので、確からしさは低く出るはず
+    expect(profile.confidence).toBeLessThan(30);
+    expect(profile.note).toContain("Jev");
+  });
+
+  it("判断プロファイルにも、会話や覚え書きは混ざらない", async () => {
+    const { cid } = await makeCharacter("decision-leak");
+    const issued = await issueGrant(env, { characterId: cid, scopes: ["decision"] });
+    if (!issued.ok) return;
+    const text = await (await SELF.fetch(`${BASE}/api/delivery?scope=decision&token=${issued.token}`)).text();
+    expect(text).not.toContain("コタロウ");
+    expect(text).not.toContain("夜勤");
+  });
+});

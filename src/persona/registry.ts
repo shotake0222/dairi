@@ -48,10 +48,10 @@ const first = (answers: ProfileAnswers, key: string): string | null => answers[k
  * 取り消しは即座に効かないと意味が無い。
  */
 export async function syncRegistry(env: RegistryEnv, snap: RegistrySnapshot): Promise<void> {
+  // 出品の同意（marketplace）は廃止した。レジストリに載る条件は集約への同意だけ。
   const aggregate = hasConsent(snap.consent, "aggregate");
-  const marketplace = hasConsent(snap.consent, "marketplace");
 
-  if (!aggregate && !marketplace) {
+  if (!aggregate) {
     await removeFromRegistry(env, snap.characterId);
     return;
   }
@@ -127,7 +127,7 @@ export async function syncRegistry(env: RegistryEnv, snap: RegistrySnapshot): Pr
         shareProfile ? completionRate(snap.profile) : 0,
         topInterests,
         aggregate ? 1 : 0,
-        marketplace ? 1 : 0,
+        0, // consent_marketplace は廃止。列だけ残っているので常に0を書く
         Math.round(snap.depthScore),
         snap.psychoAnswered
       )

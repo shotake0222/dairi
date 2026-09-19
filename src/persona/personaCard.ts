@@ -280,7 +280,7 @@ function sanitizeModelName(name: string): string {
 
 export function buildPersonaCard(input: BuildPersonaCardInput): PersonaCard {
   const style = deriveSpeechStyle(input.personality);
-  const voice = deriveVoiceProfile(input.characterId, input.personality);
+  const voice = deriveVoiceProfile(input.characterId, input.personality, input.species, input.color);
 
   const notes = input.profileNotes
     .split("\n")
