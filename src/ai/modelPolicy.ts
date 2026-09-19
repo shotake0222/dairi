@@ -18,6 +18,8 @@
  *   （弱いモデルにすると口調まで崩れて、単に品質が悪いだけになるため）。
  */
 
+import { stageFor } from "./growth";
+
 export interface ModelEnv {
   AI: Ai;
   /** 本番で会話モデルを差し替えるための上書き（wrangler の --var / [vars] で注入）。 */
@@ -132,17 +134,19 @@ export interface ContextBudget {
   maxTokens: number;
 }
 
+/**
+ * 文脈の量は、成長段階の定義（src/ai/growth.ts）からそのまま引く。
+ *
+ * 以前はここに閾値を直接書いていたが、段階名の判定（characterState）にも
+ * 同じ閾値が書かれていて、片方だけ直すと「成熟期なのに文脈が短い」というズレが起きた。
+ * 定義元は1つにする。
+ */
 export function contextBudgetFor(interactionCount: number): ContextBudget {
-  if (interactionCount < 5) {
-    // 誕生したばかり: まだ相手のことを知らない。短く、たどたどしく。
-    return { historyTurns: 3, recallTopK: 2, replyLengthHint: "1〜2文", maxTokens: 160 };
-  }
-  if (interactionCount < 20) {
-    return { historyTurns: 5, recallTopK: 3, replyLengthHint: "1〜3文", maxTokens: 220 };
-  }
-  if (interactionCount < 50) {
-    return { historyTurns: 7, recallTopK: 4, replyLengthHint: "2〜3文", maxTokens: 280 };
-  }
-  // 成熟期: 過去の話も踏まえて、踏み込んだ返しができるようになる。
-  return { historyTurns: 10, recallTopK: 5, replyLengthHint: "2〜4文", maxTokens: 360 };
+  const stage = stageFor(interactionCount);
+  return {
+    historyTurns: stage.historyTurns,
+    recallTopK: stage.recallTopK,
+    replyLengthHint: stage.replyLengthHint,
+    maxTokens: stage.maxTokens,
+  };
 }

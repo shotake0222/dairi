@@ -84,6 +84,7 @@
     <button class="tab" data-panel="requests" type="button">購入希望</button>
     <button class="tab" data-panel="contacts" type="button">問い合わせ</button>
     <button class="tab" data-panel="questions" type="button">設問</button>
+    <button class="tab" data-panel="yorishiro" type="button">依代（タグ・QR）</button>
     <button class="tab" data-panel="recovery" type="button">分身の復旧</button>
   </div>
 
@@ -202,7 +203,7 @@
         <strong>これは所有権を移す操作です。</strong>本人であることを確認してから実行してください。
       </p>
       <div class="row">
-        <input type="text" id="recoveryQuery" placeholder="NFCタグのID、または分身のID" />
+        <input type="text" id="recoveryQuery" placeholder="依代のID（タグ／QR）、または分身のID" />
         <button id="recoveryLookupBtn" type="button">探す</button>
       </div>
       <div id="recoveryResult" style="margin-top:14px"></div>
@@ -224,8 +225,80 @@
       <div class="scroll"><table id="requestTable"></table></div>
     </section>
   </div>
+
+  <div class="panel" id="panel-yorishiro" hidden>
+    <section>
+      <h2>依代（よりしろ）とは</h2>
+      <p class="lead">
+        分身が宿るもの。<strong>NFCタグ</strong>でも<strong>QR</strong>でも、仕組みはまったく同じです。
+        <br />・<strong>1つの依代からは1体だけ</strong>（2回目以降の読み取りは、同じ子に会いに行く）
+        <br />・<strong>姿はランダム</strong>。どの依代でも確率は等しく、運営が指定することはできません
+        <br />ここを崩すと「集める」が成り立たないので、姿を固定する仕組みは意図的に用意していません。
+        「その場所でしか手に入らない」は、<strong>そのコードをその場所にしか置かないこと</strong>で作ります。
+      </p>
+      <p class="lead">
+        書き込む／刷るURL: <code>https://&lt;ドメイン&gt;/t/&lt;コード&gt;</code>（かざす）、
+        <code>https://&lt;ドメイン&gt;/q/&lt;コード&gt;</code>（QR）。どちらのパスでも同じ結果になります。
+      </p>
+    </section>
+
+    <section>
+      <h2>配布元（特別な場所）</h2>
+      <p class="lead">
+        先に作っておくと、発行した依代に「どこで配ったか」が残り、手に入れた人の画面にも出ます。
+        <br /><strong>配ったあとに消さないこと。</strong>止めたいだけなら「停止中」にしてください。
+      </p>
+      <div class="formGrid">
+        <label>コード（空なら自動）<input type="text" id="spotCode" placeholder="izumo-yaegaki" /></label>
+        <label>名前（利用者に見せる）<input type="text" id="spotLabel" placeholder="八重垣神社" /></label>
+        <label>設置場所のメモ（運営用・利用者には出ない）<input type="text" id="spotPlace" placeholder="社務所の掲示板" /></label>
+        <label>ひとこと（読み取った人に見せる）<input type="text" id="spotNote" placeholder="境内でだけ手に入る子です" /></label>
+        <label>状態<select id="spotActive"><option value="1">受付中</option><option value="0">停止中</option></select></label>
+      </div>
+      <div class="row">
+        <button id="saveSpotBtn" type="button">保存する</button>
+        <button id="clearSpotBtn" type="button" class="ghost">入力を空にする</button>
+        <span class="lead" id="spotStatus"></span>
+      </div>
+      <div class="scroll" style="margin-top:12px"><table id="spotTable"></table></div>
+    </section>
+
+    <section>
+      <h2>依代の発行</h2>
+      <p class="lead">
+        コードを作って台帳に載せます。<strong>タグへの書き込みやQRの印刷は、ここで出るURLを使って別途行ってください。</strong>
+        <br />台帳に無いコードで読み取られても分身は生まれます（台帳を作る前に配った分を死なせないため）。
+        台帳は「こちらが発行した分はどれか」「まだ使われていないのはどれか」を見るためのものです。
+      </p>
+      <div class="formGrid">
+        <label>数<input type="number" id="tagCount" value="10" min="1" max="200" /></label>
+        <label>配り方
+          <select id="tagKind"><option value="nfc">NFCタグ（かざす）</option><option value="qr">QR（読み取る）</option></select>
+        </label>
+        <label>発行の単位<input type="text" id="tagBatch" placeholder="2026-09 初回100枚" /></label>
+        <label>配布元（任意）<select id="tagSpot"><option value="">（なし）</option></select></label>
+      </div>
+      <div class="row">
+        <button id="issueTagsBtn" type="button">発行する</button>
+        <button id="exportTagsBtn" type="button" class="ghost">一覧をCSVで書き出す</button>
+        <span class="lead" id="tagStatus"></span>
+      </div>
+      <div class="scroll" style="margin-top:12px"><table id="tagTable"></table></div>
+    </section>
+
+    <section id="qrPreview" hidden>
+      <h2 id="qrTitle">QR</h2>
+      <p class="lead" id="qrUrl" style="word-break:break-all"></p>
+      <div id="qrBox" style="background:#fff;padding:12px;display:inline-block;border-radius:8px"></div>
+      <div class="row" style="margin-top:12px">
+        <button id="qrDownloadBtn" type="button">PNGで保存する</button>
+        <button id="qrCloseBtn" type="button" class="ghost">とじる</button>
+      </div>
+    </section>
+  </div>
 </main>
 
+<script src="/vendor/qrcode.js"></script>
 <script>
   async function api(path, options) {
     const res = await fetch(path, options);
@@ -291,6 +364,7 @@
       if (tab.dataset.panel === "requests") loadRequests();
       if (tab.dataset.panel === "contacts") loadContacts();
       if (tab.dataset.panel === "questions") loadQuestions();
+      if (tab.dataset.panel === "yorishiro") loadYorishiro();
     });
   });
 
@@ -309,7 +383,7 @@
     const consent = data.consent || {};
     const profile = data.profile || {};
     const cards = [
-      { k: "分身の総数", v: data.totals.characters, s: "NFCタグに紐づいた数" },
+      { k: "分身の総数", v: data.totals.characters, s: "依代に紐づいた数" },
       { k: "データ提供に同意", v: data.totals.registered, s: "集約または出品に同意" },
       { k: "集約に同意", v: consent.aggregate || 0, s: "統計の母集団" },
       { k: "出品に同意", v: consent.marketplace || 0, s: "マーケットに出せる" },
@@ -717,6 +791,204 @@
       status.textContent = e.message;
     }
   });
+
+  // ---- 依代（NFCタグ・QR）----
+  //
+  // 発行した分がどれだけ使われたかが分からないと、設置先に報告もできないし、
+  // 追加でいくつ刷ればいいかも決められない。ここは運用のための画面。
+  let spotList = [];
+
+  function yorishiroUrl(tagId, kind) {
+    return `${location.origin}/${kind === "qr" ? "q" : "t"}/${tagId}`;
+  }
+
+  async function loadYorishiro() {
+    await Promise.all([loadSpots(), loadTags()]);
+  }
+
+  async function loadSpots() {
+    const data = await api("/api/admin/spots");
+    spotList = data.spots || [];
+
+    // 発行フォームの「配布元」も、ここで引いた一覧から作る（手打ちだと綴り違いで紐づかない）
+    const select = document.getElementById("tagSpot");
+    const keep = select.value;
+    select.innerHTML = '<option value="">（なし）</option>';
+    for (const sp of spotList) {
+      const opt = el("option", `${sp.label}（${sp.code}）`);
+      opt.value = sp.code;
+      select.appendChild(opt);
+    }
+    select.value = keep;
+
+    table("spotTable", ["コード", "名前", "設置メモ", "状態", "発行", "使用済", ""], spotList, (sp) => {
+      const tr = el("tr");
+      tr.appendChild(el("td", sp.code));
+      tr.appendChild(el("td", sp.label));
+      tr.appendChild(el("td", sp.place || "—"));
+      tr.appendChild(el("td", sp.active ? "受付中" : "停止中"));
+      tr.appendChild(el("td", sp.issued ?? 0));
+      tr.appendChild(el("td", sp.claimed ?? 0));
+
+      const td = el("td");
+      const edit = el("button", "編集");
+      edit.className = "ghost";
+      edit.addEventListener("click", () => {
+        document.getElementById("spotCode").value = sp.code;
+        document.getElementById("spotLabel").value = sp.label;
+        document.getElementById("spotPlace").value = sp.place || "";
+        document.getElementById("spotNote").value = sp.note || "";
+        document.getElementById("spotActive").value = sp.active ? "1" : "0";
+        document.getElementById("spotCode").scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+      td.appendChild(edit);
+      tr.appendChild(td);
+      return tr;
+    });
+  }
+
+  document.getElementById("saveSpotBtn").addEventListener("click", async () => {
+    const status = document.getElementById("spotStatus");
+    try {
+      await api("/api/admin/spots", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          code: document.getElementById("spotCode").value,
+          label: document.getElementById("spotLabel").value,
+          place: document.getElementById("spotPlace").value,
+          note: document.getElementById("spotNote").value,
+          active: document.getElementById("spotActive").value === "1",
+        }),
+      });
+      status.textContent = "保存しました";
+      await loadSpots();
+    } catch (e) {
+      status.textContent = e.message;
+    }
+  });
+
+  document.getElementById("clearSpotBtn").addEventListener("click", () => {
+    for (const id of ["spotCode", "spotLabel", "spotPlace", "spotNote"]) document.getElementById(id).value = "";
+    document.getElementById("spotActive").value = "1";
+    document.getElementById("spotStatus").textContent = "";
+  });
+
+  async function loadTags() {
+    const data = await api("/api/admin/tags?limit=500");
+    const rows = data.tags || [];
+    document.getElementById("tagStatus").textContent =
+      `${rows.length}件（うち使用済 ${rows.filter((r) => r.characterId).length}件）`;
+
+    table("tagTable", ["コード", "配り方", "配布元", "単位", "状態", "URL", ""], rows, (r) => {
+      const tr = el("tr");
+      tr.appendChild(el("td", r.tagId));
+      tr.appendChild(el("td", r.kind === "qr" ? "QR" : "NFC"));
+      tr.appendChild(el("td", r.spot || "—"));
+      tr.appendChild(el("td", r.batch || "—"));
+      tr.appendChild(el("td", r.characterId ? "使用済" : "未使用"));
+
+      const urlTd = el("td");
+      const url = yorishiroUrl(r.tagId, r.kind);
+      const link = el("a", url);
+      link.href = url;
+      link.target = "_blank";
+      link.rel = "noopener";
+      urlTd.appendChild(link);
+      tr.appendChild(urlTd);
+
+      const td = el("td");
+      const qr = el("button", "QR");
+      qr.className = "ghost";
+      qr.addEventListener("click", () => showQr(r.tagId, url));
+      td.appendChild(qr);
+      tr.appendChild(td);
+      return tr;
+    });
+  }
+
+  document.getElementById("issueTagsBtn").addEventListener("click", async () => {
+    const status = document.getElementById("tagStatus");
+    try {
+      const data = await api("/api/admin/tags", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          count: Number(document.getElementById("tagCount").value),
+          kind: document.getElementById("tagKind").value,
+          batch: document.getElementById("tagBatch").value,
+          spot: document.getElementById("tagSpot").value,
+        }),
+      });
+      status.textContent = `${data.tagIds.length}件を発行しました`;
+      // 配布元ごとの発行数もその場で合わせる（見に行くたびに数が古いと、報告に使えない）
+      await Promise.all([loadTags(), loadSpots()]);
+    } catch (e) {
+      status.textContent = e.message;
+    }
+  });
+
+  // 書き込み作業は手元のアプリで行うので、URLの一覧を持ち出せる形にしておく。
+  // Excelで開かれることを前提にBOMを付ける（付けないと日本語が化ける）。
+  document.getElementById("exportTagsBtn").addEventListener("click", async () => {
+    const data = await api("/api/admin/tags?limit=1000");
+    const rows = [["tag_id", "kind", "url", "spot", "batch", "claimed"]];
+    for (const r of data.tags || []) {
+      rows.push([r.tagId, r.kind, yorishiroUrl(r.tagId, r.kind), r.spot || "", r.batch || "", r.characterId ? "1" : "0"]);
+    }
+    const csv = rows.map((cols) => cols.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\r\n");
+    const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `yorishiro-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+
+  // QRの画像はこの画面の中で作る。外部のQR生成サイトに貼ると、
+  // どのコードを誰が刷ったかが他所に残ることになる。
+  function showQr(tagId, url) {
+    const box = document.getElementById("qrBox");
+    document.getElementById("qrTitle").textContent = `QR: ${tagId}`;
+    document.getElementById("qrUrl").textContent = url;
+    box.innerHTML = "";
+    // typeNumber 0 = 中身の長さに合わせて自動。誤り訂正 M は印刷物の定番
+    const qr = qrcode(0, "M");
+    qr.addData(url);
+    qr.make();
+    // scalable: true にすると width/height が消えて、表示上の大きさが0になる。
+    // 印刷用に落とすときも、ここで実寸を持たせておいた方が扱いやすい。
+    box.innerHTML = qr.createSvgTag({ cellSize: 6, margin: 4 });
+    document.getElementById("qrPreview").hidden = false;
+    document.getElementById("qrPreview").scrollIntoView({ behavior: "smooth", block: "center" });
+    document.getElementById("qrDownloadBtn").onclick = () => downloadQrPng(tagId, box.querySelector("svg"));
+  }
+
+  document.getElementById("qrCloseBtn").addEventListener("click", () => {
+    document.getElementById("qrPreview").hidden = true;
+  });
+
+  /** SVGのままでは印刷用に渡しにくいので、キャンバス経由でPNGにして落とす。 */
+  function downloadQrPng(tagId, svg) {
+    if (!svg) return;
+    const size = 1024;
+    const source = new XMLSerializer().serializeToString(svg);
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, size, size);
+      ctx.drawImage(img, 0, 0, size, size);
+      const a = document.createElement("a");
+      a.href = canvas.toDataURL("image/png");
+      a.download = `qr-${tagId}.png`;
+      a.click();
+    };
+    img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(source)));
+  }
 
   loadOverview().catch((e) => {
     document.querySelector("main").prepend(

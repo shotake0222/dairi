@@ -613,7 +613,7 @@ console.log("\n[24] ロゴと行き止まり");
 for (const [pathname, label] of [["/lp", "LP"], ["/home", "分身の一覧"], ["/market", "マーケット"]]) {
   const html = await (await fetch(`${BASE}${pathname}`)).text();
   // 勾玉ロゴは同じ座標をHTMLに直接埋め込んである（public/icons/mark.svg と同じ形）
-  check(`${label}に勾玉のロゴが入っている`, html.includes("M24 7A17 17 0 0 1 24 41"));
+  check(`${label}に勾玉のロゴが入っている`, html.includes("M59.7 13.8 C61.1"));
 }
 check("ロゴのSVGが単体でも配信される", (await fetch(`${BASE}/icons/mark.svg`)).ok);
 
@@ -655,6 +655,86 @@ console.log("\n[25] 人格カードが載せ先で動く形になっているか
   check("年収はプロンプトに載らない", !/年収|万円/.test(prompt));
   check("AI失敗時の定型文が応答例に混ざっていない",
     (card.examples || []).every((e) => !e.assistant.includes("うまく考えがまとまらない")));
+}
+
+console.log("\n[26] 依代（NFCタグ・QR）と、分身の増やし方");
+{
+  // 集める体験の土台は「1つの依代から1体だけ」「入口が違っても同じ扱い」の2つ。
+  // どちらもコードを分けた瞬間に静かに壊れる類なので、実物の経路で確かめる。
+  const code = `e2e-yori-${Date.now()}`;
+  const first = await fetch(`${BASE}/t/${code}`, { redirect: "manual" });
+  const firstLoc = new URL(first.headers.get("location"), BASE);
+  const born = firstLoc.searchParams.get("cid");
+  check("依代をかざすと分身が生まれる", Boolean(born) && firstLoc.searchParams.get("first") === "1");
+  check("持ち主の印は誕生の瞬間だけURLに乗る", Boolean(firstLoc.searchParams.get("token")));
+
+  const second = await fetch(`${BASE}/t/${code}`, { redirect: "manual" });
+  const secondLoc = new URL(second.headers.get("location"), BASE);
+  check("同じ依代からは2体目が生まれない", secondLoc.searchParams.get("cid") === born);
+  check("2回目には持ち主の印が乗らない", secondLoc.searchParams.get("token") === null);
+
+  const viaQr = await fetch(`${BASE}/q/${code}`, { redirect: "manual" });
+  check("QRとして読んでも同じ子に着く",
+    new URL(viaQr.headers.get("location"), BASE).searchParams.get("cid") === born);
+
+  // 依代を持っていない人の入口
+  await page.goto(`${BASE}/add`, { waitUntil: "domcontentloaded" });
+  check("分身の増やし方のページが開く", (await page.title()).includes("分身を増やす"));
+  const addText = await page.textContent("main");
+  check("NFCという言い方が画面に出ていない", !addText.includes("NFC"), addText.slice(0, 80));
+  check("依代という言い方に揃っている", addText.includes("依代"));
+  await page.click("#createBtn");
+  await page.waitForURL(/\/summon\?cid=/, { timeout: 15000 });
+  check("依代なしでも分身を始められる", page.url().includes("/summon?cid="));
+  await page.screenshot({ path: path.join(OUT_DIR, "add-direct.png") });
+
+  // 一覧に「増やす」入口があること（無いと、2体目が作れることに気づけない）
+  await page.goto(`${BASE}/home`, { waitUntil: "domcontentloaded" });
+  const homeText = await page.textContent("body");
+  check("一覧からも増やせる", homeText.includes("分身を増やす"));
+  check("一覧にNFCという言い方が残っていない", !homeText.includes("NFC"), homeText.slice(0, 80));
+}
+
+console.log("\n[27] 覚え書きの土台と、前回までの会話");
+{
+  // 「だいぶ会話しても覚え書きが空っぽ」への対処。
+  // 本人が先に書ける場所があり、それが会話にも届くこと。
+  // 引き継ぎコードを使った時点で持ち主の印が入れ替わっているので、
+  // この端末の記録も最新のものに揃えてから開く（実機では引き継ぎ画面が同じことをしている）。
+  await page.evaluate(([c, t]) => localStorage.setItem(`sodatsukake_token_${c}`, t), [newCid, currentToken]);
+  await page.goto(`${BASE}/profile?cid=${newCid}`, { waitUntil: "domcontentloaded" });
+  const profileText = await page.textContent("main");
+  check("土台を自分で書く欄がある", profileText.includes("あなたが書く土台"), profileText.slice(0, 80));
+  check("会話から覚えた分と分かれている", profileText.includes("会話から覚えたこと"));
+
+  // このページは読み込み後にサーベイと厚みを描き直すので、実クリックだと要素が入れ替わる瞬間に当たる。
+  // 押したいのはハンドラなので、要素の安定待ちに引っかからない形で直接呼ぶ。
+  await page.waitForLoadState("networkidle");
+  await page.evaluate(() => document.getElementById("editSeedBtn").click());
+  await page.evaluate(() => document.getElementById("templateSeedBtn").click());
+  const template = await page.inputValue("#notesSeedEdit");
+  check("書くことに詰まらないようひな形が出る", template.includes("・呼ばれたい名前は"));
+  await page.fill("#notesSeedEdit", "柴犬のコタロウを飼っている\n夜勤で働いている");
+  await page.evaluate(() => document.getElementById("saveSeedBtn").click());
+  await page.waitForTimeout(1200);
+  const seedShown = await page.textContent("#notesSeed");
+  check("土台が保存されて表示される", seedShown.includes("柴犬のコタロウ"), seedShown.slice(0, 60));
+  await page.screenshot({ path: path.join(OUT_DIR, "profile-seed.png") });
+
+  // 土台は、分身が会話で使う「覚えていること」に混ぜて渡される
+  const card = await (await fetch(
+    `${BASE}/api/persona/card?cid=${newCid}&token=${encodeURIComponent(currentToken)}&format=json`
+  )).json();
+  check("土台が分身の覚えていることに入る",
+    (card.notes || []).some((n) => n.includes("柴犬のコタロウ")), JSON.stringify(card.notes || []).slice(0, 80));
+
+  // 前回までの会話が画面に戻ること
+  await page.goto(`${BASE}/chat?cid=${newCid}`, { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(1500);
+  const chatText = await page.textContent("#log");
+  check("前に話した内容が残っている", chatText.length > 0 && chatText.includes("ここまでが前回まで"), chatText.slice(0, 80));
+  check("育ちの進み具合が出ている", Boolean(await page.$("#growthBar")));
+  await page.screenshot({ path: path.join(OUT_DIR, "chat-history.png") });
 }
 
 check("JavaScriptエラーが出ていない", pageErrors.length === 0, pageErrors.join(" / "));

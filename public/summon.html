@@ -4,9 +4,9 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>わけたま｜キャラクター召喚</title>
-<meta name="description" content="NFCタグをタップして、あなたの分身と出会う瞬間。" />
+<meta name="description" content="依代をかざして、あなたの分身と出会う瞬間。" />
 
-<!-- PWA（ホーム画面に追加）。NFCタグが手元に無くても分身に会いに来られるようにするための導線。 -->
+<!-- PWA（ホーム画面に追加）。依代が手元に無くても分身に会いに来られるようにするための導線。 -->
 <link rel="manifest" href="/manifest.webmanifest" />
 <meta name="theme-color" content="#7c5cff" />
 <link rel="icon" href="/icons/favicon-64.png" sizes="64x64" type="image/png" />
@@ -21,12 +21,12 @@
 <meta property="og:type" content="website" />
 <meta property="og:site_name" content="わけたま" />
 <meta property="og:title" content="わけたま｜キャラクター召喚" />
-<meta property="og:description" content="NFCタグをタップして、あなたの分身と出会う瞬間。" />
+<meta property="og:description" content="依代をかざして、あなたの分身と出会う瞬間。" />
 <meta property="og:image" content="/icons/ogp.png" />
 <meta property="og:url" content="/" />
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="わけたま｜キャラクター召喚" />
-<meta name="twitter:description" content="NFCタグをタップして、あなたの分身と出会う瞬間。" />
+<meta name="twitter:description" content="依代をかざして、あなたの分身と出会う瞬間。" />
 <meta name="twitter:image" content="/icons/ogp.png" />
 <script type="module" src="https://cdn.jsdelivr.net/npm/@google/model-viewer@3.5.0/dist/model-viewer.min.js"></script>
 <style>
@@ -128,7 +128,7 @@
 </head>
 <body>
   <div class="stage">
-    <div class="brand"><svg class="mk" viewBox="0 0 48 48" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M24 7A17 17 0 0 1 24 41A6 6 0 0 0 24 29A11 11 0 0 1 24 7ZM28.6 18A4.6 4.6 0 1 1 19.4 18A4.6 4.6 0 1 1 28.6 18Z"/></svg><span>わけたま</span></div>
+    <div class="brand"><svg class="mk" viewBox="0 0 100 100" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M59.7 13.8 C61.1 14.9 65.5 17.8 68.1 20.4 C70.6 22.9 73.1 26.0 74.9 29.0 C76.6 32.1 77.8 35.3 78.5 38.7 C79.1 42.1 79.3 45.9 78.7 49.4 C78.0 52.9 76.7 56.7 74.8 59.7 C72.9 62.7 70.3 65.4 67.4 67.3 C64.5 69.2 60.8 70.7 57.5 71.1 C54.1 71.5 50.2 71.2 47.1 69.9 C44.0 68.6 40.1 64.6 38.7 63.5 A5.0 5.0 0 0 1 45.1 55.8 C45.6 56.1 46.9 57.1 48.0 57.4 C49.0 57.7 50.2 57.8 51.2 57.6 C52.3 57.4 53.5 56.9 54.4 56.3 C55.3 55.7 56.0 54.8 56.5 53.8 C57.0 52.9 57.3 51.7 57.3 50.6 C57.3 49.6 57.0 48.3 56.5 47.4 C56.0 46.5 55.0 45.5 54.1 45.2 C53.2 44.9 51.7 45.6 51.2 45.7 A16.5 16.5 0 0 1 59.7 13.8 Z M47.5 29.7a7.9 7.9 0 1 0 15.8 0a7.9 7.9 0 1 0 -15.8 0Z"/></svg><span>わけたま</span></div>
     <a id="homeLink" href="/home" title="分身の一覧へ">← 分身の一覧</a>
     <button id="infoBtn" type="button" title="わけたまとは？">?</button>
     <video id="cam" autoplay playsinline muted></video>
@@ -187,6 +187,9 @@
   const cid = params.get("cid");
   const isFirst = params.get("first") === "1";
   const tokenParam = params.get("token");
+  // どこで配られた依代から来たか（分かるときだけ付く）。見せるためだけの値。
+  const spotCode = params.get("spot");
+  let spotInfo = null;
 
   // 「持ち主トークン」: 誕生の瞬間だけURLに乗ってくるので、すぐlocalStorageへ保存してURLからは消しておく。
   // これ以降このブラウザが、名前変更・エクスポート/インポート・オプトインなど持ち主専用の操作を行える。
@@ -229,6 +232,24 @@
     appearText.textContent = "キャラクターが見つかりませんでした";
   }
 
+  /**
+   * どこで手に入れた子なのかを引く。
+   *
+   * 姿は依代の種類によらずランダムなので、「その場所の子」であることは見た目では分からない。
+   * だから言葉で一度だけ伝える。ここが無いと、特別な場所で配る意味が利用者に届かない。
+   */
+  async function loadSpot() {
+    if (!spotCode) return;
+    try {
+      const res = await fetch(`/api/spot?code=${encodeURIComponent(spotCode)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      spotInfo = data.spot || null;
+    } catch (e) {
+      /* 出会いの本筋ではないので、取れなければ黙って出さない */
+    }
+  }
+
   async function startCamera() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
@@ -259,6 +280,7 @@
 
   (async () => {
     startCamera();
+    if (spotCode) loadSpot();
     const data = await loadCharacter();
     applyModel(data);
 
@@ -281,6 +303,13 @@
 
       setTimeout(() => {
         hint.textContent = "この子に、名前をつけてあげよう";
+        // その場所でしか会えない子なら、どこで会ったのかをここで伝える。
+        // 見た目が決まっているのはそのためだと分かると、集める意味がはっきりする。
+        if (spotInfo) {
+          conceptText.textContent = spotInfo.note
+            ? `${spotInfo.label}　—　${spotInfo.note}`
+            : `${spotInfo.label}　で手に入れた子です`;
+        }
         nameForm.classList.add("show");
         nameInput.focus();
       }, 3400);

@@ -38,7 +38,20 @@ import { handleContact, handleAdminContacts } from "./contact";
 import { handleRecoveryLookup, handleRecoveryIssue } from "./recovery";
 import { countMetric } from "./persona/registry";
 import { canonicalFor, hostRedirect, isMarketingHost, renderRobots, renderSitemap, routingEnv, SW_UNREGISTER_SCRIPT } from "./hosts";
+import { growthProgress } from "./ai/growth";
 import { purgeOldIpQuota } from "./lib/ipQuota";
+import {
+  createDirectCharacter,
+  deleteSpot,
+  getSpot,
+  issueTags,
+  listSpots,
+  listTags,
+  publicSpot,
+  recordOrigin,
+  saveSpot,
+  spotOfTag,
+} from "./yorishiro";
 import { LogContext, newRequestId } from "./lib/log";
 
 export { CharacterState };
@@ -216,6 +229,26 @@ export default {
     if (url.pathname === "/api/admin/recovery/issue" && request.method === "POST") {
       return handleRecoveryIssue(env, await request.json(), log);
     }
+    // 依代（NFCタグの台帳／場所に置くQR）の管理。
+    // 何枚配ったか・どのQRが使われているかが分からないと、設置した側に報告もできない。
+    if (url.pathname === "/api/admin/tags" && request.method === "GET") {
+      return json({ tags: await listTags(env, Number(url.searchParams.get("limit") ?? 200)) });
+    }
+    if (url.pathname === "/api/admin/tags" && request.method === "POST") {
+      const result = await issueTags(env, await request.json<Record<string, unknown>>());
+      return result.ok ? json({ tagIds: result.tagIds }) : json({ error: result.error }, { status: result.status });
+    }
+    if (url.pathname === "/api/admin/spots" && request.method === "GET") {
+      return json({ spots: await listSpots(env) });
+    }
+    if (url.pathname === "/api/admin/spots" && request.method === "POST") {
+      const result = await saveSpot(env, await request.json<Record<string, unknown>>());
+      return result.ok ? json({ spot: result.spot }) : json({ error: result.error }, { status: result.status });
+    }
+    if (url.pathname === "/api/admin/spots" && request.method === "DELETE") {
+      const body = await request.json<{ code?: string }>();
+      return json(await deleteSpot(env, body.code));
+    }
 
     // --- 属性・同意・アクセシビリティ（すべて持ち主トークンで保護） ---
     if (url.pathname === "/api/profile/schema" && request.method === "GET") {
@@ -236,6 +269,22 @@ export default {
     // 分身が自分について覚えている内容は、間違っていたら本人が直せる必要がある
     if (url.pathname === "/api/notes" && request.method === "POST") {
       return handleSetNotes(env, await request.json());
+    }
+
+    // --- 会話の履歴（画面に前回までのやり取りを戻すため） ---
+    // 会話の本文そのものなので、cidだけでは読めない。必ず持ち主トークンを要求する。
+    if (url.pathname === "/api/character/history" && request.method === "GET") {
+      const cid = url.searchParams.get("cid");
+      if (!cid) return json({ error: "cid is required" }, { status: 400 });
+      const limit = Math.min(60, Math.max(1, Number(url.searchParams.get("limit") ?? 40) || 40));
+      const result = await env.CHARACTER.getByName(cid).getDialogue(
+        url.searchParams.get("token") || undefined,
+        limit
+      );
+      if (!result.ok) {
+        return json({ error: result.error }, { status: result.error === "not found" ? 404 : 403 });
+      }
+      return json(result, { headers: { "cache-control": "no-store" } });
     }
 
     // --- パルスサーベイ（会話の合間に1問ずつ聞く） ---
@@ -310,10 +359,33 @@ export default {
       return handleSpeak(env, request, log);
     }
 
-    // --- NFCタグ読み取り: /t/:tagId ---
-    // NFCタグにはこのURL（例: https://<your-domain>/t/xxxxxx）を書き込む想定。
-    if (url.pathname.startsWith("/t/")) {
-      ctx.waitUntil(countMetric(env, "tap"));
+    // 依代を持っていない人が、その端末だけで育てる分身を始める入口。
+    if (url.pathname === "/api/character/new" && request.method === "POST") {
+      const result = await createDirectCharacter(env, request);
+      if (!result.ok) return json({ error: result.error }, { status: result.status });
+      ctx.waitUntil(countMetric(env, "new_character"));
+      return json({ characterId: result.characterId, ownerToken: result.ownerToken });
+    }
+
+    // その依代がどこで配られたものかを、出会いの画面で見せるための情報。
+    if (url.pathname === "/api/spot" && request.method === "GET") {
+      const spot = await getSpot(env, url.searchParams.get("code") || "");
+      if (!spot) return json({ error: "見つかりませんでした" }, { status: 404 });
+      return json({ spot: publicSpot(spot) });
+    }
+
+    // --- 依代の読み取り: /t/:code（かざす） と /q/:code（QRを読み取る） ---
+    //
+    // **2つのパスは同じ処理にしてある。** 読み取り方が違うだけで、意味は同じ。
+    //   - 1つの依代からは1体しか生まれない（2回目以降は同じ子に会いに行く）
+    //   - 生まれる子の姿はランダム。どちらの入口でも確率は等しい
+    // ここを揃えておかないと「集める」が成り立たない。運営が姿を決められるようにすると
+    // 「引き当てた」が「配られた」になり、1つの依代から何体も生まれるなら集める理由が消える。
+    //
+    // 依代に書き込むURLは https://<ドメイン>/t/<コード>（QRとして刷るなら /q/<コード>）。
+    if (url.pathname.startsWith("/t/") || url.pathname.startsWith("/q/")) {
+      const viaQr = url.pathname.startsWith("/q/");
+      ctx.waitUntil(countMetric(env, viaQr ? "scan" : "tap"));
       const tagId = decodeURIComponent(url.pathname.split("/")[2] || "");
       if (!tagId) {
         return new Response("invalid tag", { status: 400 });
@@ -328,11 +400,13 @@ export default {
       let characterId: string;
       let isFirstTime = false;
       let ownerToken: string | undefined;
+      let spotCode: string | null = null;
 
       if (row) {
         characterId = row.character_id;
       } else {
-        // 初回タップ: このタグに紐づくキャラクターを新規発行
+        // 初回の読み取り: この依代に宿る分身を新規発行する。
+        // 姿はDO側（init）がランダムに決める。ここでは一切指定しない。
         characterId = crypto.randomUUID();
         isFirstTime = true;
         await env.DB.prepare(
@@ -344,16 +418,20 @@ export default {
         const stub = env.CHARACTER.getByName(characterId);
         const initData = await stub.init("名もなきキャラクター");
         ownerToken = initData.ownerToken;
+        spotCode = await spotOfTag(env, tagId);
         ctx.waitUntil(countMetric(env, "new_character"));
+        ctx.waitUntil(recordOrigin(env, characterId, viaQr ? "qr" : "nfc", tagId, spotCode));
       }
 
       const redirectUrl = new URL("/summon", url.origin);
       redirectUrl.searchParams.set("cid", characterId);
       if (isFirstTime) {
         redirectUrl.searchParams.set("first", "1");
-        // 「持ち主トークン」は初回タップの瞬間だけURLに乗せてクライアントへ渡す。
+        // 「持ち主トークン」は誕生の瞬間だけURLに乗せてクライアントへ渡す。
         // summon.html側ですぐlocalStorageへ保存し、URLからは消す想定（人格エクスポート仕様書5章参照）。
         if (ownerToken) redirectUrl.searchParams.set("token", ownerToken);
+        // どこで手に入れた子なのかを、出会いの場面で一度だけ見せる。
+        if (spotCode) redirectUrl.searchParams.set("spot", spotCode);
       }
 
       return Response.redirect(redirectUrl.toString(), 302);
@@ -396,6 +474,9 @@ export default {
         color: state.color,
         personality: state.personality,
         growthStage: state.growthStage,
+        // 「次の段階まであと何回か」。段階名だけだと、この先まだ育つのか打ち止めなのかが
+        // 分からず、育てる手が止まる（src/ai/growth.ts）。
+        growth: growthProgress(state.interactionCount),
         interactionCount: state.interactionCount,
         lastVisit: state.lastVisit,
         createdAt: state.createdAt,
@@ -540,8 +621,10 @@ export default {
       if (!result.ok) return json(result, { status: 403 });
       try {
         await env.DB.prepare("DELETE FROM nfc_tags WHERE character_id = ?").bind(body.characterId).run();
+        // どの入口から来たかの記録も消す。分身が消えたのに来歴だけ残るのは筋が通らない。
+        await env.DB.prepare("DELETE FROM character_origin WHERE character_id = ?").bind(body.characterId).run();
       } catch (err) {
-        // nfc_tags削除の失敗は致命的ではない（分身本体のデータは既に削除済み）
+        // 紐付けの削除に失敗しても致命的ではない（分身本体のデータは既に削除済み）
       }
       return json({ ok: true });
     }

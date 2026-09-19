@@ -11,7 +11,17 @@ import { retrieveRelevantMemories, storeMemory, exportAllMemories, importMemorie
 import { buildMeetingPrompt } from "../ai/promptBuilder";
 import { RateLimiter } from "../lib/rateLimit";
 import { ChatMessage, contextBudgetFor, primaryChatModel, runChat } from "../ai/modelPolicy";
-import { distillProfileNotes, shouldReflect, MAX_NOTES_CHARS, MAX_NOTES_LINES } from "../ai/reflection";
+import { growthProgress, GrowthProgress, normalizeStageName, stageName } from "../ai/growth";
+import {
+  distillProfileNotes,
+  shouldReflect,
+  mergeNotes,
+  normalizeNoteLines,
+  MAX_NOTES_CHARS,
+  MAX_NOTES_LINES,
+  MAX_SEED_CHARS,
+  MAX_SEED_LINES,
+} from "../ai/reflection";
 import { deriveVoiceProfile, VoiceProfile } from "../ai/voiceProfile";
 import { logDetachedWarn } from "../lib/log";
 import { ConsentState, hasConsent, normalizeConsent } from "../persona/consent";
@@ -118,8 +128,10 @@ export interface PersonalityPackageV1 {
   memory: {
     shortTerm: string;
     longTerm: ExportedMemory[];
-    /** 1.1で追加。相手について長く覚えておくべき事実の箇条書き。 */
+    /** 1.1で追加。相手について長く覚えておくべき事実の箇条書き（会話からAIが書き留めた分）。 */
     profileNotes?: string;
+    /** 1.2で追加。本人が自分で書いた「土台」。AIの蒸留では上書きされない別枠。 */
+    profileNotesSeed?: string;
     /** 1.1で追加。直近のやり取りを切り詰めずに持つ（移植先で会話の流れをそのまま継げるように）。 */
     recentTurns?: DialogueTurn[];
   };
@@ -189,6 +201,17 @@ export interface CharacterData {
    * これが「育てるほど話が通じるようになる」の実体になる。
    */
   profileNotes?: string;
+
+  /**
+   * 本人が自分で書いた「土台」。
+   *
+   * profileNotes はAIが数ターンごとに**書き換える**ので、本人が書いた内容も
+   * 次の蒸留で消えうる。実際「だいぶ会話しても覚え書きが空っぽ」という状態が起きていて、
+   * 自動学習だけでは何も溜まらない期間が長すぎた。
+   * ここに別枠で持てば、最初に数行書いた時点で分身はその人を知っている状態から始まり、
+   * その上に会話からの学習（profileNotes）が積み上がる。AIはここを書き換えない。
+   */
+  profileNotesSeed?: string;
 
   /** 覚え書きを最後に更新したときの interactionCount（更新間隔の判定に使う）。 */
   lastReflectedAt?: number;
@@ -265,7 +288,14 @@ const MAX_HISTORY_ENTRIES = 120;
  * プロンプトに載せるのはこの一部（成長段階に応じた分だけ）で、ここは「持っておく量」。
  * 1発言あたりの長さも切っておかないと、長文を貼られたときにストレージが膨らむ。
  */
-const MAX_RECENT_TURNS = 24;
+/**
+ * 直近のやり取りを何発言ぶん持つか。
+ *
+ * 会話画面に「前に何を話したか」を出すための保存でもあるので、
+ * プロンプトに載せる数（成長段階ごとに4〜18）より大きく取ってある。
+ * ここが短いと、画面を開き直すたびに会話が消えたように見える。
+ */
+const MAX_RECENT_TURNS = 60;
 const MAX_TURN_CHARS = 500;
 
 function randomSpecies(): SpeciesKey {
@@ -339,7 +369,7 @@ export class CharacterState extends DurableObject<Env> {
       color: data.color,
       memorySummary: data.memorySummary,
       // 通話でも「覚えていること」は使う。読み取りだけなので“何も残さない”約束とは矛盾しない。
-      profileNotes: data.profileNotes ?? "",
+      profileNotes: this.notesFor(data),
       interactionCount: data.interactionCount,
     };
   }
@@ -369,6 +399,13 @@ export class CharacterState extends DurableObject<Env> {
     return { ok: true, name: data.name };
   }
 
+  /**
+   * 分身を生む。
+   *
+   * **姿は必ずランダムにする。呼び出し側から種族・色を指定できるようにしない。**
+   * 依代（NFCタグ／QR）はどれも等しい確率で姿が決まる、というのが集める体験の土台で、
+   * 運営が姿を決められる口を1つでも開けると「引き当てた」が「配られた」に変わる。
+   */
   async init(name: string): Promise<CharacterData> {
     const existing = await this.ctx.storage.get<CharacterData>("data");
     if (existing) return existing;
@@ -532,7 +569,7 @@ export class CharacterState extends DurableObject<Env> {
       name: data.name,
       personality: data.personality,
       growthStage: data.growthStage,
-      profileNotes: data.profileNotes,
+      profileNotes: this.notesFor(data),
       ownerProfile,
       ownerValues,
       // recentTurns を持たない古い分身のためだけの保険。新しい会話では messages 側が文脈を持つ。
@@ -602,6 +639,17 @@ export class CharacterState extends DurableObject<Env> {
   }
 
   /** いまの状態からセグメントを判定する（保存はしない。常に最新の値から出す）。 */
+  /**
+   * 分身が実際に「覚えていること」として扱う一式。
+   *
+   * 土台（本人が書いた分）と、会話から覚えた分は保存だけ別々で、
+   * **使うときは必ず1つにまとめる**。片方だけを渡す場所が1つでもあると、
+   * 「プロフィールには書いたのに会話では知らない」という食い違いが出る。
+   */
+  private notesFor(data: CharacterData): string {
+    return mergeNotes(data.profileNotesSeed, data.profileNotes);
+  }
+
   private segmentOf(data: CharacterData): SegmentResult {
     return classifySegment({
       personality: data.personality,
@@ -624,7 +672,7 @@ export class CharacterState extends DurableObject<Env> {
       profileTotal: PROFILE_FIELDS.length,
       psychoAnswered,
       psychoTotal: PSYCHO_QUESTIONS.length,
-      memoryCount: (data.profileNotes ?? "").split("\n").filter((l) => l.trim()).length,
+      memoryCount: this.notesFor(data).split("\n").filter((l) => l.trim()).length,
     });
 
     await syncRegistry(this.env, {
@@ -658,6 +706,9 @@ export class CharacterState extends DurableObject<Env> {
     const notes = await distillProfileNotes(this.env, {
       name: data.name,
       previousNotes: data.profileNotes ?? "",
+      // 土台は「本人が書いた前提」として渡すだけ。AIにはここを書き直させない
+      // （書き直させると、本人が書いた文と蒸留した文が混ざって、どちらを直せばいいか分からなくなる）。
+      seedNotes: data.profileNotesSeed ?? "",
       turns: turns.map((t) => ({ role: t.role, text: t.text })),
     });
 
@@ -704,7 +755,10 @@ export class CharacterState extends DurableObject<Env> {
         accessibility: AccessibilityPrefs;
         psychographics: Psychographics;
         segment: SegmentResult;
+        /** 会話から分身が書き留めた分 */
         profileNotes: string;
+        /** 本人が書いた土台 */
+        profileNotesSeed: string;
         nextField: string | null;
         interactionCount: number;
         /** パルスサーベイの進み具合（次の1問はWorker側でカタログと突き合わせて決める） */
@@ -725,6 +779,7 @@ export class CharacterState extends DurableObject<Env> {
       psychographics: data.psychographics ?? emptyPsychographics(),
       segment: this.segmentOf(data),
       profileNotes: data.profileNotes ?? "",
+      profileNotesSeed: data.profileNotesSeed ?? "",
       nextField: nextFieldToAsk(profile, data.interactionCount)?.key ?? null,
       interactionCount: data.interactionCount,
       survey: {
@@ -801,6 +856,39 @@ export class CharacterState extends DurableObject<Env> {
   }
 
   /**
+   * 会話の履歴（画面に出すため）。
+   *
+   * **なぜ持ち主トークンを要求するのか。**
+   * これは会話の本文そのもので、cidを知っているだけの人に見せてよいものではない。
+   * /api/character が誰でも叩ける公開APIなのに対し、こちらは必ず持ち主だけ。
+   *
+   * **なぜこれが要るのか。**
+   * 会話画面は毎回「はじめまして」から描き直しており、
+   * 前に何を話したかが画面から消えていた。保存はされている（recentTurns）のに
+   * 画面に出していなかっただけで、利用者からは「記録されていない」ように見えていた。
+   */
+  async getDialogue(
+    ownerToken?: string,
+    limit = 40
+  ): Promise<
+    | { ok: true; turns: DialogueTurn[]; total: number; interactionCount: number }
+    | { ok: false; error: string }
+  > {
+    const data = await this.ctx.storage.get<CharacterData>("data");
+    if (!data) return { ok: false, error: "not found" };
+    if (!isOwner(data, ownerToken)) return { ok: false, error: "この操作は分身の持ち主だけが行えます" };
+
+    const turns = data.recentTurns ?? [];
+    const capped = Math.max(1, Math.min(MAX_RECENT_TURNS, limit));
+    return {
+      ok: true,
+      turns: turns.slice(-capped),
+      total: turns.length,
+      interactionCount: data.interactionCount,
+    };
+  }
+
+  /**
    * パルスサーベイの回答（価値観の設問）を反映する。
    *
    * 属性の回答が setProfile を通るのに対し、こちらは価値観の軸へ直接効く。
@@ -870,11 +958,16 @@ export class CharacterState extends DurableObject<Env> {
    *
    * 書き換えたあともAIによる蒸留は続くが、蒸留は「現在の覚え書き」を渡したうえで
    * 統合させる作りなので、本人が直した内容は次回以降も土台として残る。
+   *
+   * part で書き込み先を選ぶ:
+   * - "seed"    … 本人が書いた土台。AIは書き換えない
+   * - "learned" … 会話から覚えた分（既定。AIの蒸留で上書きされる）
    */
   async setProfileNotes(
     notes: unknown,
-    ownerToken?: string
-  ): Promise<{ ok: true; notes: string } | { ok: false; error: string }> {
+    ownerToken?: string,
+    part: "seed" | "learned" = "learned"
+  ): Promise<{ ok: true; notes: string; notesSeed: string } | { ok: false; error: string }> {
     const data = await this.ctx.storage.get<CharacterData>("data");
     if (!data) return { ok: false, error: "not found" };
     if (!isOwner(data, ownerToken)) return { ok: false, error: "この操作は分身の持ち主だけが行えます" };
@@ -882,21 +975,22 @@ export class CharacterState extends DurableObject<Env> {
     const text = typeof notes === "string" ? notes : "";
     // 形式はAIの出力と同じ（「・」始まりの箇条書き）に揃える。
     // 揃えておかないと、次の蒸留でAIに渡したときに書式が崩れる。
-    const normalized = text
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0)
-      .map((line) => (line.startsWith("・") ? line : `・${line.replace(/^[-*•]\s*/, "")}`))
-      .slice(0, MAX_NOTES_LINES)
-      .join("\n")
-      .slice(0, MAX_NOTES_CHARS);
+    const normalized =
+      part === "seed"
+        ? normalizeNoteLines(text, MAX_SEED_LINES, MAX_SEED_CHARS)
+        : normalizeNoteLines(text, MAX_NOTES_LINES, MAX_NOTES_CHARS);
 
-    data.profileNotes = normalized;
-    // 直した直後に蒸留が走って上書きされると、直した意味が無い。
-    // いま話した分は反映済みとみなして、次の間隔まで待たせる。
-    data.lastReflectedAt = data.interactionCount;
+    if (part === "seed") {
+      data.profileNotesSeed = normalized;
+    } else {
+      data.profileNotes = normalized;
+      // 直した直後に蒸留が走って上書きされると、直した意味が無い。
+      // いま話した分は反映済みとみなして、次の間隔まで待たせる。
+      // 土台はAIが触らないので、こちらを書いたときは待たせる必要がない。
+      data.lastReflectedAt = data.interactionCount;
+    }
     await this.ctx.storage.put("data", data);
-    return { ok: true, notes: normalized };
+    return { ok: true, notes: data.profileNotes ?? "", notesSeed: data.profileNotesSeed ?? "" };
   }
 
   /** アクセシビリティ設定を保存する。同意の対象外（外へ出さないため、同意を取る意味が無い）。 */
@@ -937,7 +1031,8 @@ export class CharacterState extends DurableObject<Env> {
       psychographics: data.psychographics ?? emptyPsychographics(),
       segment: this.segmentOf(data),
       profileAnswers: data.profile?.answers ?? {},
-      profileNotes: data.profileNotes ?? "",
+      // 持ち出し先でも、土台と学習分は1つの「覚えていること」として渡す
+      profileNotes: this.notesFor(data),
       memories: memories.map((m) => ({ text: m.text, at: m.createdAt })),
       recentTurns: (data.recentTurns ?? []).map((t) => ({ role: t.role, text: t.text })),
       accessibility: data.accessibility,
@@ -1165,6 +1260,7 @@ export class CharacterState extends DurableObject<Env> {
         shortTerm: data.memorySummary,
         longTerm,
         profileNotes: data.profileNotes ?? "",
+        profileNotesSeed: data.profileNotesSeed ?? "",
         recentTurns: data.recentTurns ?? [],
       },
       owner: {
@@ -1226,7 +1322,7 @@ export class CharacterState extends DurableObject<Env> {
       color: pkg.character.color,
       personality: pkg.personality,
       memorySummary: pkg.memory?.shortTerm ?? "",
-      growthStage: pkg.character.growthStage || "誕生したばかり",
+      growthStage: normalizeStageName(pkg.character.growthStage, pkg.character.interactionCount ?? 0),
       interactionCount: pkg.character.interactionCount ?? 0,
       lastVisit: now,
       createdAt: pkg.character.createdAt ?? now,
@@ -1235,6 +1331,7 @@ export class CharacterState extends DurableObject<Env> {
       ownerToken: resolvedOwnerToken,
       // 1.1で追加した項目。1.0のパッケージには入っていないので、無ければ空から始める。
       profileNotes: pkg.memory?.profileNotes ?? "",
+      profileNotesSeed: pkg.memory?.profileNotesSeed ?? "",
       recentTurns: sanitizeTurns(pkg.memory?.recentTurns),
       // 同意は復元しない（環境が変わったら取り直す、というsocialOptInと同じ方針）。
       // 属性そのものは持ち越すが、同意が無い状態なので会話にも統計にも使われない。
@@ -1267,11 +1364,12 @@ function decimateHistory(history: PersonalityHistoryEntry[]): PersonalityHistory
   return [first, ...middle, last];
 }
 
+/**
+ * 段階の判定は src/ai/growth.ts が唯一の定義元。
+ * ここに閾値を書き戻さないこと（文脈量の判定と二重管理になり、必ずズレる）。
+ */
 function computeGrowthStage(interactionCount: number): string {
-  if (interactionCount < 5) return "誕生したばかり";
-  if (interactionCount < 20) return "よちよち期";
-  if (interactionCount < 50) return "成長期";
-  return "成熟期";
+  return stageName(interactionCount);
 }
 
 /**

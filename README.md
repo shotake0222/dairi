@@ -77,7 +77,8 @@ NFCタグへのURL書き込みには、iPhoneなら「NFC TagWriter」、Android
 
 ```
 src/
-  index.ts                    # ルーティング（/t/:tagId, /api/*, 静的配信、OGPのURL絶対化）
+  index.ts                    # ルーティング（/t/:code, /q/:code, /api/*, 静的配信、OGPのURL絶対化）
+  yorishiro.ts                # 依代（NFCタグ・QR）の台帳と配布元、依代を持たない人の入口
   call.ts                     # その場限りの通話（何も保存しない会話経路・SSEストリーミング）
   talk.ts                     # かざして話す（カメラ映像を出したまま声で会話。保存され、育つ）
   vision.ts                   # 「これ見て」— 見せられた1枚を言葉に変える（保存しない）
@@ -161,7 +162,12 @@ tools/
 | `GET/POST /api/profile`, `POST /api/consent`, `POST /api/accessibility` | 持ち主のみ。同意・属性・入力設定 |
 | `GET /api/persona/card` | 人格カードの書き出し（`format=json\|prompt\|modelfile\|readme`） |
 | `POST /api/ime` | ひらがな→漢字かな交じりの変換（視線・スイッチ入力の補助） |
-| `POST /api/notes` | 覚え書きの書き換え（持ち主のみ）。分身が覚えている内容を本人が直す |
+| `POST /api/notes` | 覚え書きの書き換え（持ち主のみ）。`part:"seed"` で本人が書く土台、既定は会話から覚えた分 |
+| `GET /t/:code`, `GET /q/:code` | 依代の読み取り。**同じ処理**。1つの依代から1体だけ、姿はランダム |
+| `POST /api/character/new` | 依代を持たない人の入口（1日3体まで／同じ回線から） |
+| `GET /api/spot` | その依代がどこで配られたか（画面に出す範囲だけ） |
+| `GET/POST /api/admin/tags` | 依代の台帳と発行（管理画面の中だけ） |
+| `GET/POST/DELETE /api/admin/spots` | 配布元（特別な場所）の管理 |
 | `POST /api/contact` | 法人向けページ・復旧の窓口からの問い合わせ |
 | `GET /api/admin/recovery/lookup` / `POST .../issue` | 復旧（本人確認用の情報の照会と、引き継ぎコードの発行） |
 | `GET/POST /api/market/*` | マーケット（一覧・出品・問い合わせ・集約セグメント統計） |
@@ -172,6 +178,45 @@ tools/
 | `GET/POST /api/admin/questions` | 設問の一覧と編集（管理画面の中だけ） |
 | `GET /robots.txt`, `GET /sitemap.xml` | ホストごとに内容が変わる（本体側は全面拒否、検証環境も全面拒否） |
 | `GET /sw.js` | Service Worker。`SW_KILL=1` を付けてデプロイすると解除用スクリプトに差し替わる |
+
+## 依代（よりしろ）— 入口の考え方
+
+分身が宿るものを、画面では「依代」と呼んでいる。NFCタグでもQRでも、**仕組みはまったく同じ**。
+
+- **1つの依代からは1体だけ。** 2回目以降の読み取りは、同じ子に会いに行く
+- **姿はランダム。** どの依代でも確率は等しく、運営が指定する口は用意していない
+  （`CharacterState.init()` に見た目を渡す引数を**足さないこと**。足した時点で「引き当てた」が「配られた」に変わる）
+- `/t/:code`（かざす）と `/q/:code`（読み取る）は同じ台帳（`nfc_tags`）を引く。違いは計測名と来歴だけ
+- 「その場所でしか手に入らない」は、姿を固定するのではなく、**そのコードをその場所にしか置かないこと**で作る
+
+入口は3つ:
+
+| 入口 | URL | 性質 |
+| --- | --- | --- |
+| NFCタグ | `/t/<code>` | 手元のキーホルダー |
+| QR | `/q/<code>` | 配られた1枚。かざすのと同じ扱い |
+| 依代なし | `POST /api/character/new`（画面は `/add`） | その端末だけで育てる。引き継ぎコードだけが戻り道 |
+
+台帳（`tag_registry`）に無いコードで読み取られても分身は生まれる。台帳を作る前に配ったタグを
+死なせないため。台帳は「こちらが発行した分はどれか」「まだ使われていないのはどれか」を見るためのもの。
+
+管理画面の「依代（タグ・QR）」タブで、発行・CSV書き出し・QR画像の生成までできる
+（QRの生成は `public/vendor/qrcode.js`。外部のQR生成サイトに貼ると、どのコードを刷ったかが他所に残る）。
+
+## 実機（Raspberry Pi / ESP32）で動かす
+
+人格カードは数十KBあり、会話の抜粋も入っているので機器には焼かない。
+`tools/edge/compact.mjs` で **数値と識別子だけの数百バイト**に落としてから渡す。
+この形なら ESP32 や Pico でも動き、**LLMは要らない**（「人格→振る舞い」の翻訳は
+`src/persona/avatarProfile.ts` がサーバ側で済ませている）。
+
+手順・機種ごとの線引き・合格基準は [docs/EDGE_DEVICE_TEST.md](docs/EDGE_DEVICE_TEST.md)。
+
+```bash
+curl -o card.json "https://app.waketama.com/api/character/card?format=json&cid=<CID>&token=<TOKEN>"
+node tools/edge/make_compact.mjs card.json -o persona.min.json   # 漏れの確認つき
+python3 tools/edge/rule_runtime.py persona.min.json              # LLMなしで振る舞いを見る
+```
 
 ## 2つのドメイン
 

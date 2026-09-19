@@ -96,7 +96,9 @@ export async function handleRecoveryLookup(env: RecoveryEnv, url: URL, log: LogC
       hasOwnerToken: Boolean(state.ownerToken),
       // 覚え書きの「件数」だけ。中身は出さない（何件覚えているかは本人も答えられる情報ではないが、
       // 別人に渡してしまったときの被害の見当をつけるために運営側で見えたほうがよい）
-      noteLines: (state.profileNotes ?? "").split("\n").filter((l) => l.trim()).length,
+      noteLines:
+        (state.profileNotes ?? "").split("\n").filter((l) => l.trim()).length +
+        (state.profileNotesSeed ?? "").split("\n").filter((l) => l.trim()).length,
     },
     tags: (tags.results ?? []).map((t) => ({ tagId: t.tag_id, createdAt: t.created_at })),
   });

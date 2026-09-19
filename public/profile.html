@@ -119,7 +119,7 @@
 <body>
 
 <header>
-  <div class="brand"><svg class="mk" viewBox="0 0 48 48" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M24 7A17 17 0 0 1 24 41A6 6 0 0 0 24 29A11 11 0 0 1 24 7ZM28.6 18A4.6 4.6 0 1 1 19.4 18A4.6 4.6 0 1 1 28.6 18Z"/></svg><span>わけたま</span></div>
+  <div class="brand"><svg class="mk" viewBox="0 0 100 100" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M59.7 13.8 C61.1 14.9 65.5 17.8 68.1 20.4 C70.6 22.9 73.1 26.0 74.9 29.0 C76.6 32.1 77.8 35.3 78.5 38.7 C79.1 42.1 79.3 45.9 78.7 49.4 C78.0 52.9 76.7 56.7 74.8 59.7 C72.9 62.7 70.3 65.4 67.4 67.3 C64.5 69.2 60.8 70.7 57.5 71.1 C54.1 71.5 50.2 71.2 47.1 69.9 C44.0 68.6 40.1 64.6 38.7 63.5 A5.0 5.0 0 0 1 45.1 55.8 C45.6 56.1 46.9 57.1 48.0 57.4 C49.0 57.7 50.2 57.8 51.2 57.6 C52.3 57.4 53.5 56.9 54.4 56.3 C55.3 55.7 56.0 54.8 56.5 53.8 C57.0 52.9 57.3 51.7 57.3 50.6 C57.3 49.6 57.0 48.3 56.5 47.4 C56.0 46.5 55.0 45.5 54.1 45.2 C53.2 44.9 51.7 45.6 51.2 45.7 A16.5 16.5 0 0 1 59.7 13.8 Z M47.5 29.7a7.9 7.9 0 1 0 15.8 0a7.9 7.9 0 1 0 -15.8 0Z"/></svg><span>わけたま</span></div>
   <h1>あなたと、分身の記録</h1>
   <a class="back" id="backLink" href="/home">← 会話にもどる</a>
 </header>
@@ -136,8 +136,33 @@
 
   <section id="memorySection">
     <h2>分身があなたについて覚えていること</h2>
-    <p class="lead">会話から分身が自分で書き留めたものです。<strong>間違いがあれば、ここで直せます。</strong>直した内容は、分身が次に書き足すときの土台になります。</p>
-    <div id="notes" class="empty">まだ何も覚えていません。</div>
+    <p class="lead">
+      ここは<strong>2段</strong>になっています。上の「土台」はあなた自身が書くところ、
+      下は分身が会話から書き留めたところです。<strong>土台を先に書いておくと、分身は最初からあなたを知った状態で話しはじめます。</strong>
+    </p>
+
+    <h3 style="font-size:14px;margin:18px 0 6px">1. あなたが書く土台</h3>
+    <p class="lead" style="margin-top:0">
+      会話からの自動学習は時間がかかります。先に数行だけ書いておくと、その上に積み上がっていきます。
+      ここに書いた内容は<strong>分身が勝手に書き換えません</strong>。
+    </p>
+    <div id="notesSeed" class="empty">まだ書かれていません。</div>
+    <textarea id="notesSeedEdit" hidden style="width:100%;min-height:150px;padding:12px 14px;border-radius:12px;border:1px solid var(--line);font-family:inherit;font-size:13px;line-height:1.9;background:#fff;color:var(--ink);resize:vertical"></textarea>
+    <div class="row" style="margin-top:10px">
+      <button class="action ghost" id="editSeedBtn" type="button">書く</button>
+      <button class="action" id="saveSeedBtn" type="button" hidden>保存する</button>
+      <button class="action ghost" id="cancelSeedBtn" type="button" hidden>やめる</button>
+      <button class="action ghost" id="templateSeedBtn" type="button" hidden>ひな形を入れる</button>
+    </div>
+    <p class="lead" id="seedHint" style="margin:10px 0 0" hidden>
+      1行に1つ、事実だけを。最大12行です。書くことが思いつかなければ「ひな形を入れる」を押して、当てはまる行だけ残してください。
+    </p>
+
+    <h3 style="font-size:14px;margin:22px 0 6px">2. 会話から覚えたこと</h3>
+    <p class="lead" style="margin-top:0">
+      分身が会話から自分で書き留めたものです。<strong>間違いがあれば、ここで直せます。</strong>
+    </p>
+    <div id="notes" class="empty">まだ何も覚えていません。何度か話すと、ここに溜まりはじめます。</div>
     <textarea id="notesEdit" hidden style="width:100%;min-height:120px;padding:12px 14px;border-radius:12px;border:1px solid var(--line);font-family:inherit;font-size:13px;line-height:1.9;background:#fff;color:var(--ink);resize:vertical"></textarea>
     <div class="row" style="margin-top:10px">
       <button class="action ghost" id="editNotesBtn" type="button">書き直す</button>
@@ -279,6 +304,7 @@
   const marketLocked = document.getElementById("marketLocked");
   const marketLink = document.getElementById("marketLink");
   const notesEl = document.getElementById("notes");
+  const notesSeedEl = document.getElementById("notesSeed");
   const segmentEl = document.getElementById("segment");
   const interestsEl = document.getElementById("interests");
   const valuesEl = document.getElementById("values");
@@ -514,9 +540,71 @@
    */
   function renderNotes() {
     const notes = (state.notes || "").trim();
-    notesEl.textContent = notes || "まだ何も覚えていません。";
+    notesEl.textContent = notes || "まだ何も覚えていません。何度か話すと、ここに溜まりはじめます。";
     notesEl.classList.toggle("empty", notes.length === 0);
+
+    const seed = (state.notesSeed || "").trim();
+    notesSeedEl.textContent = seed || "まだ書かれていません。";
+    notesSeedEl.classList.toggle("empty", seed.length === 0);
+    editSeedBtn.textContent = seed ? "書き直す" : "書く";
   }
+
+  // ---- 土台（本人が書く分） ----
+  // 会話からの自動学習は、数十ターン話してやっと数行たまる程度で、
+  // その間ずっと「覚えていること」が空っぽに見えていた。
+  // 先に本人が書ける場所を用意して、その上に学習分を積む形にしている。
+  const notesSeedEdit = document.getElementById("notesSeedEdit");
+  const editSeedBtn = document.getElementById("editSeedBtn");
+  const saveSeedBtn = document.getElementById("saveSeedBtn");
+  const cancelSeedBtn = document.getElementById("cancelSeedBtn");
+  const templateSeedBtn = document.getElementById("templateSeedBtn");
+  const seedHint = document.getElementById("seedHint");
+
+  // 「自由に書いて」と言われると手が止まるので、埋めるだけの形を出す。
+  const SEED_TEMPLATE = [
+    "・呼ばれたい名前は",
+    "・住んでいるのは",
+    "・仕事（学校）は",
+    "・一緒に暮らしているのは",
+    "・好きなものは",
+    "・苦手なものは",
+    "・続けている習慣は",
+    "・いま気になっているのは",
+  ].join("\n");
+
+  function setSeedEditing(on) {
+    notesSeedEl.hidden = on;
+    notesSeedEdit.hidden = !on;
+    editSeedBtn.hidden = on;
+    saveSeedBtn.hidden = !on;
+    cancelSeedBtn.hidden = !on;
+    templateSeedBtn.hidden = !on;
+    seedHint.hidden = !on;
+    if (on) { notesSeedEdit.value = state.notesSeed || ""; notesSeedEdit.focus(); }
+  }
+
+  editSeedBtn.addEventListener("click", () => setSeedEditing(true));
+  cancelSeedBtn.addEventListener("click", () => setSeedEditing(false));
+  templateSeedBtn.addEventListener("click", () => {
+    const current = notesSeedEdit.value.trim();
+    notesSeedEdit.value = current ? `${current}\n${SEED_TEMPLATE}` : SEED_TEMPLATE;
+    notesSeedEdit.focus();
+  });
+  saveSeedBtn.addEventListener("click", async () => {
+    try {
+      const data = await api("/api/notes", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ characterId: cid, token: token(), notes: notesSeedEdit.value, part: "seed" }),
+      });
+      state.notesSeed = data.notesSeed;
+      renderNotes();
+      setSeedEditing(false);
+      setStatus("保存しました");
+    } catch (e) {
+      setStatus(e.message);
+    }
+  });
 
   // ---- 人物像 ----
   function renderInsight() {
@@ -623,6 +711,7 @@
 
     renderNotes();
     setNotesEditing(false);
+    setSeedEditing(false);
 
     const c = state.consent || {};
     const canMarket = c.version === schema.consentVersion && c.marketplace === true;

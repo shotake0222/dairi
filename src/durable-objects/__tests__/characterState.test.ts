@@ -456,10 +456,11 @@ describe("CharacterState.chat (conversation context)", () => {
 
     await runInDurableObject(stub, async (_instance, state) => {
       const data = await state.storage.get<CharacterData>("data");
-      data!.recentTurns = Array.from({ length: 40 }, (_, i) => ({
+      // 上限（60）をはっきり超える数を入れて、確実に切り捨てが起きる状態にする
+      data!.recentTurns = Array.from({ length: 80 }, (_, i) => ({
         role: (i % 2 === 0 ? "user" : "character") as "user" | "character",
         text: `発言${i}`,
-        t: Date.now() - (40 - i) * 1000,
+        t: Date.now() - (80 - i) * 1000,
       }));
       await state.storage.put("data", data);
     });
@@ -468,7 +469,8 @@ describe("CharacterState.chat (conversation context)", () => {
 
     await runInDurableObject(stub, async (_instance, state) => {
       const data = await state.storage.get<CharacterData>("data");
-      expect(data!.recentTurns!.length).toBeLessThanOrEqual(24);
+      // 上限は60。画面に「前回までの会話」を出すために増やしたが、青天井にはしない
+      expect(data!.recentTurns!.length).toBeLessThanOrEqual(60);
       // 捨てるのは常に古い方から
       expect(data!.recentTurns![data!.recentTurns!.length - 1].text).toBe("うん");
       expect(data!.recentTurns!.some((t) => t.text === "発言0")).toBe(false);
@@ -559,6 +561,78 @@ describe("CharacterState.chat (conversation context)", () => {
       const data = await state.storage.get<CharacterData>("data");
       expect(data!.profileNotes).toBe("・大事な事実");
     });
+  });
+
+  /**
+   * 土台（本人が書いた分）。
+   *
+   * 会話からの自動学習だけだと、何十ターン話すまで覚え書きが空のままになる。
+   * 本人が先に書けるようにしたので、それが
+   *  (1) AIの蒸留で消えないこと
+   *  (2) 学習分と合わせて会話に届くこと
+   * の2点を押さえる。ここが崩れると「プロフィールに書いたのに分身が知らない」になる。
+   */
+  it("keeps the owner-written seed out of the AI's reach", async () => {
+    const stub = getStub(freshCid("seed-survives"));
+    const created = await stub.init("どだいこ");
+
+    const saved = await stub.setProfileNotes("柴犬のコタロウを飼っている\n夜勤で働いている", created.ownerToken, "seed");
+    expect(saved.ok).toBe(true);
+
+    await runInDurableObject(stub, async (_instance, state) => {
+      const data = await state.storage.get<CharacterData>("data");
+      // 「・」始まりに揃う
+      expect(data!.profileNotesSeed).toBe("・柴犬のコタロウを飼っている\n・夜勤で働いている");
+      data!.recentTurns = [{ role: "user", text: "パン屋で働き始めたよ", t: Date.now() }];
+      await state.storage.put("data", data);
+    });
+
+    // 蒸留が走っても土台は書き換わらない（AIは学習分だけを返す）
+    vi.spyOn(env.AI, "run").mockResolvedValue({ response: "・パン屋で働いている" } as never);
+    await stub.reflectNow();
+
+    await runInDurableObject(stub, async (_instance, state) => {
+      const data = await state.storage.get<CharacterData>("data");
+      expect(data!.profileNotesSeed).toBe("・柴犬のコタロウを飼っている\n・夜勤で働いている");
+      expect(data!.profileNotes).toBe("・パン屋で働いている");
+    });
+  });
+
+  it("sends the seed and the learned notes to the model as one set", async () => {
+    const stub = getStub(freshCid("seed-in-prompt"));
+    const created = await stub.init("まざりこ");
+    await stub.setProfileNotes("弟がいる", created.ownerToken, "seed");
+
+    await runInDurableObject(stub, async (_instance, state) => {
+      const data = await state.storage.get<CharacterData>("data");
+      data!.profileNotes = "・ギターを弾く";
+      await state.storage.put("data", data);
+    });
+
+    const aiSpy = vi.spyOn(env.AI, "run").mockResolvedValue({ response: "うん" } as never);
+    await stub.chat("ひさしぶり");
+
+    const system = chatCalls(aiSpy)[0].messages![0].content;
+    expect(system).toContain("弟がいる");
+    expect(system).toContain("ギターを弾く");
+  });
+
+  it("shows the owner both halves separately so each can be fixed", async () => {
+    const stub = getStub(freshCid("seed-owner-view"));
+    const created = await stub.init("みわけこ");
+    await stub.setProfileNotes("朝型", created.ownerToken, "seed");
+
+    await runInDurableObject(stub, async (_instance, state) => {
+      const data = await state.storage.get<CharacterData>("data");
+      data!.profileNotes = "・コーヒーが好き";
+      await state.storage.put("data", data);
+    });
+    const view = await stub.getOwnerView(created.ownerToken);
+
+    expect(view.ok).toBe(true);
+    if (!view.ok) return;
+    expect(view.profileNotesSeed).toBe("・朝型");
+    expect(view.profileNotes).toBe("・コーヒーが好き");
   });
 });
 

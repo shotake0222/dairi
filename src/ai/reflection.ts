@@ -28,6 +28,47 @@ export const REFLECTION_INTERVAL = 6;
 export const MAX_NOTES_CHARS = 600;
 export const MAX_NOTES_LINES = 10;
 
+/**
+ * 本人が自分で書いた「土台」の上限。自動で覚えた分とは別枠で持つ。
+ *
+ * **なぜ別枠なのか。**
+ * 覚え書きはAIが会話から蒸留して**書き換える**。上書きである以上、
+ * 本人が書いた内容も、次の蒸留で消える可能性がある。
+ * 実際「だいぶ会話しても空っぽ」という状態が起きていて、
+ * 自動学習だけに頼ると、何も溜まらない期間がとても長い。
+ *
+ * 土台を別に持てば、最初に本人が5行書いた時点で分身はその人を知っている状態から始められ、
+ * そのうえに会話からの学習が積み上がる。土台はAIからは触れない。
+ */
+export const MAX_SEED_LINES = 12;
+export const MAX_SEED_CHARS = 700;
+
+/** 「・」始まりの箇条書きに揃える（本人が手で書いたものも、AIの出力も同じ形にする）。 */
+export function normalizeNoteLines(text: string, maxLines: number, maxChars: number): string {
+  const lines = (text || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line) => (line.startsWith("・") ? line : `・${line.replace(/^[-*•]\s*/, "")}`));
+  const deduped: string[] = [];
+  for (const line of lines) if (!deduped.includes(line)) deduped.push(line);
+  return deduped.slice(0, maxLines).join("\n").slice(0, maxChars);
+}
+
+/**
+ * 土台と、会話から覚えた分を1つにまとめる。
+ * 土台が先（分身にとっての前提）。重複する行は落とす。
+ */
+export function mergeNotes(seed: string | undefined, learned: string | undefined): string {
+  const seedLines = (seed || "").split("\n").map((l) => l.trim()).filter(Boolean);
+  const learnedLines = (learned || "").split("\n").map((l) => l.trim()).filter(Boolean);
+  const out = [...seedLines];
+  for (const line of learnedLines) {
+    if (!out.includes(line)) out.push(line);
+  }
+  return out.slice(0, MAX_SEED_LINES + MAX_NOTES_LINES).join("\n");
+}
+
 export interface ReflectionTurn {
   role: "user" | "character";
   text: string;
@@ -62,7 +103,7 @@ export function normalizeNotes(raw: string): string {
 
 export async function distillProfileNotes(
   env: ModelEnv,
-  params: { name: string; previousNotes: string; turns: ReflectionTurn[] }
+  params: { name: string; previousNotes: string; turns: ReflectionTurn[]; seedNotes?: string }
 ): Promise<string | null> {
   const conversation = params.turns
     .map((t) => `${t.role === "user" ? "ユーザー" : params.name}: ${t.text}`)
@@ -81,11 +122,13 @@ export async function distillProfileNotes(
 - あいさつ、その日の天気、一度きりの雑談は書かないでください
 - 既存の覚え書きの内容は、否定された場合を除いて必ず残してください。新しい情報は統合し、矛盾があれば新しい方を採用してください
 - 出力は「・」で始まる箇条書きのみ。前置きも説明も見出しも書かないでください
-- 各行は40文字以内、全体で最大${MAX_NOTES_LINES}行`,
+- 各行は40文字以内、全体で最大${MAX_NOTES_LINES}行
+- **本人が書いた前提**として渡される内容は、あなたの出力に含めないでください（別に保持されており、重複します）。
+  ただし、それと矛盾する内容も書かないでください`,
     },
     {
       role: "user",
-      content: `# 現在の覚え書き
+      content: `${params.seedNotes ? `# 本人が書いた前提（変更も再掲もしないでください）\n${params.seedNotes}\n\n` : ""}# 現在の覚え書き
 ${params.previousNotes || "（まだ何もありません）"}
 
 # 直近の会話

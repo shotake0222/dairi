@@ -43,51 +43,70 @@ def vertical_gradient(size, top, bottom):
 SS = 4  # スーパーサンプリング倍率（大きく描いて縮小し、輪郭を滑らかにする）
 
 
-def magatama_mask(canvas_size, scale=1.0, rotate=0.0):
+def magatama_outline(size, scale=1.0, steps=240):
     """
-    勾玉（まがたま）の輪郭を、そのままの作図法で描く。
+    勾玉の輪郭の点列を返す。public/icons/mark.svg と同じ作図。
 
-    形の決め方（ここを崩すと「ただの巴」になってしまう）:
-      大きい円 B（半径R）の**右半分**に、頭になる円 H（半径r1）を足し、
-      尾になる円 T（半径r2）を引く。r1 + r2 = R にしておくと、
-      3つの円が同じ縦線の上でぴたりと接し、頭から尾へ滑らかに細くなる。
-      最後に、頭に紐を通す穴を1つ開ける。
+      背骨になる「らせん」を1本引く。中心から半径21で始め、尾に向かって半径を40%縮めながら
+      205度まわす。その背骨に、頭で33・尾で10の太さを持たせ、両端を半円で閉じる。
+      らせんにしてあるのが肝で、ただの円弧だと内側の縁に段差が出る。
 
-    サービス名の由来（分け御霊）に合わせて、玉そのものを標にしている。
-    アプリのアイコン・OGP・LPのロゴは、すべてこの同じ形から作る。
-    SVG版は public/icons/mark.svg（HTMLにはこれと同じ座標を直接埋め込んでいる）。
+    数値は100×100の設計図の座標なので、実際の大きさに合わせて拡大する。
     """
+    import math
+
+    k = size / 100.0 * scale
+    off = (size - 100 * k) / 2.0
+    cx, cy, Rs = 50.0, 50.0, 21.0
+    start_deg, sweep_deg, shrink = 75.0, 205.0, 0.40
+    w_head, w_tail, taper = 33.0, 10.0, 1.5
+
+    outer, inner = [], []
+    for i in range(steps + 1):
+        t = i / steps
+        ang = math.radians(start_deg - sweep_deg * t)
+        r = Rs * (1 - shrink * t)
+        w = w_head + (w_tail - w_head) * (t ** (1 / taper))
+        sx, sy = cx + r * math.cos(ang), cy - r * math.sin(ang)
+        nx, ny = math.cos(ang), -math.sin(ang)
+        outer.append((off + (sx + nx * w / 2) * k, off + (sy + ny * w / 2) * k))
+        inner.append((off + (sx - nx * w / 2) * k, off + (sy - ny * w / 2) * k))
+
+    head = (off + (cx + Rs * math.cos(math.radians(start_deg))) * k,
+            off + (cy - Rs * math.sin(math.radians(start_deg))) * k)
+    tail_spine_ang = math.radians(start_deg - sweep_deg)
+    tail_r = Rs * (1 - shrink)
+    tail = (off + (cx + tail_r * math.cos(tail_spine_ang)) * k,
+            off + (cy - tail_r * math.sin(tail_spine_ang)) * k)
+    return outer, inner, head, tail, w_head * k, w_tail * k
+
+
+def magatama_mask(canvas_size, scale=1.0):
+    """勾玉の形の白黒マスク。両端の半円と、頭の紐穴まで含めて描く。"""
     s = canvas_size * SS
     mask = Image.new("L", (s, s), 0)
     d = ImageDraw.Draw(mask)
 
-    cx = cy = s / 2
-    R = s * 0.40 * scale
-    r1 = R * 0.65   # 頭
-    r2 = R - r1     # 尾
+    outer, inner, head, tail, wh, wt = magatama_outline(s, scale=scale)
+    d.polygon(outer + list(reversed(inner)), fill=255)
 
-    def circle(draw, center, radius, fill):
+    def circle(center, radius, fill):
         x, y = center
-        draw.ellipse([x - radius, y - radius, x + radius, y + radius], fill=fill)
+        d.ellipse([x - radius, y - radius, x + radius, y + radius], fill=fill)
 
-    # 大きい円の右半分（PILの角度は3時方向が0で時計回り）
-    d.pieslice([cx - R, cy - R, cx + R, cy + R], -90, 90, fill=255)
-    circle(d, (cx, cy - (R - r1)), r1, 255)   # 頭を足す
-    circle(d, (cx, cy + (R - r2)), r2, 0)     # 尾を削る
-    circle(d, (cx, cy - (R - r1)), r1 * 0.42, 0)  # 紐を通す穴
+    circle(head, wh / 2, 255)          # 頭の丸み
+    circle(tail, wt / 2, 255)          # 尾の丸み
+    circle(head, wh * 0.24, 0)         # 紐を通す穴
 
-    if rotate:
-        mask = mask.rotate(rotate, resample=Image.BICUBIC, center=(cx, cy))
     return mask.resize((canvas_size, canvas_size), Image.LANCZOS)
 
 
 def draw_mark(canvas_size, scale=1.0, offset=(0, 0)):
     """勾玉のマークを、白抜き＋ほのかな発光で返す（背景のグラデーションに重ねて使う）。"""
     mask = magatama_mask(canvas_size, scale=scale)
-    mark = Image.new("RGBA", (canvas_size, canvas_size), (255, 255, 255, 0))
-    mark.putalpha(0)
+    transparent = Image.new("RGBA", (canvas_size, canvas_size), (255, 255, 255, 0))
     white = Image.new("RGBA", (canvas_size, canvas_size), (255, 255, 255, 250))
-    mark = Image.composite(white, mark, mask)
+    mark = Image.composite(white, transparent, mask)
 
     if offset != (0, 0):
         shifted = Image.new("RGBA", (canvas_size, canvas_size), (255, 255, 255, 0))

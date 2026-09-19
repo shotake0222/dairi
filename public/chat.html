@@ -6,7 +6,7 @@
 <title>わけたま｜キャラクターと会話</title>
 <meta name="description" content="話しかけるたびに性格が少しずつ変わっていく、あなただけの分身と会話しよう。" />
 
-<!-- PWA（ホーム画面に追加）。NFCタグが手元に無くても分身に会いに来られるようにするための導線。 -->
+<!-- PWA（ホーム画面に追加）。依代が手元に無くても分身に会いに来られるようにするための導線。 -->
 <link rel="manifest" href="/manifest.webmanifest" />
 <meta name="theme-color" content="#7c5cff" />
 <link rel="icon" href="/icons/favicon-64.png" sizes="64x64" type="image/png" />
@@ -235,6 +235,18 @@
      会話の上に重ねると読んでいる途中の文が隠れるので、重ねない。 */
   #pulseSlot { padding: 0 12px; }
   #pulseSlot:empty { display: none; }
+  /* 前回までの会話と、今日の会話の境目。無いと地続きに見えて、いつの話か分からなくなる */
+  .historyDivider {
+    text-align: center; font-size: 11px; color: #9a90c0; margin: 10px 0 14px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .historyDivider::before, .historyDivider::after {
+    content: ""; flex: 1; height: 1px; background: #e4defb;
+  }
+  /* 次の段階までの進み具合。段階名だけだと、この先まだ育つのかが分からない */
+  #growthBar { height: 4px; border-radius: 999px; background: #e8e3fa; overflow: hidden; margin-top: 6px; }
+  #growthBar i { display: block; height: 100%; background: linear-gradient(90deg,#a78bfa,#7c5cff); transition: width .4s ease; }
+  #growthNote { font-size: 11px; color: #9a90c0; margin-top: 4px; }
 </style>
 <script src="/pulse.js" defer></script>
 </head>
@@ -243,7 +255,7 @@
   <div class="row">
     <img id="avatarIcon" src="" alt="" hidden />
     <div class="nameCol">
-      <div class="brand"><svg class="mk" viewBox="0 0 48 48" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M24 7A17 17 0 0 1 24 41A6 6 0 0 0 24 29A11 11 0 0 1 24 7ZM28.6 18A4.6 4.6 0 1 1 19.4 18A4.6 4.6 0 1 1 28.6 18Z"/></svg><span>わけたま</span></div>
+      <div class="brand"><svg class="mk" viewBox="0 0 100 100" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M59.7 13.8 C61.1 14.9 65.5 17.8 68.1 20.4 C70.6 22.9 73.1 26.0 74.9 29.0 C76.6 32.1 77.8 35.3 78.5 38.7 C79.1 42.1 79.3 45.9 78.7 49.4 C78.0 52.9 76.7 56.7 74.8 59.7 C72.9 62.7 70.3 65.4 67.4 67.3 C64.5 69.2 60.8 70.7 57.5 71.1 C54.1 71.5 50.2 71.2 47.1 69.9 C44.0 68.6 40.1 64.6 38.7 63.5 A5.0 5.0 0 0 1 45.1 55.8 C45.6 56.1 46.9 57.1 48.0 57.4 C49.0 57.7 50.2 57.8 51.2 57.6 C52.3 57.4 53.5 56.9 54.4 56.3 C55.3 55.7 56.0 54.8 56.5 53.8 C57.0 52.9 57.3 51.7 57.3 50.6 C57.3 49.6 57.0 48.3 56.5 47.4 C56.0 46.5 55.0 45.5 54.1 45.2 C53.2 44.9 51.7 45.6 51.2 45.7 A16.5 16.5 0 0 1 59.7 13.8 Z M47.5 29.7a7.9 7.9 0 1 0 15.8 0a7.9 7.9 0 1 0 -15.8 0Z"/></svg><span>わけたま</span></div>
       <h1 id="charName">キャラクター</h1>
       <div id="status">読み込み中…</div>
     </div>
@@ -1054,6 +1066,7 @@
     nameEl.textContent = data.name || "キャラクター";
     const styleLabel = data.speechStyleLabel ? ` / 口調: ${data.speechStyleLabel}` : "";
     statusEl.textContent = `成長段階: ${data.growthStage} / やり取り回数: ${data.interactionCount ?? 0}${styleLabel}`;
+    renderGrowth(data.growth);
     if (data.personality) {
       renderPersonality(data.personality);
       currentPersonality = data.personality; // 読み上げの速さ・高さに反映する
@@ -1061,6 +1074,29 @@
     applyCharacterVisuals(data);
     renderSocial(data);
     maybeMountPulse(data.interactionCount);
+  }
+
+  /**
+   * 次の段階までの進み具合。
+   * 以前は50回で最上位に着いてしまい、そこから先は何回話しても表示が変わらなかった。
+   * 段階を増やしたので、「あと何回で何が変わるか」まで見せる。
+   */
+  function renderGrowth(growth) {
+    if (!growth) return;
+    let bar = document.getElementById("growthBar");
+    let note = document.getElementById("growthNote");
+    if (!bar) {
+      bar = document.createElement("div");
+      bar.id = "growthBar";
+      bar.innerHTML = "<i></i>";
+      note = document.createElement("div");
+      note.id = "growthNote";
+      statusEl.after(bar, note);
+    }
+    bar.firstElementChild.style.width = `${growth.percent}%`;
+    note.textContent = growth.nextStage
+      ? `${growth.summary}　あと${growth.toNext}回で「${growth.nextStage}」`
+      : `${growth.summary}`;
   }
 
   function renderPersonality(personality) {
@@ -1125,7 +1161,7 @@
         "この分身のデータは見つかりませんでした。削除されたか、URLが違うのかもしれません。",
         "system"
       );
-      addMessage("お持ちのNFCタグをもう一度タップすると、新しい分身がここで生まれます。", "system");
+      addMessage("お持ちの依代をもう一度かざすと、新しい分身がここで生まれます。依代が無いときは「分身を増やす」から始められます。", "system");
       input.disabled = true;
       input.placeholder = "この分身とは話せません";
       return;
@@ -1140,8 +1176,50 @@
     renderStatus(data);
     showDailyReportIfNeeded(data);
     rememberCharacter(data);
-    if (!data.interactionCount) {
+
+    // 前回までの会話を戻す。
+    // ここが無いと、保存されているのに画面からは消えていて「記録されていない」ように見える。
+    const restored = await restoreHistory();
+
+    if (!data.interactionCount && !restored) {
       addMessage("……はじめまして。よろしくね。", "char");
+    }
+  }
+
+  /**
+   * 前回までのやり取りを画面に戻す。
+   *
+   * 会話の本文なので、持ち主トークンを持っているときだけ取りに行く。
+   * 失敗しても会話は続けられるべきなので、黙って諦める（エラーで画面を止めない）。
+   */
+  async function restoreHistory() {
+    const token = getOwnerToken();
+    if (!token) return false;
+    try {
+      const res = await fetch(
+        `/api/character/history?cid=${encodeURIComponent(cid)}&token=${encodeURIComponent(token)}&limit=40`
+      );
+      if (!res.ok) return false;
+      const data = await res.json();
+      const turns = data.turns || [];
+      if (turns.length === 0) return false;
+
+      // 「ここから上は前回まで」の区切り。無いと、今日の会話と昨日の会話が地続きに見える。
+      const divider = document.createElement("div");
+      divider.className = "historyDivider";
+      const last = turns[turns.length - 1];
+      divider.textContent = last?.t
+        ? `ここまでが前回まで（${new Date(last.t).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}）`
+        : "ここまでが前回まで";
+
+      for (const turn of turns) {
+        addMessage(turn.text, turn.role === "user" ? "user" : "char");
+      }
+      log.appendChild(divider);
+      log.scrollTop = log.scrollHeight;
+      return true;
+    } catch (e) {
+      return false;
     }
   }
 

@@ -73,8 +73,10 @@ export async function handleGetOwnerView(env: PersonaRoutesEnv, url: URL): Promi
     accessibility: result.accessibility,
     psychographics: result.psychographics,
     segment: result.segment,
-    // 「分身が自分について何を覚えているか」は、本人には見えていた方がいい
+    // 「分身が自分について何を覚えているか」は、本人には見えていた方がいい。
+    // 土台（本人が書いた分）と学習分を分けて返すのは、画面で別々に直せるようにするため。
     notes: result.profileNotes,
+    notesSeed: result.profileNotesSeed,
     nextField: result.nextField,
     interactionCount: result.interactionCount,
   });
@@ -121,14 +123,17 @@ export async function handleSetProfile(
  */
 export async function handleSetNotes(
   env: PersonaRoutesEnv,
-  body: { characterId?: string; token?: string; notes?: unknown }
+  body: { characterId?: string; token?: string; notes?: unknown; part?: unknown }
 ): Promise<Response> {
   if (!body.characterId) return json({ error: "characterId is required" }, 400);
 
-  const result = await env.CHARACTER.getByName(body.characterId).setProfileNotes(body.notes, body.token);
+  // part を省いた場合は従来どおり「会話から覚えた分」への書き込み（既存クライアント互換）。
+  const part = body.part === "seed" ? "seed" : "learned";
+
+  const result = await env.CHARACTER.getByName(body.characterId).setProfileNotes(body.notes, body.token, part);
   if (!result.ok) return json({ error: result.error }, result.error === "not found" ? 404 : 403);
 
-  return json({ notes: result.notes });
+  return json({ notes: result.notes, notesSeed: result.notesSeed });
 }
 
 export async function handleSetAccessibility(

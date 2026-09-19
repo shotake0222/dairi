@@ -50,7 +50,8 @@ export async function handleSurveyNext(env: SurveyEnv, url: URL): Promise<Respon
     profileTotal: catalog.fields.length,
     psychoAnswered: view.survey.psychoAnswered.length,
     psychoTotal: catalog.psycho.length,
-    memoryCount: countNotes(view.profileNotes),
+    // 本人が書いた土台も「覚えていること」として数える（分身が会話で使う内容は同じなので）
+    memoryCount: countNotes(view.profileNotes) + countNotes(view.profileNotesSeed),
   });
 
   // 同意がまだなら、設問ではなく同意の依頼を返す。文面は consent.ts が唯一の定義元
