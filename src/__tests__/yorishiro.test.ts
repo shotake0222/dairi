@@ -9,6 +9,7 @@ import {
   listSpots,
   listTags,
   saveSpot,
+  TAG_CLAIM_DAILY_LIMIT,
 } from "../yorishiro";
 
 /**
@@ -551,5 +552,46 @@ describe("作れる数の上限", () => {
     expect(last!.status).toBe(429);
     const body = await last!.json<{ error: string }>();
     expect(body.error).toContain("翌朝9時");
+  });
+});
+
+describe("台帳に無いコードの連続受け付け（/t/・/q/ は依代を持たない人の上限を素通りできてしまう）", () => {
+  it("同じ回線から新しいコードを次々開くと、上限を超えたところで /add へ弾く", async () => {
+    const ip = `203.0.113.${Math.floor(Math.random() * 40) + 150}`;
+    const destinations: string[] = [];
+    for (let i = 0; i < TAG_CLAIM_DAILY_LIMIT + 2; i++) {
+      const res = await SELF.fetch(`${BASE}/t/${freshCode(`tagburst-${i}`)}`, {
+        redirect: "manual",
+        headers: { "cf-connecting-ip": ip },
+      });
+      expect(res.status).toBe(302);
+      destinations.push(new URL(res.headers.get("location")!, BASE).pathname);
+    }
+    // 上限までは分身が生まれる（/summonへ）
+    expect(destinations.slice(0, TAG_CLAIM_DAILY_LIMIT).every((p) => p === "/summon")).toBe(true);
+    // 超えた分は、依代を持たない人と同じ断り先（/add）へ弾く。DIRECT_CREATE_DAILY_LIMIT（3）
+    // より緩いのが正しい——本物の依代を何個も同時に開ける買い方まで邪魔してはいけない
+    expect(destinations.slice(TAG_CLAIM_DAILY_LIMIT).every((p) => p === "/add")).toBe(true);
+  });
+
+  it("既に生まれている依代への再タップは、上限に数えない", async () => {
+    const ip = `203.0.113.${Math.floor(Math.random() * 40) + 190}`;
+    const code = freshCode("tagreuse");
+    // 上限いっぱいまで新しいコードで使い切る
+    for (let i = 0; i < TAG_CLAIM_DAILY_LIMIT; i++) {
+      await SELF.fetch(`${BASE}/t/${freshCode(`tagreuse-fill-${i}`)}`, {
+        redirect: "manual",
+        headers: { "cf-connecting-ip": ip },
+      });
+    }
+    // 既存のコード（先に一度だけ、別回線から発行しておく）への再タップは、
+    // 上限を使い切ったあとでも通る——「新規発行」ではなく「同じ子に会いに行く」だけだから
+    await SELF.fetch(`${BASE}/t/${code}`, { redirect: "manual" });
+    const res = await SELF.fetch(`${BASE}/t/${code}`, {
+      redirect: "manual",
+      headers: { "cf-connecting-ip": ip },
+    });
+    expect(res.status).toBe(302);
+    expect(new URL(res.headers.get("location")!, BASE).pathname).toBe("/summon");
   });
 });

@@ -179,6 +179,18 @@
   (async function applyEntryPolicy() {
     const open = document.getElementById("createOpen");
     const closed = document.getElementById("createClosed");
+
+    // /t・/q で、台帳に無い新しいコードの読み取りが同じ回線から続いたときに来る。
+    // 依代を持たない人の入口（下）とは別の理由なので、/api/entry には聞かずここで直接出す。
+    if (new URLSearchParams(location.search).get("reason") === "busy") {
+      document.getElementById("closedMsg").textContent =
+        "同じ回線からの読み取りが少し続いたため、安全のためお休みしています。" +
+        "日本時間の翌朝9時にまた読み取れるようになります。お手持ちの依代は無駄になっていません。";
+      closed.hidden = false;
+      closed.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+
     let decision = { canCreate: false, message: null };
     try {
       decision = await (await fetch("/api/entry")).json();

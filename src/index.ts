@@ -35,6 +35,7 @@ import { canonicalFor, hostRedirect, isMarketingHost, renderRobots, renderSitema
 import { growthProgress } from "./ai/growth";
 import { purgeOldIpQuota } from "./lib/ipQuota";
 import {
+  canClaimNewTag,
   createDirectCharacter,
   dailyLimitFor,
   deleteSpot,
@@ -557,6 +558,13 @@ export default {
         characterId = row.character_id;
       } else {
         // 初回の読み取り: この依代に宿る分身を新規発行する。
+        // **ここで一度だけ、機械的な連番打ち（/t/1, /t/2, ...）を疑う。**
+        // 台帳に無いコードでも新しい依代として受け付ける都合上（後述）、
+        // ここを素通りさせると依代を持たない人の上限が意味を成さなくなる。
+        // 詳しい理由は src/yorishiro.ts の TAG_CLAIM_DAILY_LIMIT を参照。
+        if (!(await canClaimNewTag(env, request))) {
+          return Response.redirect(new URL("/add?closed=1&reason=busy", url.origin).toString(), 302);
+        }
         // 姿を引くのはDO側（init）。ここで渡せるのは**引く範囲**だけで、
         // どの子が出るかは指定できない（migration 0011 と BirthPool のコメントを参照）。
         characterId = crypto.randomUUID();

@@ -86,6 +86,33 @@ export function dailyLimitFor(reason: "admin" | "yorishiro" | "open" | "closed")
   return DIRECT_CREATE_DAILY_LIMIT;
 }
 
+/**
+ * /t・/q で「台帳に無い、初めて見るコード」を新しい依代として受け付けるときの、
+ * 1日あたりの上限（同じ回線から）。
+ *
+ * **なぜ要るか。** /t/<code> と /q/<code> は、台帳（tag_registry）に無いコードでも
+ * 新しい依代として受け付ける（台帳を作る前に配ったタグを死なせないため。
+ * migration 0009_yorishiro.sql 参照）。これは裏を返すと、**何でもいいから文字列を1つ
+ * 付けて `/t/好きな文字列` を開くだけで、上のDIRECT_CREATE_DAILY_LIMIT（依代を持たない
+ * 人の上限）をまるごと素通りして分身が1体生まれる**、ということでもある。
+ * `canCreateCharacter`（src/entryPolicy.ts）はこのルートを一切見ていない。
+ *
+ * 本物の依代は現物が要る（1つ5,500円、または配布場所に行く必要がある）ので、
+ * 1日に何十個も「初めて読む」ことは通常起きない。ここで警戒したいのは
+ * `/t/1`, `/t/2`, ... のような機械的な連番打ちで、依代を持たない人の上限より
+ * かなり緩くしてある（実在の依代を何個も同時に開ける買い方を邪魔しないため）。
+ */
+export const TAG_CLAIM_DAILY_LIMIT = 20;
+
+/**
+ * 台帳に無い新しいコードを、いま受け付けてよいか。
+ * 断るときはDBに何も書き込まない（コードを無駄に消費させないため）。
+ */
+export async function canClaimNewTag(env: { DB: D1Database }, request: Request): Promise<boolean> {
+  const limited = await consumeIpQuota(env, "tag_claim", request, TAG_CLAIM_DAILY_LIMIT);
+  return limited.allowed;
+}
+
 export interface Spot {
   code: string;
   label: string;
