@@ -372,3 +372,44 @@ describe("共通URL（UIDミラー）", () => {
     expect(to.searchParams.get("claim")).toBe("qr");
   });
 });
+
+/**
+ * 依代を使わない入口（/w）。
+ *
+ * **タグが刷り上がる前でもサービスを出せるようにするための口。**
+ * リンク1本配れば始まる。かざす依代と違って台帳には載らないが、
+ * 「開くたびに増える」ことだけは避ける（それをやると数がすぐ壊れる）。
+ */
+describe("Webだけで始める（/w）", () => {
+  it("受け皿の画面へ送り、Web由来として扱う", async () => {
+    const res = await SELF.fetch(`${BASE}/w`, { redirect: "manual" });
+    expect(res.status).toBe(302);
+    const to = new URL(res.headers.get("location")!, BASE);
+    expect(to.pathname).toBe("/summon");
+    expect(to.searchParams.get("claim")).toBe("web");
+  });
+
+  it("末尾のスラッシュが付いていても同じ", async () => {
+    const res = await SELF.fetch(`${BASE}/w/`, { redirect: "manual" });
+    expect(new URL(res.headers.get("location")!, BASE).searchParams.get("claim")).toBe("web");
+  });
+
+  it("入口の種類を web として記録する（配ったリンクの効きを別に数えられる）", async () => {
+    const res = await SELF.fetch(`${BASE}/api/character/new?from=web`, { method: "POST" });
+    expect(res.ok).toBe(true);
+    const { characterId } = await res.json<{ characterId: string }>();
+    const row = await env.DB.prepare("SELECT kind FROM character_origin WHERE character_id = ?")
+      .bind(characterId)
+      .first<{ kind: string }>();
+    expect(row?.kind).toBe("web");
+  });
+
+  it("from を付けなければ direct のまま（/add のボタンと混ざらない）", async () => {
+    const res = await SELF.fetch(`${BASE}/api/character/new`, { method: "POST" });
+    const { characterId } = await res.json<{ characterId: string }>();
+    const row = await env.DB.prepare("SELECT kind FROM character_origin WHERE character_id = ?")
+      .bind(characterId)
+      .first<{ kind: string }>();
+    expect(row?.kind).toBe("direct");
+  });
+});

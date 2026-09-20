@@ -316,6 +316,7 @@
         <br />・<strong>1つの依代からは1体だけ</strong>（2回目以降の読み取りは、同じ子に会いに行く）
         <br />・<strong>姿は引くもの</strong>。既定では30種類から等確率で、運営でも個体は指定できません
         <br />・<strong>人が持てる数に上限はありません</strong>。依代を3つ持てば3体育ちます
+        <br />・<strong>依代が無くても始められます</strong>（<code>/w</code>）。タグを刷る前でもサービスを出せます
         <br />「その場所でしか手に入らない」は、まず<strong>そのコードをその場所にしか置かないこと</strong>で作ります。
         それでも足りないときだけ、配布元ごとに<strong>出る姿の範囲</strong>を絞れます（下の「配布元」）。
         ※ 限定の姿が効くのは<strong>1枚ずつコードを振って発行した依代（主にQR）だけ</strong>です。
@@ -342,7 +343,21 @@
           <code id="urlQr"></code>
           <button type="button" class="ghost" data-copy="urlQr">コピー</button>
         </div>
+        <div class="urlRow">
+          <span class="urlWhat">依代なし（Webだけ）</span>
+          <code id="urlWeb"></code>
+          <button type="button" class="ghost" data-copy="urlWeb">コピー</button>
+        </div>
       </div>
+
+      <p class="lead" style="margin-top:12px">
+        <strong>タグが刷り上がる前に始めたいときは、3本目だけで足ります。</strong>
+        リンクを配る・QRに刷る・SNSに貼る、どれでも構いません。
+        開いた瞬間に1体生まれ、同じ端末で2回目に開くと同じ子に戻ります。
+        <br />ただし<strong>依代に紐づきません</strong>。端末を変えると引き継ぎコードだけが頼りになります。
+        <strong>同じ回線から1日3体まで</strong>にしてあります（機械的に作られるのを防ぐため）。
+        集計では <code>web</code> として数えるので、<strong>リンク経由がどれだけ効いたかは別に見られます。</strong>
+      </p>
 
       <p class="lead" style="margin-top:12px">
         <strong>なぜ同じURLで1枚1体になるのか。</strong>
@@ -953,6 +968,8 @@
   // **この0の個数を変えないこと。** UIDは7バイト＝14文字で、長さが合わないと弾かれる。
   document.getElementById("urlNfc").textContent = `${location.origin}/t?u=00000000000000`;
   document.getElementById("urlQr").textContent = `${location.origin}/q/<コード>`;
+  // 依代を使わない入口。タグが無くてもここだけでサービスを始められる
+  document.getElementById("urlWeb").textContent = `${location.origin}/w`;
   for (const btn of document.querySelectorAll("[data-copy]")) {
     btn.addEventListener("click", async () => {
       const text = document.getElementById(btn.dataset.copy).textContent;

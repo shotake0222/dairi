@@ -980,15 +980,23 @@ console.log("\n[32] 依代を何個でも持てること、書き込むURLの案
   check("一覧に2体とも並ぶ", (await page.locator("#grid .entry:not(.addEntry)").count()) === 2);
   const dex = await page.evaluate(() => {
     const card = document.getElementById("dexCard");
+    // 一覧は開いたときにサーバーの姿で上書きされる。**2体が同じ姿を引くこともある**
+    // （30通りなので3%ほど）。数え方を固定値で書くと、たまに落ちるテストになる。
+    let list = [];
+    try { list = JSON.parse(localStorage.getItem("sodatsukake_myCharacters") || "[]"); } catch (e) { /* noop */ }
+    const distinct = new Set(list.filter((c) => c.species && c.color).map((c) => `${c.species}_${c.color}`));
     return {
       shown: card && !card.hidden,
       count: (document.getElementById("dexCount") || {}).textContent || "",
       owned: document.querySelectorAll("#dexGrid .dexCell:not(.unseen)").length,
       cells: document.querySelectorAll("#dexGrid .dexCell").length,
+      distinct: distinct.size,
     };
   });
   check("集めた姿の図鑑が出る", dex.shown === true && dex.cells === 30, JSON.stringify(dex));
-  check("持っている姿だけが開いている", dex.owned === 2 && dex.count.includes("2 / 30"), JSON.stringify(dex));
+  check("持っている姿だけが開いている",
+    dex.distinct > 0 && dex.owned === dex.distinct && dex.count.includes(`${dex.distinct} / 30`),
+    JSON.stringify(dex));
 
   // 1体も居ない端末では図鑑を出さない（集める前に空の棚を見せない）
   await page.evaluate(() => localStorage.removeItem("sodatsukake_myCharacters"));
@@ -1061,6 +1069,47 @@ console.log("\n[33] 全タグ共通のURL（UIDミラー）");
   check("2回目は前の子に戻る",
     page.url().includes("/chat") && page.url().includes(claimed.stored),
     page.url().slice(-70));
+}
+
+console.log("\n[34] 依代を使わず、Webだけで始める（/w）");
+{
+  const res = await fetch(`${BASE}/w`, { redirect: "manual" });
+  const to = new URL(res.headers.get("location") || "", BASE);
+  check("/w が受け皿へ送る", to.pathname === "/summon" && to.searchParams.get("claim") === "web",
+    to.pathname + "?" + to.search);
+
+  // 実際に開いて、1体生まれて会話まで行けること
+  await page.goto(`${BASE}/home`, { waitUntil: "domcontentloaded" });
+  await page.evaluate(() => localStorage.removeItem("sodatsukake_tagClaim"));
+  await page.goto(`${BASE}/w`, { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(3200);
+  const born = await page.evaluate(() => {
+    let v = "";
+    try { v = localStorage.getItem("sodatsukake_tagClaim") || ""; } catch (e) { /* noop */ }
+    return { stored: v, url: location.href };
+  });
+  check("/w を開くだけで1体生まれる", born.stored.length > 0, JSON.stringify(born));
+  check("そのまま誕生の画面に居る", born.url.includes("/summon") && born.url.includes("cid="), born.url.slice(-60));
+
+  // **開くたびに増えない**（ここが壊れると数がすぐ意味を失う）
+  await page.goto(`${BASE}/w`, { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(2500);
+  check("2回目に開いても増えない", page.url().includes(born.stored), page.url().slice(-70));
+
+  // 入口の種類を分けて数えている（配ったリンクの効きが見える）
+  const made = await (await fetch(`${BASE}/api/character/new?from=web`, { method: "POST" })).json();
+  check("Web由来として分身が作れる", !!made.characterId);
+
+  // 案内。人に渡すのはこの1本
+  const add = await (await fetch(`${BASE}/add`)).text();
+  check("分身を増やす画面が /w を案内している", add.includes('id="webLink"'));
+  if (adminPass) {
+    const gate = await fetch(`${BASE}/admin?key=${encodeURIComponent(adminPass)}`, { redirect: "manual" });
+    const cookie = (gate.headers.get("set-cookie") || "").split(";")[0];
+    const admin = await (await fetch(`${BASE}/admin`, { headers: { cookie } })).text();
+    check("管理画面が依代なしのURLも出している", admin.includes('id="urlWeb"'));
+    check("タグ前でも始められると書いてある", admin.includes("タグが刷り上がる前に始めたいとき"));
+  }
 }
 
 check("JavaScriptエラーが出ていない", pageErrors.length === 0, pageErrors.join(" / "));

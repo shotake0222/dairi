@@ -426,7 +426,8 @@ export default {
       // 依代をかざしたのにタグを特定できなかったとき（UIDミラー未設定など）も、ここを通る。
       // その場合だけ入口の記録を分ける。配った枚数と合わなくなるのを避けるため。
       const from = url.searchParams.get("from");
-      const kind = from === "tag" ? "nfc" : from === "qr" ? "qr" : "direct";
+      const kind =
+        from === "tag" ? "nfc" : from === "qr" ? "qr" : from === "web" ? "web" : "direct";
       const result = await createDirectCharacter(env, request, kind);
       if (!result.ok) return json({ error: result.error }, { status: result.status });
       ctx.waitUntil(countMetric(env, "new_character"));
@@ -448,6 +449,22 @@ export default {
     // ここを揃えておかないと「集める」が成り立たない。運営が姿を決められるようにすると
     // 「引き当てた」が「配られた」になり、1つの依代から何体も生まれるなら集める理由が消える。
     //
+    // --- 依代を使わない入口: /w（Webだけで始める） ---
+    //
+    // **タグが刷り上がる前でも、サービスを始められるようにするための口。**
+    // リンクを配る・QRに刷る・SNSに貼る、のどれでも使える。かざす依代と同じで、
+    // 開いた瞬間に1体生まれ、2回目からは同じ子に戻る（同じ端末なら）。
+    //
+    // 依代に紐づかないので、**端末を変えると引き継ぎコードだけが頼り**になる。
+    // その注意は /summon の先（チャット画面）で伝えている。
+    // 1日に作れる数は同じ回線から3体まで（src/yorishiro.ts の DIRECT_CREATE_DAILY_LIMIT）。
+    if (url.pathname === "/w" || url.pathname === "/w/") {
+      ctx.waitUntil(countMetric(env, "scan"));
+      const claim = new URL("/summon", url.origin);
+      claim.searchParams.set("claim", "web");
+      return Response.redirect(claim.toString(), 302);
+    }
+
     // **依代に書き込むURLは、全部同じで構わない。**
     //   https://<ドメイン>/t?u=00000000000000   ← NFCタグ（UIDミラーの埋め草つき）
     //   https://<ドメイン>/q/<コード>            ← QRは1枚ずつ違うコードを刷る

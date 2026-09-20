@@ -49,8 +49,19 @@ export interface YorishiroEnv {
   CHARACTER: DurableObjectNamespace<import("./durable-objects/characterState").CharacterState>;
 }
 
-/** 入口の種類。character_origin.kind に入る値。振る舞いではなく「どう配ったか」だけを表す。 */
-export type OriginKind = "nfc" | "qr" | "direct" | "import";
+/**
+ * 入口の種類。character_origin.kind に入る値。振る舞いではなく「どう配ったか」だけを表す。
+ *
+ *   nfc    … 依代をかざした
+ *   qr     … 配られたQRを読み取った
+ *   web    … **依代を使わず、配ったリンクから始めた**（/w）。タグが刷り上がる前でも始められる口
+ *   direct … /add の「この端末で分身を始める」を自分で押した
+ *   import … 人格パッケージを取り込んだ
+ *
+ * web と direct は中身が同じ（どちらも依代に紐づかない）が、**分けて数えられるようにしている**。
+ * 配ったリンクがどれだけ効いたのかは、混ぜると分からなくなる。
+ */
+export type OriginKind = "nfc" | "qr" | "web" | "direct" | "import";
 
 /**
  * 依代を持たずに作れる分身の、1日あたりの上限（同じ回線から）。

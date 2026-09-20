@@ -110,6 +110,10 @@
         </p>
         <button id="createBtn" type="button">この端末で分身を始める</button>
         <div id="status"></div>
+        <p class="muted" style="margin:10px 0 0;font-size:12px">
+          人に教えるときは <strong id="webLink">/w</strong> のひと言で足ります。
+          開くだけで、その端末の分身が1体生まれます。
+        </p>
       </div>
     </div>
   </section>
@@ -145,6 +149,10 @@
 </main>
 
 <script>
+  // 人に教えるときのリンク。ドメインが変わっても正しく出るよう、開いた場所から作る
+  const webLink = document.getElementById("webLink");
+  if (webLink) webLink.textContent = `${location.host}/w`;
+
   const createBtn = document.getElementById("createBtn");
   const statusEl = document.getElementById("status");
 
