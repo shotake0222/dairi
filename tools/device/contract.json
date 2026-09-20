@@ -1,0 +1,82 @@
+{
+  "_": "機器に渡す最小形（compact）の並び。ここが唯一の出所で、compact.mjs・wt_core.py・wt_core.h・図面・テストが全部ここを見る。並びを変えるときは v を上げること（古いファームが黙って別の値を読むため）。",
+  "version": 1,
+  "arrays": {
+    "m": {
+      "label": "動き",
+      "fields": [
+        { "key": "energy", "unit": "0-100", "use": "動きの大きさ・速さ" },
+        { "key": "gestureRate", "unit": "0-100", "use": "身振りの頻度（/25 で回数）" },
+        { "key": "idleVariance", "unit": "0-100", "use": "待機の揺らぎ幅" },
+        { "key": "responseDelayMs", "unit": "ms", "use": "話しかけられてから動くまでの間" },
+        { "key": "gazeHoldMs", "unit": "ms", "use": "目線を保つ長さ" },
+        { "key": "postureOpenness", "unit": "0-100", "use": "姿勢の開き（中心角の補正）" }
+      ]
+    },
+    "p": {
+      "label": "間合い",
+      "fields": [
+        { "key": "comfortableDistanceM", "unit": "m", "use": "これ以上は近づかない距離" },
+        { "key": "approachSpeedMps", "unit": "m/s", "use": "近づく速さ" }
+      ]
+    },
+    "e": {
+      "label": "表情",
+      "fields": [
+        { "key": "baselineSmile", "unit": "0-100", "use": "口のLEDの基準の明るさ" },
+        { "key": "blinkRatePerMin", "unit": "/min", "use": "目のLEDのまばたき" }
+      ]
+    },
+    "t": {
+      "label": "性格6軸",
+      "fields": [
+        { "key": "warmth", "unit": "0-100", "use": "—" },
+        { "key": "curiosity", "unit": "0-100", "use": "—" },
+        { "key": "cheerfulness", "unit": "0-100", "use": "笑顔の上乗せ" },
+        { "key": "caution", "unit": "0-100", "use": "下がるかどうかの判断" },
+        { "key": "independence", "unit": "0-100", "use": "自分から寄るかどうかの判断" },
+        { "key": "humor", "unit": "0-100", "use": "—" }
+      ]
+    }
+  },
+  "scalars": {
+    "v": "形式の版。1 以外は読まない",
+    "id": "ログで見分けるための短いID（8文字）。元のcidは載せない",
+    "n": "名前（16文字まで）。呼びかけのためだけ",
+    "c": "方針コードの配列。機器はこれで分岐する。訳さない"
+  },
+  "policyCodes": [
+    "prefer_novel_options",
+    "prefer_familiar_options",
+    "confirm_before_change",
+    "tolerate_open_plans",
+    "notice_others_first",
+    "respect_distance",
+    "track_progress",
+    "avoid_pushing_goals",
+    "offer_choices_not_answers",
+    "give_one_clear_suggestion",
+    "take_initiative",
+    "follow_the_lead",
+    "honor_routine",
+    "suggest_updates",
+    "prioritize_enjoyment",
+    "stay_on_task"
+  ],
+  "limits": {
+    "maxBytes": 512,
+    "maxPolicies": 6,
+    "note": "512 を超えたら ESP32 の StaticJsonDocument<768> と Pico の読み込みに余裕が無くなる。make_compact.mjs が警告する"
+  },
+  "forbidden": {
+    "note": "この形に入れてはいけないもの。tools/edge/compact.mjs の auditCompact が機械で確認する",
+    "keys": ["会話", "覚え書き(notes)", "記憶(memories)", "属性(attributes)", "systemPrompt", "持ち主トークン", "cid の全体"]
+  },
+  "events": [
+    { "e": "idle", "args": [], "use": "待機。何も起きていないとき" },
+    { "e": "approach", "args": ["dist"], "use": "人が近づいた。dist は m" },
+    { "e": "greet", "args": [], "use": "話しかけられた（ボタン or 音）" },
+    { "e": "change", "args": [], "use": "予定を変えようと言われた" },
+    { "e": "silence", "args": ["sec"], "use": "沈黙が続いた。sec は秒" }
+  ]
+}

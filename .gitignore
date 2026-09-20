@@ -10,3 +10,7 @@ tools/.persona-out/
 # 出来上がりの public/media/ だけを追跡する。
 tools/lp-video/.work/
 tools/lp-video/.shots/
+
+# Pythonの中間ファイル（tools/ のスクリプトが作る）
+__pycache__/
+*.pyc

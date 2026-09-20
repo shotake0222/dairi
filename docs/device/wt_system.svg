@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="780" height="470" viewBox="0 0 780 470">
+<rect x="0.0" y="0.0" width="780.0" height="470.0" rx="0" fill="#ffffff" stroke="none" stroke-width="1.2"/>
+<text x="40.0" y="40.0" font-family="Hiragino Sans, Yu Gothic, sans-serif" font-size="17" fill="#1c1630" font-weight="700" text-anchor="start">わけたま検証機 — 系統図</text>
+<text x="40.0" y="62.0" font-family="Hiragino Sans, Yu Gothic, sans-serif" font-size="11.5" fill="#6f668f" font-weight="400" text-anchor="start">トークンと人格カードは母艦より右へ行かない。機器へ渡すのは数値だけ</text>
+<text x="40.0" y="82.0" font-family="Hiragino Sans, Yu Gothic, sans-serif" font-size="11" fill="#6f668f" font-weight="400" text-anchor="start">生成: tools/device/make_device_docs.py</text>
+<rect x="40.0" y="110.0" width="220.0" height="96.0" rx="8" fill="#f7f5ff" stroke="#7c5cff" stroke-width="1.2"/>
+<text x="54.0" y="136.0" font-family="Hiragino Sans, Yu Gothic, sans-serif" font-size="12.5" fill="#1c1630" font-weight="700" text-anchor="start">わけたま（Cloudflare）</text>
+<text x="54.0" y="156.0" font-family="Hiragino Sans, Yu Gothic, sans-serif" font-size="11" fill="#6f668f" font-weight="400" text-anchor="start">会話 → 性格6軸 → 価値観8軸</text>
+<text x="54.0" y="172.0" font-family="Hiragino Sans, Yu Gothic, sans-serif" font-size="11" fill="#6f668f" font-weight="400" text-anchor="start">→ 身体パラメータ9個</text>
+<rect x="300.0" y="110.0" width="200.0" height="96.0" rx="8" fill="#f7f5ff" stroke="#3aa76d" stroke-width="1.2"/>
+<text x="314.0" y="136.0" font-family="Hiragino Sans, Yu Gothic, sans-serif" font-size="12.5" fill="#1c1630" font-weight="700" text-anchor="start">操作する人のPC / 母艦</text>
+<text x="314.0" y="156.0" font-family="Hiragino Sans, Yu Gothic, sans-serif" font-size="11" fill="#6f668f" font-weight="400" text-anchor="start">人格カードを取得（要トークン）</text>
+<text x="314.0" y="172.0" font-family="Hiragino Sans, Yu Gothic, sans-serif" font-size="11" fill="#6f668f" font-weight="400" text-anchor="start">→ 最小形 約250バイトへ</text>
+<rect x="540.0" y="60.0" width="180.0" height="70.0" rx="8" fill="#ffffff" stroke="#1c1630" stroke-width="1.2"/>
+<text x="554.0" y="86.0" font-family="Hiragino Sans, Yu Gothic, sans-serif" font-size="12.5" fill="#1c1630" font-weight="700" text-anchor="start">WT-1 Pico</text>
+<text x="554.0" y="106.0" font-family="Hiragino Sans, Yu Gothic, sans-serif" font-size="11" fill="#6f668f" font-weight="400" text-anchor="start">サーボ2・LED2・測距</text>
+<rect x="540.0" y="148.0" width="180.0" height="70.0" rx="8" fill="#ffffff" stroke="#1c1630" stroke-width="1.2"/>
+<text x="554.0" y="174.0" font-family="Hiragino Sans, Yu Gothic, sans-serif" font-size="12.5" fill="#1c1630" font-weight="700" text-anchor="start">WT-2 ESP32</text>
+<text x="554.0" y="194.0" font-family="Hiragino Sans, Yu Gothic, sans-serif" font-size="11" fill="#6f668f" font-weight="400" text-anchor="start">同じ＋Wi-Fi で受け取り</text>
+<rect x="540.0" y="236.0" width="180.0" height="70.0" rx="8" fill="#ffffff" stroke="#1c1630" stroke-width="1.2"/>
+<text x="554.0" y="262.0" font-family="Hiragino Sans, Yu Gothic, sans-serif" font-size="12.5" fill="#1c1630" font-weight="700" text-anchor="start">WT-3 Pi Zero</text>
+<text x="554.0" y="282.0" font-family="Hiragino Sans, Yu Gothic, sans-serif" font-size="11" fill="#6f668f" font-weight="400" text-anchor="start">同じ＋記録（CSV）</text>
+<path d="M260.0 158.0 H280.0 V158.0 H300.0" fill="none" stroke="#7c5cff" stroke-width="2"/>
+<path d="M500.0 158.0 H520.0 V95.0 H540.0" fill="none" stroke="#3aa76d" stroke-width="2"/>
+<path d="M500.0 158.0 H520.0 V183.0 H540.0" fill="none" stroke="#3aa76d" stroke-width="2"/>
+<path d="M500.0 158.0 H520.0 V271.0 H540.0" fill="none" stroke="#3aa76d" stroke-width="2"/>
+<path d="M520 40 V430" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="6 6"/>
+<text x="528.0" y="400.0" font-family="Hiragino Sans, Yu Gothic, sans-serif" font-size="11.5" fill="#c0392b" font-weight="700" text-anchor="start">ここから右へ渡すのは最小形だけ</text>
+<text x="528.0" y="418.0" font-family="Hiragino Sans, Yu Gothic, sans-serif" font-size="11" fill="#c0392b" font-weight="400" text-anchor="start">（持ち主トークン・会話・覚え書きは渡さない）</text>
+<rect x="300.0" y="330.0" width="200.0" height="76.0" rx="8" fill="#ffffff" stroke="#3aa76d" stroke-width="1.2"/>
+<text x="314.0" y="356.0" font-family="Hiragino Sans, Yu Gothic, sans-serif" font-size="12.5" fill="#1c1630" font-weight="700" text-anchor="start">WT-4 母艦（Pi 4 8GB）</text>
+<text x="314.0" y="376.0" font-family="Hiragino Sans, Yu Gothic, sans-serif" font-size="11" fill="#6f668f" font-weight="400" text-anchor="start">2台へ同じイベントを同時送出</text>
+<text x="314.0" y="392.0" font-family="Hiragino Sans, Yu Gothic, sans-serif" font-size="11" fill="#6f668f" font-weight="400" text-anchor="start">記録CSV / Ollama（段階B）</text>
+<path d="M400.0 330.0 H400.0 V206.0 H400.0" fill="none" stroke="#3aa76d" stroke-width="2" stroke-dasharray="5 5"/>
+</svg>

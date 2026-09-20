@@ -1,0 +1,92 @@
+{
+  "_": "わけたま検証機のピン割り当て。ここが唯一の出所。tools/device/make_device_docs.py が、この表から配線図(SVG)とファーム用の定数(wt_pins.py / wt_pins.h)を生成する。手で書いたピン番号をファームに残さないこと（図と現物がずれる）。",
+  "updated": "2026-09-20",
+  "roles": [
+    { "role": "SERVO_BODY", "label": "体のサーボ", "kind": "pwm-out", "note": "SG90。待機の揺らぎと姿勢" },
+    { "role": "SERVO_ARM", "label": "腕のサーボ", "kind": "pwm-out", "note": "SG90。身振り（手を振る）" },
+    { "role": "LED_MOUTH", "label": "口のLED", "kind": "pwm-out", "note": "白または橙 + 330Ω。baselineSmile" },
+    { "role": "LED_EYE", "label": "目のLED", "kind": "pwm-out", "note": "白 + 330Ω。blinkRatePerMin" },
+    { "role": "BTN_TALK", "label": "話しかけボタン", "kind": "in-pullup", "note": "タクトスイッチ。押す→GND。greet" },
+    { "role": "SONAR_TRIG", "label": "測距 送信", "kind": "out", "note": "HC-SR04 TRIG" },
+    { "role": "SONAR_ECHO", "label": "測距 受信", "kind": "in", "note": "HC-SR04 ECHO。5V出力なので分圧（10kΩ+20kΩ）必須" },
+    { "role": "BUZZER", "label": "ブザー", "kind": "pwm-out", "note": "受動ブザー。任意。無くても検証は成立する" },
+    { "role": "LED_ALIVE", "label": "生存表示", "kind": "out", "note": "オンボードLED。1秒ごとに点滅＝生きている" }
+  ],
+  "boards": {
+    "pico": {
+      "name": "Raspberry Pi Pico 2 W",
+      "numbering": "GP番号（MicroPython の machine.Pin と同じ）",
+      "logic": 3.3,
+      "pins": {
+        "SERVO_BODY": 16,
+        "SERVO_ARM": 17,
+        "LED_MOUTH": 15,
+        "LED_EYE": 14,
+        "BTN_TALK": 18,
+        "SONAR_TRIG": 20,
+        "SONAR_ECHO": 21,
+        "BUZZER": 22,
+        "LED_ALIVE": "LED"
+      },
+      "power": {
+        "board": "USB microB 5V",
+        "servo": "別電源 5V 2A（GND は共通にする）",
+        "warn": "サーボをPicoの VBUS から取ると、動いた瞬間に電圧が落ちて再起動する"
+      }
+    },
+    "esp32": {
+      "name": "ESP32-WROOM-32 開発ボード",
+      "numbering": "GPIO番号",
+      "logic": 3.3,
+      "pins": {
+        "SERVO_BODY": 13,
+        "SERVO_ARM": 27,
+        "LED_MOUTH": 25,
+        "LED_EYE": 26,
+        "BTN_TALK": 33,
+        "SONAR_TRIG": 32,
+        "SONAR_ECHO": 35,
+        "BUZZER": 4,
+        "LED_ALIVE": 2
+      },
+      "avoid": {
+        "0,2,5,12,15": "起動時の状態を見ているピン（strapping）。0と15をサーボに使うと書き込みに失敗する",
+        "6-11": "内蔵フラッシュ用。触ると即死ぬ",
+        "34-39": "入力専用。プルアップも無い。ECHO だけに使う"
+      },
+      "power": {
+        "board": "USB 5V",
+        "servo": "別電源 5V 2A（GND 共通）",
+        "warn": "ESP32 は Wi-Fi 送信の瞬間に 300mA 近く食う。サーボと電源を共有すると起動を繰り返す"
+      }
+    },
+    "pi": {
+      "name": "Raspberry Pi Zero 2 W / Pi 4",
+      "numbering": "BCM番号（gpiozero と同じ）",
+      "logic": 3.3,
+      "pins": {
+        "SERVO_BODY": 17,
+        "SERVO_ARM": 27,
+        "LED_MOUTH": 18,
+        "LED_EYE": 13,
+        "BTN_TALK": 22,
+        "SONAR_TRIG": 23,
+        "SONAR_ECHO": 24,
+        "BUZZER": 25,
+        "LED_ALIVE": null
+      },
+      "note": "LED_MOUTH(18) と LED_EYE(13) はハードウェアPWMのピン。ここを外すとソフトPWMになり、LEDがちらつく",
+      "power": {
+        "board": "公式アダプタ（Pi 4 は 5V 3A、Zero 2 W は 5V 2.5A）",
+        "servo": "別電源 5V 2A（GND 共通）",
+        "warn": "サーボを Pi の 5V ピンから取ると、負荷時に電圧が落ちてSDカードが壊れることがある"
+      }
+    }
+  },
+  "commonParts": {
+    "led_resistor_ohm": 330,
+    "echo_divider": { "r1_ohm": 10000, "r2_ohm": 20000, "note": "ECHO—R1—測定点—R2—GND。5V を約3.3V に落とす" },
+    "servo_bulk_cap_uf": 470,
+    "note": "サーボの電源ラインに 470µF を1本入れると、動き出しの電圧降下で落ちるのがほぼ無くなる"
+  }
+}

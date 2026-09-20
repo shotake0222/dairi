@@ -173,7 +173,8 @@ describe("集計用レジストリ（同意が無ければ行ごと存在しな�
     const token = await createCharacter(cid);
     // かつては marketplace への同意だけでもレジストリに行ができていた。
     // 出品を畳んだので、載る条件は集約への同意ひとつだけになった。
-    await post("/api/consent", { characterId: cid, token, consent: { profile: true, terms: true } });
+    // terms に同意すると集約も一緒に有効になるので、ここでは明示的に切って確かめる
+    await post("/api/consent", { characterId: cid, token, consent: { profile: true, terms: true, aggregate: false } });
     await post("/api/profile", { characterId: cid, token, answers: { ageBand: ["30代"] } });
     expect(await registryRow(cid)).toBeNull();
   });

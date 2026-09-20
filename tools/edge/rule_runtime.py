@@ -84,7 +84,8 @@ def on_approach(p, distance_m):
         # まだ遠い。自分から寄るかどうかは自立心と慎重さで変わる
         forward = (p.independence >= 55 or p.has("prefer_novel_options")) and not p.has("confirm_before_change")
         if forward:
-            step = round(min(p.approach_mps, distance_m - p.distance_m), 2)
+            # float() は表記を揃えるため（tools/device/common/wt_core.py と同じ）
+            step = round(min(float(p.approach_mps), distance_m - p.distance_m), 2)
             out_servo("drive", "forward %sm/s" % step)
         else:
             out_servo("head", "tilt toward")

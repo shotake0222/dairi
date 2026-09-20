@@ -16,6 +16,11 @@
 | **B. 言葉** | その子らしい喋り方になるか | Pi 4 以上（8GB推奨） | 必要（ローカル） |
 | **C. 常時オフライン** | ネットが無くても A+B が成立するか | Pi 5 / Pi 4 8GB | 必要（ローカル） |
 
+> **専用の検証機を作るなら**、この手順を1台の機械にまとめたものがある。
+> 設計 [DEVICE_DESIGN.md](DEVICE_DESIGN.md) / 仕様 [DEVICE_SPEC.md](DEVICE_SPEC.md) / 作り方 [DEVICE_BUILD.md](DEVICE_BUILD.md)。
+> 2体へ同時にイベントを投げて、差を自動で判定し、記録をCSVに落とすところまで入っている。
+> こちらの文書は「手元にある機材で、まず確かめる」ための最小手順として残してある。
+
 要点を先に書くと、**Aの段階にLLMは要らない**。
 「人格 → 振る舞い」の翻訳はサーバ側（`src/persona/avatarProfile.ts`）で済ませてあり、
 機器へ渡すのは**数百バイトの数値と識別子だけ**。だから Pico や ESP32 でも成立する。
@@ -148,10 +153,21 @@ $ python3 tools/edge/rule_runtime.py bold.min.json careful.min.json --events=app
 
 **合格の基準**（ここを満たさないなら、データが人格になっていない）:
 
-- 返すまでの間が **2倍以上** 違う（410ms vs 930ms）
+- 返すまでの間が **1.5倍以上** 違う
 - 身振りの回数が違う（2回 vs 1回）
 - 近づくかどうかの判断が分かれる
-- 方針の識別子に重なりが無い
+- 方針の識別子に、互いに相手が持たないものがある
+- 5つのイベントのうち3つ以上で、手順が違う
+
+> 以前ここは「2倍以上」だった。ある1回の実測（410ms vs 930ms）をそのまま線にしたもので、
+> **きつすぎた**（別の回の 458ms vs 890ms ＝ 1.94倍が不合格になる）。
+> 実測の2体は 1.9〜2.3倍に散らばるので、「はっきり違うと分かる」線として 1.5倍を採る。
+
+判定は目で見ない。`tools/device/common/wt_core.py` の `compare()` が5項目を機械で見る:
+
+```bash
+python3 tools/device/pi/wt_hub.py compare     # 合格／不合格が項目ごとに出る
+```
 
 `--diff` を付けると差だけ並ぶ:
 
@@ -320,3 +336,6 @@ PERSONA_LLM_URL=http://raspberrypi.local:11434/v1/chat/completions \
 | Pico（MicroPython） | `tools/edge/pico_waketama.py` |
 | 到達率・弁別性の測定 | `tools/persona-runtime-check.mjs`（`npm run persona:check`） |
 | 最小形の自動検証 | `src/persona/__tests__/edgeCompact.test.ts` |
+| **検証機（WT-1〜4）の設計・仕様・作り方** | `docs/DEVICE_DESIGN.md` / `DEVICE_SPEC.md` / `DEVICE_BUILD.md` |
+| 検証機のファームと母艦 | `tools/device/` |
+| 検証機の自己点検 | `tools/device/selftest.py`（`npm run device:selftest`） |

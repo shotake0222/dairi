@@ -204,4 +204,6 @@ python3 tools/edge/rule_runtime.py bold.min.json careful.min.json --diff
 | 最小化と漏れの検査 | `tools/edge/compact.mjs` |
 | 機器側の参照実装 | `tools/edge/rule_runtime.py` ほか |
 | 実機での検証手順 | `docs/EDGE_DEVICE_TEST.md` |
+| 検証機そのものの設計・仕様・作り方 | `docs/DEVICE_DESIGN.md` / `DEVICE_SPEC.md` / `DEVICE_BUILD.md` |
+| 全機種で共通の振る舞いエンジン | `tools/device/common/wt_core.py`（C++版: `tools/device/esp32/wt_device/wt_core.h`） |
 | 判断特化AIへの受け渡し | `src/slm.ts`（判断プロファイル） |

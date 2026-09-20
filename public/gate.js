@@ -53,13 +53,13 @@
   .wtGate input[type="checkbox"] { opacity: 1; }
   .wtGate label { display: block; cursor: pointer; }
   .wtGate .err { color: #c0392b; font-size: 12.5px; min-height: 18px; }
-  /* 任意の同意。**既定はオフ**で、オンにしないと何も起きない。
-     必須のものと見分けが付くよう、囲って別扱いにしている。 */
+  /* 同意すると一緒に有効になる使い道。**選ばせないが、隠さない。**
+     囲って別扱いにしているのは、本文の一部として読み飛ばされないようにするため。 */
   .wtGate .opt { border: 1px solid #ece8fb; border-radius: 12px; padding: 12px 14px; margin: 14px 0 0; }
   .wtGate .opt > .lead { font-size: 12.5px; color: #6f668f; margin: 0 0 10px; }
   .wtGate .optItem { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 12px; }
   .wtGate .optItem:last-child { margin-bottom: 0; }
-  .wtGate .optItem input { margin: 3px 0 0; width: 18px; height: 18px; flex: none; accent-color: #7c5cff; }
+  .wtGate .optItem .mark { color: #7c5cff; font-weight: 700; flex: none; }
   .wtGate .optItem .t { font-size: 13px; font-weight: 700; display: block; margin-bottom: 2px; }
   .wtGate .optItem .d { font-size: 12.5px; color: #4a4266; display: block; }
   .wtGate .optItem .n { font-size: 12px; color: #8f86ad; display: block; margin-top: 3px; }
@@ -83,15 +83,15 @@
    * 同意の画面を出して、押されるまで待つ。
    * 閉じる手段は「同意する」しか無い。読まずに進む道を作らないため。
    *
-   * **任意の同意も、ここで一緒に出す。**
-   * 以前は必須の terms だけを聞き、残りは設定画面に置いていた。
-   * そこまで見に行く人はほとんど居ないので、**何に使われるのか知らないまま
-   * 使い続ける**ことになっていた。後から聞かれて初めて知る形は、
-   * 同意を取ったとは言いにくい。始める前に全部見せて、選んでもらう。
+   * **聞くのは1つだけ。使い道は全部見せる。**
+   * 以前はここに任意のチェックを2つ並べていたが、生まれた直後の人に
+   * 3つの判断を求める形になっていて、結局ほとんど読まれずに素通りしていた。
+   * いまは「はじめるかどうか」だけを聞き、その同意に含まれる使い道は
+   * **チェックではなく本文として全部並べる**（src/persona/consent.ts の BUNDLED_WITH_TERMS）。
    *
-   * ただし**既定はオフのまま**。まとめて出すのは「説明を尽くすため」であって、
-   * ついでにオンにしてもらうためではない。初期値をオンにした瞬間、
-   * これは同意ではなく黙認になる。
+   * この形が成立する条件は2つ。**どちらも外さないこと**:
+   *   1. 束ねた使い道を1つ残らずここに出す（畳まない・省略しない）
+   *   2. あとから1つずつ止められる（/profile の設定）
    */
   function ask(allTexts, cid, ownerToken) {
     const texts = allTexts.terms || {};
@@ -119,13 +119,17 @@
       });
       box.appendChild(points);
 
-      const body = el("p");
-      // サーバー側の文面をそのまま出す。** で強調されている箇所だけ太字にする
-      (texts.body || "").split(/\*\*(.+?)\*\*/).forEach((part, i) => {
-        body.appendChild(i % 2 === 1 ? el("strong", null, part) : document.createTextNode(part));
-      });
-      box.appendChild(body);
-      box.appendChild(el("p", "note", texts.note || ""));
+      // サーバー側の文面をそのまま出す。** で強調されている箇所だけ太字にする。
+      // 本文だけに掛けていたので、note に ** を書いた日に記号が素で出た
+      const withEmphasis = (cls, source) => {
+        const p = el("p", cls);
+        String(source || "").split(/\*\*(.+?)\*\*/).forEach((part, i) => {
+          p.appendChild(i % 2 === 1 ? el("strong", null, part) : document.createTextNode(part));
+        });
+        return p;
+      };
+      box.appendChild(withEmphasis(null, texts.body));
+      box.appendChild(withEmphasis("note", texts.note));
 
       const links = el("p", "note");
       const terms = el("a", null, "利用規約");
@@ -139,29 +143,21 @@
       links.append(terms, document.createTextNode(" ・ "), privacy, document.createTextNode(" を開く"));
       box.appendChild(links);
 
-      // --- 任意の同意。既定オフ ---
-      const optional = ["profile", "aggregate"].filter((k) => allTexts[k]);
-      const boxes = {};
-      if (optional.length > 0) {
+      // --- 束ねた使い道。**チェックではなく、説明として全部見せる** ---
+      // 選ばせないぶん、隠さない。ここを畳んだり省いたりしたら、同意ではなくなる。
+      const bundled = ["profile", "aggregate"].filter((k) => allTexts[k]);
+      if (bundled.length > 0) {
         const opt = el("div", "opt");
-        opt.appendChild(
-          el("p", "lead", "ここから下は任意です。オフのままでも、分身とはこれまでどおり話せます。あとから設定でいつでも変えられます。")
-        );
-        for (const key of optional) {
+        opt.appendChild(el("p", "lead", "はじめると、次の2つが有効になります。あとから設定でいつでも止められます。"));
+        for (const key of bundled) {
           const t = allTexts[key] || {};
           const item = el("div", "optItem");
-          const id = "wtGateOpt_" + key;
-          const cb = document.createElement("input");
-          cb.type = "checkbox";
-          cb.id = id;
-          cb.checked = false; // **既定オフ。ここを変えないこと**
-          boxes[key] = cb;
-          const label = document.createElement("label");
-          label.htmlFor = id;
+          const mark = el("span", "mark", "・");
+          const label = el("div");
           label.appendChild(el("span", "t", t.title || key));
           label.appendChild(el("span", "d", t.body || ""));
           if (t.note) label.appendChild(el("span", "n", t.note));
-          item.append(cb, label);
+          item.append(mark, label);
           opt.appendChild(item);
         }
         box.appendChild(opt);
@@ -186,11 +182,9 @@
             body: JSON.stringify({
               characterId: cid,
               token: ownerToken,
-              consent: {
-                terms: true,
-                profile: !!(boxes.profile && boxes.profile.checked),
-                aggregate: !!(boxes.aggregate && boxes.aggregate.checked),
-              },
+              // terms だけ送る。束ねた使い道はサーバーが付ける
+              // （BUNDLED_WITH_TERMS。画面が勝手に足すと、束ねる範囲が2箇所に散る）
+              consent: { terms: true },
             }),
           });
           overlay.remove();

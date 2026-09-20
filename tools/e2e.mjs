@@ -278,14 +278,14 @@ const profileToken = claimed.ownerToken || (await page.evaluate((c) => localStor
 // それ以降の節は、こちらの「いま有効なトークン」を使うこと。
 let currentToken = profileToken;
 const ownerView = await (await fetch(`${BASE}/api/profile?cid=${newCid}&token=${profileToken}`)).json();
-// この分身は同意画面を通っているので terms だけが立っている。
-// 任意の項目（属性・統計）は、こちらから何もしていない以上オフのままであること。
+// 同意画面を通っていれば terms が立ち、束ねた2つも一緒に有効になっている。
+// 通っていなければ何も記録されていない。**その中間（terms だけ立つ）は無い**。
 check(
-  "はじめる前の同意だけが記録されていて、任意の項目はオフ",
+  "同意すると、束ねた使い道も一緒に有効になる",
   ownerView.consent === null ||
     (ownerView.consent.terms === true &&
-      ownerView.consent.profile === false &&
-      ownerView.consent.aggregate === false),
+      ownerView.consent.profile === true &&
+      ownerView.consent.aggregate === true),
   JSON.stringify(ownerView.consent)
 );
 
@@ -302,12 +302,19 @@ check(
 const noAuth = await fetch(`${BASE}/api/profile?cid=${newCid}`);
 check("持ち主トークンなしでは属性を読めない", noAuth.status === 403, String(noAuth.status));
 
+// 「覚えさせる」を設定で止めた人には、属性を保存しない。
+// 束ねて有効にした以上、**止めたときに本当に止まるか**がいちばん確かめるべきところ。
+await fetch(`${BASE}/api/consent`, {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ characterId: newCid, token: profileToken, consent: { profile: false } }),
+});
 const beforeConsent = await fetch(`${BASE}/api/profile`, {
   method: "POST",
   headers: { "content-type": "application/json" },
   body: JSON.stringify({ characterId: newCid, token: profileToken, answers: { ageBand: ["30代"] } }),
 });
-check("同意前は属性を保存できない", beforeConsent.status === 403, String(beforeConsent.status));
+check("止めたあとは属性を保存できない", beforeConsent.status === 403, String(beforeConsent.status));
 
 await fetch(`${BASE}/api/consent`, {
   method: "POST",
@@ -374,7 +381,7 @@ await page.screenshot({ path: path.join(OUT_DIR, "eyes.png") });
 
 console.log("\n[16] プライバシーポリシーの更新");
 const privacy2 = await (await fetch(`${BASE}/privacy`)).text();
-check("3つの同意が説明されている", privacy2.includes("あなたが選ぶ3つの同意"));
+check("3つの用途と止め方が説明されている", privacy2.includes("3つの用途と、その止め方"));
 check("統計に含まれないものが列挙されている", privacy2.includes("統計として提供されるもの"));
 check("会話の中身が管理画面に出ないと書かれている", privacy2.includes("管理画面のどこにも表示されません"));
 
@@ -591,8 +598,16 @@ console.log("\n[23] パルスサーベイ（1問ずつ聞く）");
   const sToken = await page.evaluate((c) => localStorage.getItem(`sodatsukake_token_${c}`), sCid);
   const q = (t) => `cid=${encodeURIComponent(sCid)}&token=${encodeURIComponent(t)}`;
 
+  // 「覚えさせる」を設定で止めた状態にしてから確かめる。
+  // 束ねて有効にした以上、ここで本当に止まるかが要（止まらないなら設定は飾り）。
+  await fetch(`${BASE}/api/consent`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ characterId: sCid, token: sToken, consent: { profile: false } }),
+  });
+
   const before = await (await fetch(`${BASE}/api/survey/next?${q(sToken)}`)).json();
-  check("同意前は設問を出さない", before.needsConsent === true && before.item === null, JSON.stringify(before).slice(0, 90));
+  check("止めていると設問を出さない", before.needsConsent === true && before.item === null, JSON.stringify(before).slice(0, 90));
   check("同意の文面が一緒に返る", typeof before.consentText === "string" && before.consentText.length > 10);
 
   const saveWithoutConsent = await fetch(`${BASE}/api/survey/answer`, {
@@ -600,7 +615,7 @@ console.log("\n[23] パルスサーベイ（1問ずつ聞く）");
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ characterId: sCid, token: sToken, id: "ageBand", values: ["30代"] }),
   });
-  check("同意していない相手の回答は保存しない", saveWithoutConsent.status === 403, String(saveWithoutConsent.status));
+  check("止めている相手の回答は保存しない", saveWithoutConsent.status === 403, String(saveWithoutConsent.status));
 
   await fetch(`${BASE}/api/consent`, {
     method: "POST",
@@ -1089,11 +1104,14 @@ console.log("\n[35] はじめての流れ（同意 → 名前 → 土台）");
   await page.goto(born.toString(), { waitUntil: "domcontentloaded" });
   await page.waitForTimeout(2200);
 
-  // 同意。**必須だけでなく、任意の2つもここで見せる**
+  // 同意。**聞くのは1つだが、束ねた使い道は隠さず全部出す**
   check("同意の画面が出る", (await page.locator(".wtGate").count()) === 1);
-  check("任意の同意も最初に出す", (await page.locator(".wtGate .optItem input").count()) === 2);
-  check("任意は既定オフ（黙認にしない）",
-    (await page.evaluate(() => [...document.querySelectorAll(".wtGate .optItem input")].every((i) => !i.checked))) === true);
+  check("束ねた使い道を2つとも本文で見せている", (await page.locator(".wtGate .optItem").count()) === 2);
+  check("使い道の説明が空でない",
+    (await page.evaluate(() =>
+      [...document.querySelectorAll(".wtGate .optItem .d")].every((d) => (d.textContent || "").length > 20))) === true);
+  check("チェックを選ばせていない（同意は1つ）",
+    (await page.locator(".wtGate input[type=checkbox]").count()) === 0);
   // **押すところが見えていること。** 差し込み先の button{opacity:0} を拾って
   // 見えなくなっていたことがある（押せてはいたので気づけなかった）
   const btnOpacity = await page.evaluate(() =>
@@ -1101,17 +1119,29 @@ console.log("\n[35] はじめての流れ（同意 → 名前 → 土台）");
   );
   check("同意ボタンが見えている", btnOpacity.every((o) => Number(o) > 0.9), btnOpacity.join("/"));
 
-  await page.check("#wtGateOpt_profile");
   await page.click(".wtGate button:not(.ghost)");
   await page.waitForTimeout(4200);
 
-  // 選んだとおりに記録されていること（オンにしたものだけ）
+  // 1回押しただけで、3つとも記録されていること
   const view = await (await fetch(
     `${BASE}/api/profile?cid=${freshCid}&token=${encodeURIComponent(freshToken)}`
   )).json();
-  check("必須の同意が記録される", view.consent?.terms === true);
-  check("オンにした任意だけが記録される", view.consent?.profile === true && view.consent?.aggregate === false,
+  check("はじめる前の同意が記録される", view.consent?.terms === true);
+  check("束ねた2つも一緒に記録される", view.consent?.profile === true && view.consent?.aggregate === true,
     JSON.stringify(view.consent));
+
+  // **止めたものが、次に開いたときに戻らないこと。** ここが戻ると束ねた意味が消える
+  await fetch(`${BASE}/api/consent`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ characterId: freshCid, token: freshToken, consent: { aggregate: false } }),
+  });
+  const afterOff = await (await fetch(
+    `${BASE}/api/profile?cid=${freshCid}&token=${encodeURIComponent(freshToken)}`
+  )).json();
+  check("設定で止めた使い道は、同意を取り直しても戻らない",
+    afterOff.consent?.aggregate === false && afterOff.consent?.terms === true,
+    JSON.stringify(afterOff.consent));
 
   // 名前 → 土台
   await page.fill("#nameInput", "はじめのこ");
