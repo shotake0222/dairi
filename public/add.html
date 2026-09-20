@@ -47,6 +47,10 @@
     flex: none; width: 26px; height: 26px; border-radius: 50%; background: #efe9ff; color: #5b43c9;
     font-weight: 700; font-size: 13px; display: grid; place-items: center; margin-top: 2px;
   }
+  .wayPhoto {
+    width: 132px; aspect-ratio: 4/3; object-fit: cover; border-radius: 10px; float: right;
+    margin: 0 0 8px 12px; border: 1px solid var(--line); background: #f0ecff;
+  }
   button {
     margin-top: 6px; border: none; background: var(--brand); color: #fff; font-weight: 700;
     font-size: 15px; padding: 13px 26px; border-radius: 999px; cursor: pointer; font-family: inherit;
@@ -79,6 +83,13 @@
     <div class="way" style="margin-bottom:16px">
       <div class="no">1</div>
       <div>
+        <!--
+          ★商品写真: public/media/keyholder.jpg（/lp の商品セクションと同じ画像を仮で流用）。
+          いまここに入っているのは**撮影前の仮画像**（設計データから起こしたもの）。
+          現物を撮ったら、同じファイルを上書きするだけで /lp とここが両方差し替わる。
+        -->
+        <img class="wayPhoto" src="/media/keyholder.jpg" width="132" height="99" loading="lazy"
+             decoding="async" alt="わけたまの専用NFCキーホルダー（依代）" />
         <strong>依代（よりしろ）をかざす</strong>
         <p style="margin:4px 0 0">
           キーホルダーなどの依代をスマホにかざすと、<strong>1つにつき1体だけ</strong>分身が生まれます。
