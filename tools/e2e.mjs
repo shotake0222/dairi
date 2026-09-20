@@ -724,15 +724,20 @@ console.log("\n[26] 依代（NFCタグ・QR）と、分身の増やし方");
   check("QRとして読んでも同じ子に着く",
     new URL(viaQr.headers.get("location"), BASE).searchParams.get("cid") === born);
 
-  // 依代を持っていない人の入口
+  // 依代を持っていない人の入口。
+  // **3番は既定で閉じている**ので、依代を1枚かざした状態にしてから見る
+  // （閉じているほうの見え方は [34] で確かめている）。
+  await page.goto(`${BASE}/t/${code}`, { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(800);
   await page.goto(`${BASE}/add`, { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(700);
   check("分身の増やし方のページが開く", (await page.title()).includes("分身を増やす"));
   const addText = await page.textContent("main");
   check("NFCという言い方が画面に出ていない", !addText.includes("NFC"), addText.slice(0, 80));
   check("依代という言い方に揃っている", addText.includes("依代"));
   await page.click("#createBtn");
   await page.waitForURL(/\/summon\?cid=/, { timeout: 15000 });
-  check("依代なしでも分身を始められる", page.url().includes("/summon?cid="));
+  check("依代を持つ人は、端末だけでも増やせる", page.url().includes("/summon?cid="));
   await page.screenshot({ path: path.join(OUT_DIR, "add-direct.png") });
 
   // 一覧に「増やす」入口があること（無いと、2体目が作れることに気づけない）
@@ -1153,15 +1158,43 @@ console.log("\n[35] はじめての流れ（同意 → 名前 → 土台）");
   check("土台を書かなくても会話へ進める", page.url().includes("/chat"), page.url().slice(-40));
 }
 
-console.log("\n[34] 依代を使わず、Webだけで始める（/w）");
+console.log("\n[34] 誰が新しい分身を作れるか（既定は依代を持つ人だけ）");
 {
-  const res = await fetch(`${BASE}/w`, { redirect: "manual" });
-  const to = new URL(res.headers.get("location") || "", BASE);
-  check("/w が受け皿へ送る", to.pathname === "/summon" && to.searchParams.get("claim") === "web",
-    to.pathname + "?" + to.search);
+  // **既定では閉じている。** 依代は売り物なので、その横に誰でも押せるボタンを置かない。
+  const entry = await (await fetch(`${BASE}/api/entry`)).json();
+  check("何も持たない人には閉じている", entry.canCreate === false, JSON.stringify(entry));
+  check("断る理由を言葉で返す", (entry.message || "").includes("依代"));
 
-  // 実際に開いて、1体生まれて会話まで行けること
-  await page.goto(`${BASE}/home`, { waitUntil: "domcontentloaded" });
+  const refused = await fetch(`${BASE}/api/character/new`, { method: "POST" });
+  check("依代なしの作成は断られる", refused.status === 403, String(refused.status));
+
+  const closedW = await fetch(`${BASE}/w`, { redirect: "manual" });
+  const toClosed = new URL(closedW.headers.get("location") || "", BASE);
+  check("閉じているとき /w は案内へ送る",
+    toClosed.pathname === "/add" && toClosed.searchParams.get("closed") === "1",
+    toClosed.pathname + toClosed.search);
+
+  // 画面が、押せないボタンを出していないこと
+  await page.context().clearCookies();
+  await page.goto(`${BASE}/add`, { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(900);
+  check("3番のボタンを出さない",
+    (await page.evaluate(() => document.getElementById("createOpen").hidden)) === true);
+  check("代わりに理由を出す",
+    ((await page.textContent("#closedMsg")) || "").includes("依代"));
+
+  // --- 依代を持っている人（ミラーが効いていない現物も含む）は通る ---
+  // **ここを止めると、買った人が使えなくなる。**
+  await page.goto(`${BASE}/t?u=00000000000000`, { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(3200);
+  check("依代から来た人は受け皿で1体つくれる", page.url().includes("cid="), page.url().slice(-50));
+
+  await page.goto(`${BASE}/add`, { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(800);
+  check("依代を持つ人には3番も出す",
+    (await page.evaluate(() => document.getElementById("createOpen").hidden)) === false);
+
+  // 依代の印を持っていれば /w も通る
   await page.evaluate(() => localStorage.removeItem("sodatsukake_tagClaim"));
   await page.goto(`${BASE}/w`, { waitUntil: "domcontentloaded" });
   await page.waitForTimeout(3200);
@@ -1178,20 +1211,21 @@ console.log("\n[34] 依代を使わず、Webだけで始める（/w）");
   await page.waitForTimeout(2500);
   check("2回目に開いても増えない", page.url().includes(born.stored), page.url().slice(-70));
 
-  // 入口の種類を分けて数えている（配ったリンクの効きが見える）
-  const made = await (await fetch(`${BASE}/api/character/new?from=web`, { method: "POST" })).json();
-  check("Web由来として分身が作れる", !!made.characterId);
-
-  // 案内。人に渡すのはこの1本
-  const add = await (await fetch(`${BASE}/add`)).text();
-  check("分身を増やす画面が /w を案内している", add.includes('id="webLink"'));
+  // --- 管理者はいつでも作れる（手元で試すため）---
   if (adminPass) {
     const gate = await fetch(`${BASE}/admin?key=${encodeURIComponent(adminPass)}`, { redirect: "manual" });
     const cookie = (gate.headers.get("set-cookie") || "").split(";")[0];
+    const asAdmin = await (await fetch(`${BASE}/api/entry`, { headers: { cookie } })).json();
+    check("管理者には開いている", asAdmin.canCreate === true && asAdmin.reason === "admin",
+      JSON.stringify(asAdmin));
+
     const admin = await (await fetch(`${BASE}/admin`, { headers: { cookie } })).text();
     check("管理画面が依代なしのURLも出している", admin.includes('id="urlWeb"'));
     check("タグ前でも始められると書いてある", admin.includes("タグが刷り上がる前に始めたいとき"));
   }
+
+  const add = await (await fetch(`${BASE}/add`)).text();
+  check("分身を増やす画面が /w を案内している", add.includes('id="webLink"'));
 }
 
 check("JavaScriptエラーが出ていない", pageErrors.length === 0, pageErrors.join(" / "));

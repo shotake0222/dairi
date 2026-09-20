@@ -105,15 +105,29 @@
       <div class="no">3</div>
       <div>
         <strong>どちらも持っていないとき</strong>
-        <p style="margin:4px 0 6px">
-          この端末だけで育てる分身を、いますぐ始められます。育ち方は他と同じです。
-        </p>
-        <button id="createBtn" type="button">この端末で分身を始める</button>
-        <div id="status"></div>
-        <p class="muted" style="margin:10px 0 0;font-size:12px">
-          人に教えるときは <strong id="webLink">/w</strong> のひと言で足ります。
-          開くだけで、その端末の分身が1体生まれます。
-        </p>
+        <!--
+          **既定では閉じている。** 依代は売り物なので、その横に「誰でも押せば1体」の
+          ボタンがあると買う理由が消える。開けるかどうかは運営の設定
+          （ENTRY_OPEN。src/entryPolicy.ts）で、ここはその結果を映すだけ。
+          依代から来た人と管理者には、設定に関係なく出る。
+        -->
+        <div id="createOpen" hidden>
+          <p style="margin:4px 0 6px">
+            この端末だけで育てる分身を、いますぐ始められます。育ち方は他と同じです。
+          </p>
+          <button id="createBtn" type="button">この端末で分身を始める</button>
+          <div id="status"></div>
+          <p class="muted" style="margin:10px 0 0;font-size:12px">
+            人に教えるときは <strong id="webLink">/w</strong> のひと言で足ります。
+            開くだけで、その端末の分身が1体生まれます。
+          </p>
+        </div>
+        <div id="createClosed" hidden>
+          <p style="margin:4px 0 6px" id="closedMsg"></p>
+          <p class="muted" style="margin:0">
+            依代をお持ちでない場合は、<a href="/lp#product">キーホルダーのご案内</a>をご覧ください。
+          </p>
+        </div>
       </div>
     </div>
   </section>
@@ -156,6 +170,33 @@
   const createBtn = document.getElementById("createBtn");
   const statusEl = document.getElementById("status");
 
+  /**
+   * 3番を出してよいかをサーバーに聞く。
+   * **押せないボタンを出さない**ため。押してから断られるのは、
+   * 「壊れている」と「そういう決まり」の区別が付かない。
+   */
+  (async function applyEntryPolicy() {
+    const open = document.getElementById("createOpen");
+    const closed = document.getElementById("createClosed");
+    let decision = { canCreate: false, message: null };
+    try {
+      decision = await (await fetch("/api/entry")).json();
+    } catch (e) {
+      // 聞けなかったときは閉じている側に倒す（勝手に開けない）
+    }
+    if (decision.canCreate) {
+      open.hidden = false;
+      return;
+    }
+    document.getElementById("closedMsg").textContent =
+      decision.message || "いまは、依代をお持ちの方だけがはじめられます。";
+    closed.hidden = false;
+    // /w から弾かれて来た人には、なぜ来たのかが分かるようにしておく
+    if (new URLSearchParams(location.search).get("closed") === "1") {
+      closed.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  })();
+
   createBtn.addEventListener("click", async () => {
     createBtn.disabled = true;
     statusEl.textContent = "分身を呼んでいます…";
@@ -163,6 +204,7 @@
       const res = await fetch("/api/character/new", { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "うまくいきませんでした");
+
 
       // 持ち主の印は、生まれた瞬間にこの端末へ保存する。
       // URLに乗せて画面遷移させると、共有や履歴から他人の手に渡りうる。

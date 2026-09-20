@@ -18,6 +18,16 @@ function freshCode(label: string): string {
   return `test-${label}-${crypto.randomUUID().slice(0, 8)}`;
 }
 
+/**
+ * 依代から来た人の印（Cookie）。
+ * 入口は既定で閉じているので、依代なしで作る検査はこれを付けて回す
+ * （＝「ちゃんと買った人」を模す）。詳しくは src/entryPolicy.ts。
+ */
+async function yorishiroCookie(): Promise<string> {
+  const tap = await SELF.fetch(`${BASE}/t?u=00000000000000`, { redirect: "manual" });
+  return (tap.headers.get("set-cookie") || "").split(";")[0];
+}
+
 /** リダイレクト先の /summon から cid を取り出す。 */
 function cidOf(res: Response): string {
   const location = res.headers.get("location") || "";
@@ -91,7 +101,10 @@ describe("依代の読み取り（/t/ と /q/）", () => {
 
 describe("依代を持たない人の入口（/api/character/new）", () => {
   it("分身を1体作り、持ち主の印を返す", async () => {
-    const res = await SELF.fetch(`${BASE}/api/character/new`, { method: "POST" });
+    const res = await SELF.fetch(`${BASE}/api/character/new`, {
+      method: "POST",
+      headers: { cookie: await yorishiroCookie() },
+    });
     expect(res.status).toBe(200);
     const data = await res.json<{ characterId: string; ownerToken: string }>();
     expect(data.characterId).toBeTruthy();
@@ -382,7 +395,10 @@ describe("共通URL（UIDミラー）", () => {
  */
 describe("Webだけで始める（/w）", () => {
   it("受け皿の画面へ送り、Web由来として扱う", async () => {
-    const res = await SELF.fetch(`${BASE}/w`, { redirect: "manual" });
+    const res = await SELF.fetch(`${BASE}/w`, {
+      redirect: "manual",
+      headers: { cookie: await yorishiroCookie() },
+    });
     expect(res.status).toBe(302);
     const to = new URL(res.headers.get("location")!, BASE);
     expect(to.pathname).toBe("/summon");
@@ -390,12 +406,18 @@ describe("Webだけで始める（/w）", () => {
   });
 
   it("末尾のスラッシュが付いていても同じ", async () => {
-    const res = await SELF.fetch(`${BASE}/w/`, { redirect: "manual" });
+    const res = await SELF.fetch(`${BASE}/w/`, {
+      redirect: "manual",
+      headers: { cookie: await yorishiroCookie() },
+    });
     expect(new URL(res.headers.get("location")!, BASE).searchParams.get("claim")).toBe("web");
   });
 
   it("入口の種類を web として記録する（配ったリンクの効きを別に数えられる）", async () => {
-    const res = await SELF.fetch(`${BASE}/api/character/new?from=web`, { method: "POST" });
+    const res = await SELF.fetch(`${BASE}/api/character/new?from=web`, {
+      method: "POST",
+      headers: { cookie: await yorishiroCookie() },
+    });
     expect(res.ok).toBe(true);
     const { characterId } = await res.json<{ characterId: string }>();
     const row = await env.DB.prepare("SELECT kind FROM character_origin WHERE character_id = ?")
@@ -405,11 +427,71 @@ describe("Webだけで始める（/w）", () => {
   });
 
   it("from を付けなければ direct のまま（/add のボタンと混ざらない）", async () => {
-    const res = await SELF.fetch(`${BASE}/api/character/new`, { method: "POST" });
+    const res = await SELF.fetch(`${BASE}/api/character/new`, {
+      method: "POST",
+      headers: { cookie: await yorishiroCookie() },
+    });
     const { characterId } = await res.json<{ characterId: string }>();
     const row = await env.DB.prepare("SELECT kind FROM character_origin WHERE character_id = ?")
       .bind(characterId)
       .first<{ kind: string }>();
     expect(row?.kind).toBe("direct");
+  });
+});
+
+/**
+ * 誰が新しい分身を作れるか（src/entryPolicy.ts）。
+ *
+ * 依代は売り物なので、その横に「誰でも押せば1体」のボタンがあると買う理由が消える。
+ * かといって完全に塞ぐと、**タグのミラーが効いていなかった人**（＝ちゃんと買った人）
+ * まで締め出す。そこを分けているのがここ。
+ */
+describe("依代を持たない人の入口（既定は閉じる）", () => {
+  it("何も持たずに作ろうとすると断る", async () => {
+    const res = await SELF.fetch(`${BASE}/api/character/new`, { method: "POST" });
+    expect(res.status).toBe(403);
+    const body = await res.json<{ error: string }>();
+    // 断るだけでなく、次にどうすればよいかまで言う
+    expect(body.error).toContain("依代");
+  });
+
+  it("依代から来た人は作れる（ミラーが効いていない現物を持っている人を締め出さない）", async () => {
+    const tap = await SELF.fetch(`${BASE}/t?u=00000000000000`, { redirect: "manual" });
+    const cookie = (tap.headers.get("set-cookie") || "").split(";")[0];
+    expect(cookie).toContain("wt_claim");
+
+    const res = await SELF.fetch(`${BASE}/api/character/new?from=tag`, {
+      method: "POST",
+      headers: { cookie },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("画面に出す判定も、同じ答えを返す（押せないボタンを出さないため）", async () => {
+    const closed = await (await SELF.fetch(`${BASE}/api/entry`)).json<{ canCreate: boolean }>();
+    expect(closed.canCreate).toBe(false);
+
+    const tap = await SELF.fetch(`${BASE}/t?u=00000000000000`, { redirect: "manual" });
+    const cookie = (tap.headers.get("set-cookie") || "").split(";")[0];
+    const open = await (
+      await SELF.fetch(`${BASE}/api/entry`, { headers: { cookie } })
+    ).json<{ canCreate: boolean; reason: string }>();
+    expect(open.canCreate).toBe(true);
+    expect(open.reason).toBe("yorishiro");
+  });
+
+  it("閉じているあいだ、/w は案内へ送る（黙って何も起きない、にしない）", async () => {
+    const res = await SELF.fetch(`${BASE}/w`, { redirect: "manual" });
+    expect(res.status).toBe(302);
+    const to = new URL(res.headers.get("location")!, BASE);
+    expect(to.pathname).toBe("/add");
+    expect(to.searchParams.get("closed")).toBe("1");
+  });
+
+  it("依代の読み取りそのものは、設定に関係なくいつでも通る", async () => {
+    // ここを止めると、買った人が使えなくなる。**この検査は消さないこと**
+    const code = freshCode("entry-always");
+    const res = await SELF.fetch(`${BASE}/t/${code}`, { redirect: "manual" });
+    expect(cidOf(res)).not.toBe("");
   });
 });

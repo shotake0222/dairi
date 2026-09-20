@@ -58,6 +58,12 @@ import {
   SKUS,
   verifyGrant,
 } from "./delivery";
+import {
+  canCreateCharacter,
+  claimCookie,
+  ENTRY_CLOSED_MESSAGE,
+  isEntryOpen,
+} from "./entryPolicy";
 import { handleMcp } from "./mcp";
 import { LogContext, newRequestId } from "./lib/log";
 
@@ -83,6 +89,13 @@ export interface Env {
   CHAT_MODEL?: string;
   /** 管理画面の合言葉。未設定なら管理画面は開かない（secretで設定）。 */
   ADMIN_PASSCODE?: string;
+  /**
+   * 依代を持たない人にも入口を開けるか（"1" で開ける。**既定は閉じる**）。
+   *   npx wrangler deploy --env="" --var ENTRY_OPEN:1
+   * 閉じているあいだ、/add の「この端末で分身を始める」と /w は管理者だけが使える。
+   * 依代（/t・/q）から来た人は、この設定に関係なくいつでも作れる（src/entryPolicy.ts）。
+   */
+  ENTRY_OPEN?: string;
   /**
    * Service Workerの緊急停止。"1" を指定してデプロイすると、/sw.js が解除用スクリプトに変わる。
    *   npx wrangler deploy --env="" --var SW_KILL:1
@@ -317,6 +330,18 @@ export default {
     if (url.pathname === "/api/profile/schema" && request.method === "GET") {
       return handleProfileSchema();
     }
+
+    // 「いま、依代を持たない人も分身を作れるか」。
+    // 画面が押せないボタンを出さないためだけの口なので、理由までは返す。
+    // **判定そのものは作成時にサーバーでやり直す**（画面の判定は飾り）。
+    if (url.pathname === "/api/entry" && request.method === "GET") {
+      const decision = canCreateCharacter(request, env);
+      return json({
+        canCreate: decision.allowed,
+        reason: decision.reason,
+        message: decision.allowed ? null : ENTRY_CLOSED_MESSAGE,
+      });
+    }
     if (url.pathname === "/api/profile" && request.method === "GET") {
       return handleGetOwnerView(env, url);
     }
@@ -425,6 +450,14 @@ export default {
     if (url.pathname === "/api/character/new" && request.method === "POST") {
       // 依代をかざしたのにタグを特定できなかったとき（UIDミラー未設定など）も、ここを通る。
       // その場合だけ入口の記録を分ける。配った枚数と合わなくなるのを避けるため。
+      // **依代を持たない人の入口は、既定で閉じている。**
+      // 依代から来た人（/t・/q が付けた印を持っている）と管理者だけが通る。
+      // 理由と開け方は src/entryPolicy.ts。
+      const gate = canCreateCharacter(request, env);
+      if (!gate.allowed) {
+        return json({ error: ENTRY_CLOSED_MESSAGE, reason: "closed" }, { status: 403 });
+      }
+
       const from = url.searchParams.get("from");
       const kind =
         from === "tag" ? "nfc" : from === "qr" ? "qr" : from === "web" ? "web" : "direct";
@@ -459,6 +492,11 @@ export default {
     // その注意は /summon の先（チャット画面）で伝えている。
     // 1日に作れる数は同じ回線から3体まで（src/yorishiro.ts の DIRECT_CREATE_DAILY_LIMIT）。
     if (url.pathname === "/w" || url.pathname === "/w/") {
+      // 公開URLなので、依代を持たない人の入口が開いているときだけ通す。
+      // 閉じているときは「依代をお持ちの方だけ」と伝える画面へ（/add）。
+      if (!isEntryOpen(env) && !canCreateCharacter(request, env).allowed) {
+        return Response.redirect(new URL("/add?closed=1", url.origin).toString(), 302);
+      }
       ctx.waitUntil(countMetric(env, "scan"));
       const claim = new URL("/summon", url.origin);
       claim.searchParams.set("claim", "web");
@@ -494,7 +532,10 @@ export default {
         }
         const claim = new URL("/summon", url.origin);
         claim.searchParams.set("claim", viaQr ? "qr" : "tag");
-        return Response.redirect(claim.toString(), 302);
+        return new Response(null, {
+          status: 302,
+          headers: { location: claim.toString(), "set-cookie": claimCookie(viaQr ? "qr" : "tag") },
+        });
       }
       const tagId = identity.tagId;
 
@@ -551,7 +592,17 @@ export default {
         if (spotCode) redirectUrl.searchParams.set("spot", spotCode);
       }
 
-      return Response.redirect(redirectUrl.toString(), 302);
+      // **依代を読んだ端末には、毎回この印を付ける。**
+      // 「この人は現物を持っている」の判定に使う（src/entryPolicy.ts）。
+      // 初回だけにすると、2枚目を買った人や、翌日に思い立って
+      // /add を開いた人が「依代を持っていない人」に見えてしまう。
+      return new Response(null, {
+        status: 302,
+        headers: {
+          location: redirectUrl.toString(),
+          "set-cookie": claimCookie(viaQr ? "qr" : "tag"),
+        },
+      });
     }
 
     // --- チャットAPI ---

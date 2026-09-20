@@ -122,6 +122,18 @@ export function adminGate(request: Request, url: URL, env: AdminEnv): Response |
   });
 }
 
+/**
+ * いま管理者として開いているか。
+ * 管理画面の入口（adminGate）と同じCookieを見るだけの、判定専用の口。
+ * **入口の判定を2箇所に書かないこと**（片方だけ直すと、閉じたつもりが開いている）。
+ */
+export function isAdminRequest(request: Request, env: AdminEnv): boolean {
+  const passcode = env.ADMIN_PASSCODE;
+  if (!passcode) return false;
+  const cookie = readCookie(request, COOKIE_NAME);
+  return !!cookie && safeEqual(decodeURIComponent(cookie), passcode);
+}
+
 /** 管理画面のページには検索避けを付ける（万一URLが漏れても拾われないように）。 */
 export function applyAdminHeaders(response: Response, url: URL): Response {
   if (!isAdminPath(url.pathname)) return response;
