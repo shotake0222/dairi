@@ -36,6 +36,7 @@ import { growthProgress } from "./ai/growth";
 import { purgeOldIpQuota } from "./lib/ipQuota";
 import {
   createDirectCharacter,
+  dailyLimitFor,
   deleteSpot,
   getSpot,
   issueTags,
@@ -461,7 +462,9 @@ export default {
       const from = url.searchParams.get("from");
       const kind =
         from === "tag" ? "nfc" : from === "qr" ? "qr" : from === "web" ? "web" : "direct";
-      const result = await createDirectCharacter(env, request, kind);
+      // 1日あたりの上限は、通り方で変える。**管理者は数えない**
+      // （運営が自分の道具で詰まるのがいちばん無駄。src/yorishiro.ts の dailyLimitFor）。
+      const result = await createDirectCharacter(env, request, kind, dailyLimitFor(gate.reason));
       if (!result.ok) return json({ error: result.error }, { status: result.status });
       ctx.waitUntil(countMetric(env, "new_character"));
       return json({ characterId: result.characterId, ownerToken: result.ownerToken });

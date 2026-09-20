@@ -66,11 +66,25 @@ export type OriginKind = "nfc" | "qr" | "web" | "direct" | "import";
 /**
  * 依代を持たずに作れる分身の、1日あたりの上限（同じ回線から）。
  *
- * ここを開けておかないと「依代が手元にない人」が誰も始められないが、
- * 無制限だと機械的に大量の分身が作られて、Durable Objectの数だけが増えていく。
- * 1日3体は「家族で試す」までは通り、「自動で回す」は通らない線として置いている。
+ * **相手によって変える。** もともとは誰でも押せるボタンを守るための数字だったが、
+ * 入口を閉じた（src/entryPolicy.ts）いま、同じ厳しさを全員に当てる理由が無くなった。
+ *
+ *   admin     … 上限なし。**運営が自分の道具で詰まるのがいちばん無駄**。
+ *               試作の読み取り確認では、1日に何体も作る
+ *   yorishiro … 10体。現物を持っている人。家族で分け合う・買い直すぶんには足りる
+ *   open      … 3体。ENTRY_OPEN で誰でも入れる状態。ここだけは機械的な量産を警戒する
+ *
+ * **日付の区切りはUTC。** 日本時間の朝9時に戻る（夜中ではない）。
+ * 「夜中を回ったのに戻らない」と言われる元なので、断るときの文面にもそう書く。
  */
 export const DIRECT_CREATE_DAILY_LIMIT = 3;
+
+/** 入口の通り方ごとの1日あたりの上限。null は上限なし。 */
+export function dailyLimitFor(reason: "admin" | "yorishiro" | "open" | "closed"): number | null {
+  if (reason === "admin") return null;
+  if (reason === "yorishiro") return 10;
+  return DIRECT_CREATE_DAILY_LIMIT;
+}
 
 export interface Spot {
   code: string;
@@ -273,15 +287,22 @@ export async function createDirectCharacter(
    * そのときは "nfc" / "qr" として記録する——実際に依代から来ているので、
    * 集計で「自分で始めた人」に混ぜると、配った枚数と数が合わなくなる。
    */
-  kind: OriginKind = "direct"
+  kind: OriginKind = "direct",
+  /** 1日あたりの上限。null なら数えない（管理者）。既定は依代なしの人と同じ */
+  dailyLimit: number | null = DIRECT_CREATE_DAILY_LIMIT
 ): Promise<DirectCreateResult> {
-  const limited = await consumeIpQuota(env, "new_character", request, DIRECT_CREATE_DAILY_LIMIT);
-  if (!limited.allowed) {
-    return {
-      ok: false,
-      status: 429,
-      error: `今日はもう ${limited.limit} 体つくりました。続きは明日にしてください`,
-    };
+  if (dailyLimit !== null) {
+    const limited = await consumeIpQuota(env, "new_character", request, dailyLimit);
+    if (!limited.allowed) {
+      return {
+        ok: false,
+        status: 429,
+        error:
+          `今日はもう ${limited.limit} 体つくりました。` +
+          // 区切りはUTCなので、日本時間だと朝9時に戻る。夜中を待っても戻らない
+          `日本時間の翌朝9時に、また作れるようになります`,
+      };
+    }
   }
 
   const characterId = crypto.randomUUID();

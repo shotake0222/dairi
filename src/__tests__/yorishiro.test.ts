@@ -1,6 +1,15 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { env, SELF } from "cloudflare:test";
-import { generateTagId, identifyTag, issueTags, listSpots, listTags, saveSpot } from "../yorishiro";
+import {
+  dailyLimitFor,
+  DIRECT_CREATE_DAILY_LIMIT,
+  generateTagId,
+  identifyTag,
+  issueTags,
+  listSpots,
+  listTags,
+  saveSpot,
+} from "../yorishiro";
 
 /**
  * 依代（NFCタグ・QR）の検証。
@@ -493,5 +502,54 @@ describe("依代を持たない人の入口（既定は閉じる）", () => {
     const code = freshCode("entry-always");
     const res = await SELF.fetch(`${BASE}/t/${code}`, { redirect: "manual" });
     expect(cidOf(res)).not.toBe("");
+  });
+});
+
+/**
+ * 1日あたりの上限。
+ *
+ * もともとは「誰でも押せるボタン」を守るための数字だった。入口を閉じたいま、
+ * 同じ厳しさを全員に当てる理由が無い。**運営が自分の道具で詰まるのがいちばん無駄**で、
+ * 試作の読み取り確認では1日に何体も作る。
+ */
+describe("作れる数の上限", () => {
+  it("管理者には上限を付けない", () => {
+    expect(dailyLimitFor("admin")).toBeNull();
+  });
+
+  it("依代を持つ人はゆるめ（家族で分ける・買い直すぶんは通る）", () => {
+    expect(dailyLimitFor("yorishiro")).toBe(10);
+    expect(dailyLimitFor("yorishiro")).toBeGreaterThan(DIRECT_CREATE_DAILY_LIMIT);
+  });
+
+  it("誰でも入れる状態のときだけ、きつく数える", () => {
+    expect(dailyLimitFor("open")).toBe(DIRECT_CREATE_DAILY_LIMIT);
+  });
+
+  it("管理者は、何体つくっても断られない", async () => {
+    // 上限（3）を超える回数を、管理者として続けて作る
+    const cookie = "waketama_admin=" + encodeURIComponent("e2e-admin-secret");
+    for (let i = 0; i < DIRECT_CREATE_DAILY_LIMIT + 3; i++) {
+      const res = await SELF.fetch(`${BASE}/api/character/new`, {
+        method: "POST",
+        headers: { cookie, "cf-connecting-ip": "203.0.113.9" },
+      });
+      expect(res.status, `${i + 1}体目で断られた`).toBe(200);
+    }
+  });
+
+  it("断るときは、いつ戻るかまで言う（区切りはUTCなので日本時間の朝9時）", async () => {
+    const tap = await SELF.fetch(`${BASE}/t?u=00000000000000`, { redirect: "manual" });
+    const claim = (tap.headers.get("set-cookie") || "").split(";")[0];
+    const headers = { cookie: claim, "cf-connecting-ip": "203.0.113.77" };
+
+    let last: Response | null = null;
+    for (let i = 0; i < 12; i++) {
+      last = await SELF.fetch(`${BASE}/api/character/new`, { method: "POST", headers });
+      if (last.status === 429) break;
+    }
+    expect(last!.status).toBe(429);
+    const body = await last!.json<{ error: string }>();
+    expect(body.error).toContain("翌朝9時");
   });
 });
