@@ -3,10 +3,11 @@
 わけたま検証機 — 実機を触る前の自己点検。
 
 **何を守るためのものか。**
-同じ「人格 → 動き」の規則が、4つの場所に書かれている:
+同じ「人格 → 動き」の規則が、5つの場所に書かれている:
 
     tools/device/common/wt_core.py              Pico / Pi（本体）
     tools/device/esp32/wt_device/wt_core.h      ESP32（C++への写し）
+    tools/device/web/wt_core.mjs                ブラウザ／メタバースのアバター（JSへの写し）
     tools/edge/rule_runtime.py                  PC上の最小の参照実装
     tools/device/common/wt_compact.py           人格カード→最小形（compact.mjs の写し）
 
@@ -207,11 +208,59 @@ def check_cpp(tmp):
         ok("5イベント×2体すべて一致")
 
 
-# --- 4. wt_compact.py と tools/edge/compact.mjs が同じ形を出すか ---------------
+# --- 4. wt_core.py と web/wt_core.mjs（JS・メタバースのアバター）が同じ答えを出すか ---
+
+
+def check_web(tmp):
+    print("4. wt_core.py ↔ web/wt_core.mjs（JS・メタバースのアバター）")
+    if not shutil.which("node"):
+        return skip("JSとの突き合わせ", "node がありません")
+
+    webcheck = os.path.join(HERE, "webcheck.mjs")
+    bad = 0
+    for data in (BOLD, CAREFUL):
+        path = os.path.join(tmp, "%s.min.json" % data["id"])
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(json.dumps(data, separators=(",", ":"), ensure_ascii=False))
+        p = wt_core.Persona(data)
+        for event, arg in EVENTS:
+            cmd = ["node", webcheck, path, event] + ([str(arg)] if arg is not None else [])
+            res = subprocess.run(cmd, capture_output=True, text=True)
+            if res.returncode != 0:
+                bad += 1
+                ng("%s / %s" % (data["n"], event), res.stderr.strip().split("\n")[-1])
+                continue
+            theirs = []
+            for line in res.stdout.splitlines():
+                kind, name, value = (line.split("\t") + ["", ""])[:3]
+                theirs.append((kind, name, int(value) if kind == "wait" else value))
+            mine = wt_core.plan(p, event, arg).actions
+            if mine != theirs:
+                bad += 1
+                ng("%s / %s" % (data["n"], event), "\n         py : %s\n         js : %s" % (mine, theirs))
+    if not bad:
+        ok("5イベント×2体すべて一致")
+
+    # compare() も同じ答えか（判定パネルが表示に使う関数そのもの）
+    a_path = os.path.join(tmp, "%s.min.json" % BOLD["id"])
+    b_path = os.path.join(tmp, "%s.min.json" % CAREFUL["id"])
+    res = subprocess.run(["node", webcheck, "compare", a_path, b_path], capture_output=True, text=True)
+    if res.returncode != 0:
+        return ng("compare() の実行", res.stderr.strip().split("\n")[-1])
+    js_result = json.loads(res.stdout)
+    py_result = wt_core.compare(wt_core.Persona(BOLD), wt_core.Persona(CAREFUL))
+    js_checks = [(c[0], c[1]) for c in js_result["checks"]]
+    py_checks = [(c[0], c[1]) for c in py_result["checks"]]
+    if js_checks != py_checks or js_result["pass"] != py_result["pass"]:
+        return ng("compare() の判定が一致", "\n         py : %s\n         js : %s" % (py_checks, js_checks))
+    ok("compare() の判定が一致", "5項目とも同じ真偽値")
+
+
+# --- 5. wt_compact.py と tools/edge/compact.mjs が同じ形を出すか ---------------
 
 
 def check_compact(tmp):
-    print("4. wt_compact.py ↔ tools/edge/compact.mjs")
+    print("5. wt_compact.py ↔ tools/edge/compact.mjs")
     mine = wt_compact.to_json(wt_compact.to_compact(CARD))
     report = wt_compact.audit(wt_compact.to_compact(CARD), CARD)
     if not report["ok"]:
@@ -242,11 +291,11 @@ def check_compact(tmp):
     ok("1バイトまで一致", "%d バイト" % len(mine.encode("utf-8")))
 
 
-# --- 5. 検証機として成立しているか（合格基準） ---------------------------------
+# --- 6. 検証機として成立しているか（合格基準） ---------------------------------
 
 
 def check_acceptance():
-    print("5. 2体の差（docs/EDGE_DEVICE_TEST.md §3 の合格基準）")
+    print("6. 2体の差（docs/EDGE_DEVICE_TEST.md §3 の合格基準）")
     result = wt_core.compare(wt_core.Persona(BOLD), wt_core.Persona(CAREFUL))
     for name, good, detail in result["checks"]:
         (ok if good else ng)(name, detail)
@@ -256,11 +305,11 @@ def check_acceptance():
         ng("総合判定", "この2体では検証にならない")
 
 
-# --- 6. ピン割り当てに無理が無いか ---------------------------------------------
+# --- 7. ピン割り当てに無理が無いか ---------------------------------------------
 
 
 def check_pinmap():
-    print("6. ピン割り当て（pinmap.json）")
+    print("7. ピン割り当て（pinmap.json）")
     with open(os.path.join(HERE, "pinmap.json"), encoding="utf-8") as f:
         pinmap = json.load(f)
     roles = [r["role"] for r in pinmap["roles"]]
@@ -298,7 +347,7 @@ def check_pinmap():
 
 
 def check_generated():
-    print("7. 生成物（配線図・ピン定数）が pinmap.json と合っているか")
+    print("8. 生成物（配線図・ピン定数）が pinmap.json と合っているか")
     gen = os.path.join(HERE, "make_device_docs.py")
     before = {}
     targets = [
@@ -325,6 +374,7 @@ def main():
         check_contract()
         check_rule_runtime()
         check_cpp(tmp)
+        check_web(tmp)
         check_compact(tmp)
         check_acceptance()
         check_pinmap()

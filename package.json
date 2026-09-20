@@ -20,6 +20,7 @@
     "device:docs": "python3 tools/device/make_device_docs.py",
     "device:selftest": "python3 tools/device/selftest.py",
     "device:demo": "python3 tools/device/pi/wt_hub.py serve --dry --port 8770",
+  "device:avatar": "python3 -m http.server 8780 --directory tools/device",
     "deploy:staging": "wrangler deploy --env staging --var APP_VERSION:$(git rev-parse --short HEAD)$(git diff --quiet || echo -dirty) --var BUILT_AT:$(date -u +%Y-%m-%dT%H:%M:%SZ)",
     "setup:staging": "node tools/setup-staging.mjs"
   },

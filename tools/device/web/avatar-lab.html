@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>わけたま検証機 — アバター実験室（メタバース版）</title>
+<!--
+  「メタバースのアバターでも同じ人格が動くか」を、ブラウザだけで確かめるための道具。
+  tools/device/pi/console.html（物理の検証機の操作盤）と発想は同じ:
+  2体に同じ瞬間に同じイベントを送り、差が出るかを自動判定する。
+  違うのは、サーボの代わりに Three.js のアバターが動く点だけ。
+
+  振る舞いの規則は web/wt_core.mjs（tools/device/common/wt_core.py の1:1移植）。
+  Python版・C++版と同じ答えを出すことは npm run device:selftest が確かめている。
+
+  開き方:
+    python3 -m http.server 8780 --directory tools/device   （= npm run device:avatar）
+    ブラウザで http://localhost:8780/web/avatar-lab.html を開く
+
+  file:// で直接開くと fetch（人格の読み込み）がブロックされるブラウザがあるため、
+  簡易サーバ経由を前提にしている。
+-->
+<style>
+  :root { --ink:#1c1630; --muted:#6f668f; --line:#e9e5f7; --accent:#7c5cff; --ok:#2f9e6b; --ng:#c0392b; --bg:#faf9ff; }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:20px 16px 56px; background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif; line-height:1.7; }
+  h1 { font-size:18px; margin:0 0 4px; }
+  .sub { color:var(--muted); font-size:12.5px; margin:0 0 18px; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:14px; padding:16px; margin-bottom:14px; }
+  .stage { display:flex; gap:16px; flex-wrap:wrap; }
+  .avatarBox { flex:1; min-width:260px; }
+  .avatarBox h2 { font-size:14px; margin:0 0 8px; display:flex; align-items:center; gap:8px; }
+  .avatarBox canvas { width:100%; aspect-ratio:1/1; border-radius:12px; background:#0f0a1f; display:block; }
+  .avatarBox textarea { width:100%; height:64px; font-size:11px; font-family:ui-monospace,monospace;
+    border:1px solid var(--line); border-radius:8px; padding:6px 8px; resize:vertical; }
+  .btns { display:flex; gap:10px; flex-wrap:wrap; margin-top:4px; }
+  button { border:none; background:var(--accent); color:#fff; font-weight:700; font-size:14px;
+    padding:12px 18px; border-radius:999px; cursor:pointer; font-family:inherit; }
+  button.ghost { background:#fff; color:var(--muted); border:1px solid var(--line); font-weight:400; }
+  button:disabled { opacity: .5; cursor: default; }
+  label.field { font-size:12.5px; color:var(--muted); display:flex; align-items:center; gap:8px; }
+  .check { display:flex; gap:8px; align-items:center; font-size:13px; padding:4px 0; }
+  .badge { font-size:11px; font-weight:700; padding:2px 8px; border-radius:999px; color:#fff; background:var(--ng); flex:none; }
+  .badge.ok { background:var(--ok); }
+  .verdict { font-size:16px; font-weight:700; margin-top:10px; }
+  table { width:100%; border-collapse:collapse; font-size:11.5px; }
+  th, td { text-align:left; padding:4px 6px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  th { color:var(--muted); font-weight:400; }
+  .log { max-height:220px; overflow:auto; }
+  .metricPair { display:flex; gap:16px; font-size:12.5px; }
+  .metricPair b { color: var(--accent); }
+  .note { font-size:11.5px; color:var(--muted); }
+</style>
+</head>
+<body>
+  <h1>わけたま検証機 — アバター実験室（メタバース版）</h1>
+  <p class="sub">同じ振る舞いエンジン（web/wt_core.mjs）を、サーボの代わりに Three.js のアバターへ割り当てています。
+    物理の検証機と同じ5項目で、差が出ているかを自動判定します。</p>
+
+  <div class="card">
+    <div class="stage">
+      <div class="avatarBox">
+        <h2><span id="nameA">—</span> <span class="note">枠 A</span></h2>
+        <canvas id="canvasA" width="360" height="360"></canvas>
+        <textarea id="personaA" spellcheck="false"></textarea>
+        <div class="metricPair" id="metricA"></div>
+      </div>
+      <div class="avatarBox">
+        <h2><span id="nameB">—</span> <span class="note">枠 B</span></h2>
+        <canvas id="canvasB" width="360" height="360"></canvas>
+        <textarea id="personaB" spellcheck="false"></textarea>
+        <div class="metricPair" id="metricB"></div>
+      </div>
+    </div>
+    <div class="btns" style="margin-top:14px">
+      <button id="loadBtn" class="ghost">この人格を読み込む</button>
+      <button id="sampleBtn" class="ghost">見本の2体に戻す</button>
+      <label class="field">速度
+        <select id="speed">
+          <option value="1">実時間</option>
+          <option value="2">2倍速</option>
+          <option value="4" selected>4倍速（デモ用）</option>
+          <option value="8">8倍速</option>
+        </select>
+      </label>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="btns">
+      <button data-e="greet">話しかける</button>
+      <button data-e="approach" data-arg="2.0">近づく (2.0m)</button>
+      <button data-e="approach" data-arg="0.8">もっと近づく (0.8m)</button>
+      <button data-e="change">予定を変える</button>
+      <button data-e="silence" data-arg="30">黙る (30秒)</button>
+      <button data-e="idle" class="ghost">待機を1周</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <b style="font-size:14px">判定（docs/EDGE_DEVICE_TEST.md §3）</b>
+    <div id="checks"></div>
+    <div class="verdict" id="verdict">まず「話しかける」などを押してください</div>
+  </div>
+
+  <div class="card">
+    <b style="font-size:14px">動いた記録</b>
+    <div class="log">
+      <table>
+        <thead><tr><th>枠</th><th>種類</th><th>中身</th><th>ms</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </div>
+
+<!-- Three.js は同梱（vendor/three.module.min.js）。CDNに出ない。
+     どこかの現場で回線が無くても、この実験室だけは動く（vendor/THREE_LICENSE.txt に本家のライセンス）。 -->
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.min.js" } }
+</script>
+<script type="module">
+import * as THREE from "three";
+import { Persona, compare, dispatch } from "./wt_core.mjs";
+import { buildAvatar, AvatarDriver } from "./wt_avatar.mjs";
+
+const el = (id) => document.getElementById(id);
+const rowsEl = el("rows");
+
+const SLOTS = ["a", "b"];
+const state = {
+  a: { color: 0x7c5cff, canvas: el("canvasA"), textarea: el("personaA"), nameEl: el("nameA"), metricEl: el("metricA") },
+  b: { color: 0xff8a5c, canvas: el("canvasB"), textarea: el("personaB"), nameEl: el("nameB"), metricEl: el("metricB") },
+};
+
+function speed() {
+  return Number(el("speed").value) || 1;
+}
+
+function logRow(slot, kind, what, ms) {
+  const tr = document.createElement("tr");
+  tr.innerHTML = `<td>${slot.toUpperCase()}</td><td>${kind}</td><td>${what}</td><td>${ms ?? ""}</td>`;
+  rowsEl.prepend(tr);
+  while (rowsEl.children.length > 120) rowsEl.removeChild(rowsEl.lastChild);
+}
+
+// --- 各枠のThree.jsシーンを組み立てる ------------------------------------------
+
+function setupScene(s) {
+  const renderer = new THREE.WebGLRenderer({ canvas: s.canvas, antialias: true, alpha: false });
+  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+  renderer.setSize(s.canvas.width, s.canvas.height, false);
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0f0a1f);
+
+  const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 10);
+  camera.position.set(0, 1.0, 3.4);
+  camera.lookAt(0, 0.68, 0);
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+  const key = new THREE.DirectionalLight(0xffffff, 1.1);
+  key.position.set(1.5, 2.5, 2);
+  scene.add(key);
+
+  const floor = new THREE.Mesh(
+    new THREE.CircleGeometry(1.6, 32),
+    new THREE.MeshStandardMaterial({ color: 0x1c1533, roughness: 1 })
+  );
+  floor.rotation.x = -Math.PI / 2;
+  scene.add(floor);
+
+  const rig = buildAvatar(THREE, { color: s.color });
+  scene.add(rig.root);
+
+  s.renderer = renderer;
+  s.scene = scene;
+  s.camera = camera;
+  s.rig = rig;
+
+  const t0 = performance.now();
+  s.driver = new AvatarDriver(rig, {
+    speed: speed(),
+    clock: () => performance.now() - t0,
+    onAct: (act) => {
+      if (act.t === "act") logRow(s.slotName, act.o, `${act.n} ${act.v}`, act.ms);
+    },
+  });
+
+  (function loop() {
+    requestAnimationFrame(loop);
+    renderer.render(scene, camera);
+  })();
+}
+
+for (const slot of SLOTS) {
+  state[slot].slotName = slot;
+  setupScene(state[slot]);
+}
+
+// --- 人格の読み込み -------------------------------------------------------------
+
+async function loadSample(slot, file) {
+  const res = await fetch(`../samples/${file}`);
+  const text = await res.text();
+  state[slot].textarea.value = text;
+}
+
+async function applyPersona(slot) {
+  const s = state[slot];
+  let data;
+  try {
+    data = JSON.parse(s.textarea.value);
+  } catch (e) {
+    alert(`枠${slot.toUpperCase()}: JSONとして読めません — ${e.message}`);
+    return null;
+  }
+  let persona;
+  try {
+    persona = new Persona(data);
+  } catch (e) {
+    alert(`枠${slot.toUpperCase()}: ${e.message}`);
+    return null;
+  }
+  s.persona = persona;
+  s.driver.bind(persona);
+  s.nameEl.textContent = persona.name || persona.id || "（無名）";
+  return persona;
+}
+
+async function loadAndApplyAll() {
+  for (const slot of SLOTS) await applyPersona(slot);
+  await refreshChecks();
+}
+
+el("sampleBtn").addEventListener("click", async () => {
+  await loadSample("a", "bold.min.json");
+  await loadSample("b", "careful.min.json");
+  await loadAndApplyAll();
+});
+el("loadBtn").addEventListener("click", loadAndApplyAll);
+el("speed").addEventListener("change", () => {
+  for (const slot of SLOTS) state[slot].driver.speed = speed();
+});
+
+// --- イベントを2体へ同時に送る ---------------------------------------------------
+
+let busy = false;
+async function fireEvent(event, arg) {
+  if (busy) return;
+  const ready = SLOTS.every((s) => state[s].persona);
+  if (!ready) {
+    alert("先に人格を読み込んでください");
+    return;
+  }
+  busy = true;
+  document.querySelectorAll("button[data-e]").forEach((b) => (b.disabled = true));
+
+  const runs = SLOTS.map(async (slot) => {
+    const s = state[slot];
+    const start = performance.now();
+    let firstMs = null;
+    const original = s.driver.onAct;
+    s.driver.onAct = (act) => {
+      if (firstMs === null && (act.o === "servo" || act.o === "led")) firstMs = Math.round(performance.now() - start);
+      original(act);
+    };
+    await dispatch(s.persona, s.driver, event, arg);
+    s.driver.onAct = original;
+    const totalMs = Math.round(performance.now() - start);
+    s.metricEl.innerHTML = `<span>最初の動き: <b>${firstMs ?? "—"}ms</b></span><span>全体: <b>${totalMs}ms</b></span>`;
+    logRow(slot, "metric", event, `first=${firstMs ?? "-"} total=${totalMs}`);
+  });
+  await Promise.all(runs);
+
+  document.querySelectorAll("button[data-e]").forEach((b) => (b.disabled = false));
+  busy = false;
+}
+
+document.querySelectorAll("button[data-e]").forEach((b) => {
+  b.addEventListener("click", () => {
+    const arg = b.dataset.arg ? Number(b.dataset.arg) : undefined;
+    fireEvent(b.dataset.e, arg);
+  });
+});
+
+// --- 判定パネル -----------------------------------------------------------------
+
+async function refreshChecks() {
+  if (!state.a.persona || !state.b.persona) return;
+  const result = await compare(state.a.persona, state.b.persona);
+  const box = el("checks");
+  box.innerHTML = "";
+  for (const [name, ok, detail] of result.checks) {
+    const d = document.createElement("div");
+    d.className = "check";
+    d.innerHTML = `<span class="badge ${ok ? "ok" : ""}">${ok ? "合格" : "不合格"}</span>
+      <span>${name}${detail ? "（" + detail + "）" : ""}</span>`;
+    box.appendChild(d);
+  }
+  el("verdict").textContent = result.pass
+    ? "合格 — 人格の差がアバターの動きの差になっています"
+    : "不合格 — 育ちが浅いか、性格が近すぎます";
+  el("verdict").style.color = result.pass ? "var(--ok)" : "var(--ng)";
+}
+
+// --- 起動 ---------------------------------------------------------------------
+
+(async () => {
+  await loadSample("a", "bold.min.json");
+  await loadSample("b", "careful.min.json");
+  await loadAndApplyAll();
+})();
+</script>
+</body>
+</html>

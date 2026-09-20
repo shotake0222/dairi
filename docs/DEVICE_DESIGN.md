@@ -13,7 +13,8 @@ Raspberry Pi 4 / Pi Zero 2 W / Pi Pico 2 W / ESP32
 | `device/wt3_pi_wiring.svg` | WT-3（Pi）の配線図 |
 
 関連: [DEVICE_SPEC.md](DEVICE_SPEC.md)（仕様）・[DEVICE_BUILD.md](DEVICE_BUILD.md)（作り方）・
-[TEXT_TO_BEHAVIOR.md](TEXT_TO_BEHAVIOR.md)（会話→動きの理屈）・[EDGE_DEVICE_TEST.md](EDGE_DEVICE_TEST.md)（段階A/B/C）
+[TEXT_TO_BEHAVIOR.md](TEXT_TO_BEHAVIOR.md)（会話→動きの理屈）・[EDGE_DEVICE_TEST.md](EDGE_DEVICE_TEST.md)（段階A/B/C）・
+[METAVERSE_AVATAR_TEST.md](METAVERSE_AVATAR_TEST.md)（サーボの代わりにThree.jsのアバターで同じ検証をする）
 
 ---
 
@@ -232,6 +233,7 @@ npm run device:selftest
 | ピン割り当て（唯一の出所） | `tools/device/pinmap.json` |
 | 振る舞いエンジン（Python） | `tools/device/common/wt_core.py` |
 | 振る舞いエンジン（C++） | `tools/device/esp32/wt_device/wt_core.h` |
+| 振る舞いエンジン（JS。メタバースのアバター用） | `tools/device/web/wt_core.mjs`（詳細は [METAVERSE_AVATAR_TEST.md](METAVERSE_AVATAR_TEST.md)） |
 | 指示→角度・明るさの割り当て | `tools/device/common/wt_actuate.py` |
 | 通信の取り決め | `tools/device/common/wt_proto.py` |
 | 人格カード→最小形（Python） | `tools/device/common/wt_compact.py` |

@@ -235,3 +235,4 @@ k-匿名（最小コホート20）を満たした統計で、同意の範囲も�
 | 台帳 | `delivery_grants`（migration 0010） |
 | 実機での検証手順 | `docs/EDGE_DEVICE_TEST.md` |
 | テキスト → 行動への変換過程 | `docs/TEXT_TO_BEHAVIOR.md`（商談で必ず聞かれる） |
+| アバター向けの実演（実機が無くても見せられる） | `docs/METAVERSE_AVATAR_TEST.md`（`npm run device:avatar`） |

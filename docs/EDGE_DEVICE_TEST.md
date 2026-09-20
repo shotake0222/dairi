@@ -20,6 +20,9 @@
 > 設計 [DEVICE_DESIGN.md](DEVICE_DESIGN.md) / 仕様 [DEVICE_SPEC.md](DEVICE_SPEC.md) / 作り方 [DEVICE_BUILD.md](DEVICE_BUILD.md)。
 > 2体へ同時にイベントを投げて、差を自動で判定し、記録をCSVに落とすところまで入っている。
 > こちらの文書は「手元にある機材で、まず確かめる」ための最小手順として残してある。
+>
+> **サーボやHC-SR04が無くても試したいなら**、ブラウザだけで同じ判定ができる
+> アバター実験室がある: [METAVERSE_AVATAR_TEST.md](METAVERSE_AVATAR_TEST.md)（`npm run device:avatar`）。
 
 要点を先に書くと、**Aの段階にLLMは要らない**。
 「人格 → 振る舞い」の翻訳はサーバ側（`src/persona/avatarProfile.ts`）で済ませてあり、
@@ -336,6 +339,7 @@ PERSONA_LLM_URL=http://raspberrypi.local:11434/v1/chat/completions \
 | Pico（MicroPython） | `tools/edge/pico_waketama.py` |
 | 到達率・弁別性の測定 | `tools/persona-runtime-check.mjs`（`npm run persona:check`） |
 | 最小形の自動検証 | `src/persona/__tests__/edgeCompact.test.ts` |
+| メタバースのアバターでの同じ検証 | `docs/METAVERSE_AVATAR_TEST.md`（`npm run device:avatar`） |
 | **検証機（WT-1〜4）の設計・仕様・作り方** | `docs/DEVICE_DESIGN.md` / `DEVICE_SPEC.md` / `DEVICE_BUILD.md` |
 | 検証機のファームと母艦 | `tools/device/` |
 | 検証機の自己点検 | `tools/device/selftest.py`（`npm run device:selftest`） |
