@@ -17,6 +17,10 @@
   header h1 { margin: 0; font-size: 15px; }
   header .env { font-size: 11px; background: rgba(255,255,255,.14); padding: 3px 10px; border-radius: 999px; }
   header .ver { font-size: 11px; color: #b5a9e6; font-family: ui-monospace, monospace; }
+  header #logoutLink { margin-left: auto; color: #b5a9e6; text-decoration: none; font-family: inherit;
+                       border: 1px solid rgba(255,255,255,.22); border-radius: 999px;
+                       padding: 5px 12px; white-space: nowrap; }
+  header #logoutLink:hover { color: #fff; border-color: rgba(255,255,255,.45); }
   main { max-width: 1000px; margin: 0 auto; padding: 16px 16px 60px; }
 
   .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-bottom: 16px; }
@@ -94,6 +98,10 @@
   <h1>わけたま 管理</h1>
   <span class="env" id="env">…</span>
   <span class="ver" id="ver"></span>
+  <!-- この端末だけ管理者を降りる口。**人に端末を貸すときに要る**
+       （これが無いと、戻す手立てが「合言葉を変える」＝全端末が落ちる、しかない） -->
+  <a class="ver" id="logoutLink" href="/admin?logout=1"
+     title="この端末のブラウザから管理者の印を消します">この端末を管理者から外す</a>
 </header>
 
 <main>

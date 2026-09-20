@@ -127,3 +127,48 @@ describe("renderSitemap", () => {
     expect(xml).not.toContain("/admin");
   });
 });
+
+/**
+ * **分身が生まれる入口は、必ず本体ドメインで開かせる。**
+ *
+ * localStorage はオリジンごとに別物なので、apex で分身が生まれると
+ * 持ち主の印が apex 側に保存される。本体ドメインからは二度と見えず、
+ * 育てた本人が持ち主でなくなる（本人には「消えた」としか見えない）。
+ * URLを刷ってから気づいても、配った現物は直せない。
+ */
+describe("分身が生まれる入口は、必ず本体ドメインへ送る", () => {
+  const entries = [
+    ["/t?u=04a1b2c3d4e5f6", "共通URLのNFCタグ"],
+    ["/t/abc123", "1枚ずつコードを振ったタグ"],
+    ["/t", "UIDが取れなかったタグ"],
+    ["/q/abc123", "配られたQR"],
+    ["/q", "コードの無いQR"],
+    ["/w", "リンクだけで始める入口"],
+    ["/w/", "同上（末尾スラッシュ）"],
+    ["/add", "依代を持たない人の入口"],
+    ["/summon?cid=x", "誕生の画面"],
+  ];
+
+  for (const [path, label] of entries) {
+    it(`${label}（${path}）は app へ送る`, () => {
+      const res = hostRedirect(u(`https://waketama.com${path}`), PROD);
+      expect(res, `${path} が apex のまま通っている`).not.toBeNull();
+      const to = new URL(res!.headers.get("location")!);
+      expect(to.hostname).toBe("app.waketama.com");
+      // クエリを落とすと、UIDも引換券も消えて別の子が生まれる
+      expect(to.pathname + to.search).toBe(path);
+    });
+  }
+
+  it("本体ドメインで開いているぶんには、そのまま通す", () => {
+    for (const [path] of entries) {
+      expect(hostRedirect(u(`https://app.waketama.com${path}`), PROD)).toBeNull();
+    }
+  });
+
+  it("ローカルでは何も転送しない（開発中に外部へ飛ばさない）", () => {
+    for (const [path] of entries) {
+      expect(hostRedirect(u(`http://localhost:8787${path}`), LOCAL)).toBeNull();
+    }
+  });
+});

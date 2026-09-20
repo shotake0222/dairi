@@ -1219,6 +1219,20 @@ console.log("\n[34] 誰が新しい分身を作れるか（既定は依代を持
     check("管理者には開いている", asAdmin.canCreate === true && asAdmin.reason === "admin",
       JSON.stringify(asAdmin));
 
+    // **管理者の印は、そのブラウザで /admin?key= を1回開くだけで付く。**
+    // 毎日入れ直さずに済むよう30日もたせている
+    const maxAge = Number(/Max-Age=(\d+)/.exec(gate.headers.get("set-cookie") || "")?.[1]);
+    check("管理者は30日覚えている", maxAge === 30 * 24 * 60 * 60, String(maxAge));
+    check("合言葉はURLに残さない", !(gate.headers.get("location") || "").includes("key="),
+      gate.headers.get("location") || "");
+
+    // その端末だけ降りられること（人に貸した端末を戻す手立て）
+    const out = await fetch(`${BASE}/admin?logout=1`, { redirect: "manual", headers: { cookie } });
+    check("この端末だけ管理者から降りられる", (out.headers.get("set-cookie") || "").includes("Max-Age=0"),
+      out.headers.get("set-cookie") || "");
+    const adminPage = await (await fetch(`${BASE}/admin`, { headers: { cookie } })).text();
+    check("降りる導線が管理画面に出ている", adminPage.includes("この端末を管理者から外す"));
+
     const admin = await (await fetch(`${BASE}/admin`, { headers: { cookie } })).text();
     check("管理画面が依代なしのURLも出している", admin.includes('id="urlWeb"'));
     check("タグ前でも始められると書いてある", admin.includes("タグが刷り上がる前に始めたいとき"));

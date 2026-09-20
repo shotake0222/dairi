@@ -36,6 +36,21 @@ export interface AdminEnv {
 
 const COOKIE_NAME = "waketama_admin";
 
+/**
+ * 管理者として覚えておく長さ（30日）。
+ *
+ * 以前は12時間だった。**運用する端末は自分の手元の1台なのに、ほぼ毎日
+ * 合言葉を入れ直すことになる**——出先でキーホルダーの読み取りを試している最中に
+ * 切れるのが、いちばん困る。
+ *
+ * 長くしたぶんの逃げ道は2つ用意してある:
+ *   - `/admin?logout=1` … その端末だけ降りる（人に貸した端末を戻すため）
+ *   - `npm run admin:passcode` … 合言葉を変える。**全部の端末が一度に落ちる**
+ *
+ * Cookieの中身は合言葉そのものなので、HttpOnly / Secure / SameSite=Lax は外さないこと。
+ */
+const ADMIN_COOKIE_MAX_AGE = 30 * 24 * 60 * 60;
+
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,
@@ -99,6 +114,19 @@ export function adminGate(request: Request, url: URL, env: AdminEnv): Response |
     );
   }
 
+  // この端末から管理者を降りる: /admin?logout=1
+  // **降りる手立てが無いと、人に貸した端末を戻す方法が「合言葉を変える」しかない**
+  // （変えると自分の他の端末も全部落ちる）。
+  if (url.searchParams.get("logout") === "1") {
+    return new Response(null, {
+      status: 302,
+      headers: {
+        location: "/home",
+        "set-cookie": `${COOKIE_NAME}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`,
+      },
+    });
+  }
+
   const provided = url.searchParams.get("key");
   if (provided && safeEqual(provided, passcode)) {
     // 合言葉をURLに残したままにしない。Cookieへ移して、キー無しのURLへ送り直す。
@@ -108,7 +136,7 @@ export function adminGate(request: Request, url: URL, env: AdminEnv): Response |
       status: 302,
       headers: {
         location: clean.pathname + (clean.search || ""),
-        "set-cookie": `${COOKIE_NAME}=${encodeURIComponent(passcode)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=43200`,
+        "set-cookie": `${COOKIE_NAME}=${encodeURIComponent(passcode)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${ADMIN_COOKIE_MAX_AGE}`,
       },
     });
   }

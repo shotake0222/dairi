@@ -17,7 +17,16 @@
  * 外部ドメインへの転送が起きると、開発中に何を見ているのか分からなくなるため。
  */
 
-/** サービス本体のパス。ここに apex で来た人は app へ送り返す。 */
+/**
+ * サービス本体のパス。ここに apex で来た人は app へ送り返す。
+ *
+ * **入口（依代・リンク）を落とすと、分身の持ち主が消える。**
+ * localStorage はオリジンごとに別物なので、apex で分身が生まれると
+ * 持ち主の印が apex 側に保存される。本体ドメインからは二度と見えず、
+ * **育てた本人が持ち主でなくなる**（本人には「消えた」としか見えない）。
+ * URLを刷ってから気づいても、配った現物は直せない。
+ * 入口を足したら、必ずここにも足すこと。
+ */
 const APP_ONLY_PATHS = new Set([
   "/home",
   "/chat",
@@ -29,6 +38,11 @@ const APP_ONLY_PATHS = new Set([
   "/history",
   "/friends",
   "/recover",
+  // --- 分身が生まれる入口 ---
+  "/add", // 依代を持たない人の入口
+  "/t", // 共通URLのNFCタグ（/t?u=<UID>）
+  "/q", // QR
+  "/w", // リンクだけで始める
 ]);
 
 /** apex（紹介用ドメイン）で見せるパス。app に来たら apex へ送る。 */
@@ -80,8 +94,15 @@ export function hostConfig(env: { SITE_HOST?: string; APP_HOST?: string }): Host
 }
 
 function isAppOnly(pathname: string): boolean {
-  // /t/:tagId（NFCタグから飛んでくるURL）も本体側。ここを間違えるとタグが機能しない。
-  return APP_ONLY_PATHS.has(pathname) || pathname === "/admin" || pathname.startsWith("/t/");
+  // 依代から飛んでくるURL（/t/<コード>・/q/<コード>）も本体側。
+  // **ここを間違えると、apex を刷ったタグから生まれた分身の持ち主が消える。**
+  return (
+    APP_ONLY_PATHS.has(pathname) ||
+    pathname === "/admin" ||
+    pathname.startsWith("/t/") ||
+    pathname.startsWith("/q/") ||
+    pathname === "/w/"
+  );
 }
 
 /**
