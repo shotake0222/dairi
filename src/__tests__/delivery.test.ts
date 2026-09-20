@@ -48,6 +48,9 @@ describe("何を売るのかの定義", () => {
       expect(sku.delivers.length).toBeGreaterThan(0);
       // 「渡らないもの」を空にしないこと。ここが曖昧だと商談で答えられない
       expect(sku.excludes.length).toBeGreaterThan(0);
+      // 取り出し口も。**券を切る前に答えられること**（商談中に必ず聞かれる）
+      expect(sku.endpoint.length).toBeGreaterThan(0);
+      expect(sku.endpoint).toMatch(/<TOKEN>/);
     }
   });
 

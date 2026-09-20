@@ -1271,6 +1271,16 @@
       box.appendChild(ul);
       box.appendChild(Object.assign(el("div", `相手の環境に必要: ${sku.requires}`), { className: "lead" }));
       box.appendChild(Object.assign(el("div", `渡らないもの: ${sku.excludes}`), { className: "lead" }));
+      // 取り出し口。**券を切る前に見られること**が大事（商談中に聞かれる）
+      if (sku.endpoint) {
+        const ep = el("div");
+        ep.style.cssText = "margin-top:6px;font-size:12px";
+        ep.appendChild(Object.assign(el("span", "取り出し口: "), { className: "lead" }));
+        const code = el("code", sku.endpoint);
+        code.style.cssText = "font-size:12px;color:#43368a";
+        ep.appendChild(code);
+        box.appendChild(ep);
+      }
       host.appendChild(box);
     }
 

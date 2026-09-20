@@ -42,6 +42,13 @@ export interface Sku {
   requires: string;
   /** 渡らないもの（ここを曖昧にしない） */
   excludes: string;
+  /**
+   * 買い手が実際に叩く口。
+   * **引換券を発行する前でも、何を渡すことになるのかが分かるように**画面へ出す
+   * （商談中に「APIはどうなっていますか」と聞かれて、券を切らないと答えられないのは困る）。
+   * <TOKEN> のところに引換券が入る。
+   */
+  endpoint: string;
 }
 
 /**
@@ -61,6 +68,7 @@ export const SKUS: Sku[] = [
     ],
     requires: "任意のLLM（クラウドでもローカルでも可）",
     excludes: "会話の全文ログ、持ち主の連絡先、年収などの機微な属性",
+    endpoint: "GET /api/delivery?scope=card&token=<TOKEN>（&format=modelfile で Modelfile）",
   },
   {
     id: "behavior",
@@ -72,6 +80,7 @@ export const SKUS: Sku[] = [
     ],
     requires: "なし。**LLMは不要**（ESP32やRaspberry Pi Picoでも動く）",
     excludes: "会話・覚え書き・属性は1文字も含まない（機械で検査してから渡す）",
+    endpoint: "GET /api/delivery?scope=behavior&token=<TOKEN>",
   },
   {
     id: "mcp",
@@ -85,6 +94,7 @@ export const SKUS: Sku[] = [
     excludes:
       "書き込みの口は開けない（読み取りだけ）。persona_reply も分身側には一切保存しないので、" +
       "呼んでも人格は変わらない。会話の全文ログと持ち主の連絡先は含まれない",
+    endpoint: "POST /mcp（JSON-RPC 2.0） / Authorization: Bearer <TOKEN>",
   },
   {
     id: "slm",
@@ -99,6 +109,7 @@ export const SKUS: Sku[] = [
     excludes:
       "会話の全文ログ、持ち主の連絡先、機微な属性。" +
       "※ SLM は Small Language Model。SML（Standard ML という別の言語）ではない",
+    endpoint: "GET /api/delivery?scope=slm&token=<TOKEN>",
   },
   {
     id: "decision",
@@ -112,6 +123,7 @@ export const SKUS: Sku[] = [
     excludes:
       "**Jev そのものは作れません**（TypeSafe AI の製品で、重みもファインチューンの口も非公開）。" +
       "渡すのは、判断特化モデルへ流し込む『この人の判断の癖』です",
+    endpoint: "GET /api/delivery?scope=decision&token=<TOKEN>",
   },
   {
     id: "bundle",
@@ -123,6 +135,7 @@ export const SKUS: Sku[] = [
     ],
     requires: "言葉が要るなら Raspberry Pi 4 以上＋Ollama。振る舞いだけなら何も要らない",
     excludes: "納品後の更新は届かない（更新が要るなら、期限つきで再発行する）",
+    endpoint: "GET /api/delivery?scope=bundle&token=<TOKEN>",
   },
 ];
 
