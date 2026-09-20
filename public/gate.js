@@ -32,11 +32,37 @@
   .wtGate .points div:last-child { margin-bottom: 0; }
   .wtGate .points b { color: #4c3a99; flex: none; }
   .wtGate a { color: #7c5cff; }
-  .wtGate .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+  /* 文面が長いので、押すところは**下に貼り付けておく**。
+     読み切らないと同意できない作りだが、押す場所を探させるのは別の話。 */
+  .wtGate .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px;
+    position: sticky; bottom: -22px; background: #fff; padding: 12px 0 14px;
+    box-shadow: 0 -10px 12px -10px rgba(28,22,48,.18); }
+  /*
+   * **opacity を必ず打ち消すこと。**
+   * この画面は差し込み先のCSSの中で描かれる。召喚画面（/summon）には
+   *   button { opacity: 0; transition: opacity .6s }  ← 登場演出のための指定
+   * があり、それがこちらのボタンにも効いて、**同意ボタンが最初の画面で
+   * 完全に見えなくなっていた**（押せてはいたので、E2Eでは気づけなかった）。
+   * 生まれてすぐの人が、文章の壁の前で進めなくなる。
+   * 以降、ここに差し込むものは「親の指定が来ても壊れない」書き方にする。
+   */
   .wtGate button { border: none; background: #7c5cff; color: #fff; font-weight: 700; font-size: 15px;
-    padding: 13px 24px; border-radius: 999px; cursor: pointer; font-family: inherit; }
+    padding: 13px 24px; border-radius: 999px; cursor: pointer; font-family: inherit;
+    opacity: 1; transform: none; transition: none; }
   .wtGate button.ghost { background: #fff; color: #6f668f; border: 1px solid #e9e5f7; font-weight: 400; font-size: 13px; }
+  .wtGate input[type="checkbox"] { opacity: 1; }
+  .wtGate label { display: block; cursor: pointer; }
   .wtGate .err { color: #c0392b; font-size: 12.5px; min-height: 18px; }
+  /* 任意の同意。**既定はオフ**で、オンにしないと何も起きない。
+     必須のものと見分けが付くよう、囲って別扱いにしている。 */
+  .wtGate .opt { border: 1px solid #ece8fb; border-radius: 12px; padding: 12px 14px; margin: 14px 0 0; }
+  .wtGate .opt > .lead { font-size: 12.5px; color: #6f668f; margin: 0 0 10px; }
+  .wtGate .optItem { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 12px; }
+  .wtGate .optItem:last-child { margin-bottom: 0; }
+  .wtGate .optItem input { margin: 3px 0 0; width: 18px; height: 18px; flex: none; accent-color: #7c5cff; }
+  .wtGate .optItem .t { font-size: 13px; font-weight: 700; display: block; margin-bottom: 2px; }
+  .wtGate .optItem .d { font-size: 12.5px; color: #4a4266; display: block; }
+  .wtGate .optItem .n { font-size: 12px; color: #8f86ad; display: block; margin-top: 3px; }
   `;
 
   function el(tag, cls, text) {
@@ -56,8 +82,19 @@
   /**
    * 同意の画面を出して、押されるまで待つ。
    * 閉じる手段は「同意する」しか無い。読まずに進む道を作らないため。
+   *
+   * **任意の同意も、ここで一緒に出す。**
+   * 以前は必須の terms だけを聞き、残りは設定画面に置いていた。
+   * そこまで見に行く人はほとんど居ないので、**何に使われるのか知らないまま
+   * 使い続ける**ことになっていた。後から聞かれて初めて知る形は、
+   * 同意を取ったとは言いにくい。始める前に全部見せて、選んでもらう。
+   *
+   * ただし**既定はオフのまま**。まとめて出すのは「説明を尽くすため」であって、
+   * ついでにオンにしてもらうためではない。初期値をオンにした瞬間、
+   * これは同意ではなく黙認になる。
    */
-  function ask(texts, cid, ownerToken) {
+  function ask(allTexts, cid, ownerToken) {
+    const texts = allTexts.terms || {};
     return new Promise((resolve) => {
       const style = el("style");
       style.textContent = STYLE;
@@ -102,6 +139,34 @@
       links.append(terms, document.createTextNode(" ・ "), privacy, document.createTextNode(" を開く"));
       box.appendChild(links);
 
+      // --- 任意の同意。既定オフ ---
+      const optional = ["profile", "aggregate"].filter((k) => allTexts[k]);
+      const boxes = {};
+      if (optional.length > 0) {
+        const opt = el("div", "opt");
+        opt.appendChild(
+          el("p", "lead", "ここから下は任意です。オフのままでも、分身とはこれまでどおり話せます。あとから設定でいつでも変えられます。")
+        );
+        for (const key of optional) {
+          const t = allTexts[key] || {};
+          const item = el("div", "optItem");
+          const id = "wtGateOpt_" + key;
+          const cb = document.createElement("input");
+          cb.type = "checkbox";
+          cb.id = id;
+          cb.checked = false; // **既定オフ。ここを変えないこと**
+          boxes[key] = cb;
+          const label = document.createElement("label");
+          label.htmlFor = id;
+          label.appendChild(el("span", "t", t.title || key));
+          label.appendChild(el("span", "d", t.body || ""));
+          if (t.note) label.appendChild(el("span", "n", t.note));
+          item.append(cb, label);
+          opt.appendChild(item);
+        }
+        box.appendChild(opt);
+      }
+
       const err = el("div", "err");
       const row = el("div", "row");
       const ok = el("button", null, "同意してはじめる");
@@ -118,7 +183,15 @@
           await fetchJson("/api/consent", {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ characterId: cid, token: ownerToken, consent: { terms: true } }),
+            body: JSON.stringify({
+              characterId: cid,
+              token: ownerToken,
+              consent: {
+                terms: true,
+                profile: !!(boxes.profile && boxes.profile.checked),
+                aggregate: !!(boxes.aggregate && boxes.aggregate.checked),
+              },
+            }),
           });
           overlay.remove();
           resolve(true);
@@ -151,7 +224,7 @@
       // 版が上がっているときも聞き直す。文面が変わったのに古い同意を使い回すのは、
       // 黙って範囲を広げるのと同じ。
       if (c.version === schema.consentVersion && c.terms === true) return true;
-      return await ask((schema.consentTexts || {}).terms || {}, cid, ownerToken);
+      return await ask(schema.consentTexts || {}, cid, ownerToken);
     } catch (e) {
       // 持ち主でない端末（403）や、まだ存在しない分身では聞きようがない。
       // ここで止めると復旧や共有リンクまで塞ぐので、通す。

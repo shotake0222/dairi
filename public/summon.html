@@ -115,6 +115,36 @@
   }
   .nameForm button { opacity: 1; }
 
+  /* 名前のつぎの「土台」。
+     ここだけは入力欄と説明で背が高くなるので、**舞台の縦横比を外して伸ばす**。
+     3/4 のまま入れると、上の見出しがロゴや「分身の一覧」に重なって読めなくなる。 */
+  .stage.seedStep { aspect-ratio: auto; min-height: min(100vh, 620px); }
+  .stage.seedStep .overlay {
+    justify-content: flex-start; padding-top: 52px; overflow-y: auto;
+    background: rgba(8,7,18,0.88);
+  }
+  .seedForm {
+    display: none; flex-direction: column; align-items: stretch; gap: 10px;
+    width: 100%; max-width: 340px; opacity: 0; transform: translateY(8px);
+    transition: opacity 0.6s ease, transform 0.6s ease;
+  }
+  .seedForm.show { display: flex; opacity: 1; transform: translateY(0); }
+  .seedWhy { font-size: 12.5px; line-height: 1.75; color: #d8cffb; text-align: left; }
+  .seedWhy b { color: #fff; }
+  .seedForm textarea {
+    width: 100%; padding: 10px 12px; border-radius: 12px; border: none; resize: vertical;
+    font-family: inherit; font-size: 13.5px; line-height: 1.8;
+    background: rgba(255,255,255,0.94); color: #111;
+  }
+  .seedRow { display: flex; gap: 8px; justify-content: center; }
+  .seedForm button { opacity: 1; }
+  .seedForm .seedGhost {
+    background: transparent; color: #c9b8ff; border: 1px solid rgba(201,184,255,0.4);
+    font-size: 12px; font-weight: 600; padding: 8px 14px;
+  }
+  .seedNote { font-size: 11.5px; line-height: 1.7; color: #a79fc4; text-align: left; }
+  .seedNote strong { color: #c9b8ff; }
+
   #goTalk {
     font-size: 12px; color: #c9b8ff; text-decoration: none; padding: 6px 14px; border-radius: 999px;
     border: 1px solid rgba(201,184,255,0.4); background: rgba(0,0,0,0.25);
@@ -158,6 +188,29 @@
       <form class="nameForm" id="nameForm">
         <input id="nameInput" type="text" maxlength="12" placeholder="名前をつけてあげよう" autocomplete="off" />
         <button type="submit">この名前で出会う</button>
+      </form>
+
+      <!--
+        名前のつぎに聞く「土台」。
+        **なぜここで聞くか。** 分身が覚えていることは会話から少しずつ溜まるが、
+        溜まるまでの最初の数十回は、相手を何も知らないまま話すことになる。
+        そこがいちばん「話が通じない」と感じるところで、離脱もそこで起きる。
+        3行でも先に渡しておくと、初回から噛み合う。
+        **必須にはしない。** 生まれた直後に長文を求めると、そこで止まる。
+      -->
+      <form class="seedForm" id="seedForm">
+        <div class="seedWhy" id="seedWhy"></div>
+        <textarea id="seedInput" rows="5" maxlength="600"
+          placeholder="・柴犬のコタロウを飼っている&#10;・朝がとても弱い&#10;・写真を撮るのが好き"></textarea>
+        <div class="seedRow">
+          <button type="button" class="seedGhost" id="seedTemplate">ひな形を入れる</button>
+          <button type="button" class="seedGhost" id="seedSkip">あとで書く</button>
+        </div>
+        <button type="submit" id="seedSave">これでおねがい</button>
+        <div class="seedNote">
+          あとから「あなたのこと」でいつでも書き直せます。ここで書いたものは、
+          <strong>分身が会話から書き足していく土台</strong>になります。
+        </div>
       </form>
 
       <!-- 2回目以降はこちらのボタンだけ表示 -->
@@ -362,6 +415,88 @@
     location.href = `/chat?cid=${encodeURIComponent(cid || "")}`;
   }
 
+  /**
+   * 名前のつぎに聞く「土台」。
+   *
+   * **なぜ生まれた直後に聞くか。**
+   * 分身が覚えていることは会話から少しずつ溜まる作りだが、溜まるまでの最初の数十回は
+   * 相手を何も知らないまま話すことになる。そこがいちばん「話が通じない」と感じるところで、
+   * 離脱もそこで起きる。3行でも先に渡しておくと、初回から噛み合う。
+   *
+   * **必須にしない。** 生まれた直後に長文を求めると、そこで止まる。
+   * 「あとで書く」を同じ大きさで並べてあるのはそのため。
+   */
+  const SEED_TEMPLATE = [
+    "・呼ばれたい名前は",
+    "・住んでいるのは",
+    "・仕事（学校）は",
+    "・一緒に暮らしているのは",
+    "・好きなものは",
+    "・苦手なものは",
+    "・続けている習慣は",
+  ].join("\n");
+
+  function askSeed(name) {
+    const form = document.getElementById("seedForm");
+    const input = document.getElementById("seedInput");
+    const why = document.getElementById("seedWhy");
+    const save = document.getElementById("seedSave");
+    if (!form || !input) {
+      goToChat();
+      return;
+    }
+
+    // **なぜ書くのかを、その場に出す。** 書く理由の分からない入力欄は飛ばされる。
+    why.innerHTML =
+      `<b>${escapeHtml(name)}は、まだあなたのことを何も知りません。</b><br />` +
+      "3行でも先に教えておくと、1回目の会話から噛み合います。" +
+      "ここに書いたことは<b>ずっと覚えています</b>。会話から覚えたことは、この下に積み上がっていきます。";
+
+    // この段では、出会いの演出はもう役目を終えている。
+    // 残したままだと入力欄が画面の下に押し出されて、書く前にスクロールが要る。
+    appearText.classList.remove("show");
+    document.querySelector(".stage").classList.add("seedStep");
+    hint.hidden = true;
+    conceptText.hidden = true;
+    const fallback = document.getElementById("fallback");
+    if (fallback) fallback.hidden = true;
+    form.classList.add("show");
+    input.focus({ preventScroll: true });
+
+    document.getElementById("seedTemplate").addEventListener("click", () => {
+      if (input.value.trim() === "") input.value = SEED_TEMPLATE;
+      input.focus();
+    });
+    document.getElementById("seedSkip").addEventListener("click", goToChat);
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const notes = input.value.trim();
+      if (!notes) {
+        goToChat();
+        return;
+      }
+      save.disabled = true;
+      save.textContent = "覚えています…";
+      try {
+        await fetch("/api/notes", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ characterId: cid, token: getOwnerToken(), part: "seed", notes }),
+        });
+      } catch (err) {
+        // 覚え書きが入らなくても出会いは成立させる。あとから /profile で書ける
+      }
+      goToChat();
+    });
+  }
+
+  function escapeHtml(v) {
+    return String(v).replace(/[&<>"\']/g, (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "\'": "&#39;" })[c]
+    );
+  }
+
   (async () => {
     if (window.__waketamaClaiming) return;
     startCamera();
@@ -438,7 +573,8 @@
         appearText.textContent = `「${name}」が生まれた……！`;
         nameForm.classList.remove("show");
         hint.textContent = "";
-        setTimeout(goToChat, 900);
+        // 名前のつぎに、土台をひとこと聞く（書かなくても進める）
+        setTimeout(() => askSeed(name), 1100);
       });
     } else {
       // 2回目以降: 既存の名前・姿でお出迎え

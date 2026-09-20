@@ -1071,6 +1071,88 @@ console.log("\n[33] 全タグ共通のURL（UIDミラー）");
     page.url().slice(-70));
 }
 
+console.log("\n[35] はじめての流れ（同意 → 名前 → 土台）");
+{
+  const uid = "04" + `${Date.now()}`.slice(-12).replace(/[^0-9a-f]/g, "a").padEnd(12, "c");
+  const res = await fetch(`${BASE}/t?u=${uid}`, { redirect: "manual" });
+  const born = new URL(res.headers.get("location"), BASE);
+  const freshCid = born.searchParams.get("cid");
+  const freshToken = born.searchParams.get("token");
+
+  const errs = [];
+  page.on("pageerror", (e) => errs.push(e.message));
+  await page.goto(born.toString(), { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(2200);
+
+  // 同意。**必須だけでなく、任意の2つもここで見せる**
+  check("同意の画面が出る", (await page.locator(".wtGate").count()) === 1);
+  check("任意の同意も最初に出す", (await page.locator(".wtGate .optItem input").count()) === 2);
+  check("任意は既定オフ（黙認にしない）",
+    (await page.evaluate(() => [...document.querySelectorAll(".wtGate .optItem input")].every((i) => !i.checked))) === true);
+  // **押すところが見えていること。** 差し込み先の button{opacity:0} を拾って
+  // 見えなくなっていたことがある（押せてはいたので気づけなかった）
+  const btnOpacity = await page.evaluate(() =>
+    [...document.querySelectorAll(".wtGate button")].map((b) => getComputedStyle(b).opacity)
+  );
+  check("同意ボタンが見えている", btnOpacity.every((o) => Number(o) > 0.9), btnOpacity.join("/"));
+
+  await page.check("#wtGateOpt_profile");
+  await page.click(".wtGate button:not(.ghost)");
+  await page.waitForTimeout(4200);
+
+  // 選んだとおりに記録されていること（オンにしたものだけ）
+  const view = await (await fetch(
+    `${BASE}/api/profile?cid=${freshCid}&token=${encodeURIComponent(freshToken)}`
+  )).json();
+  check("必須の同意が記録される", view.consent?.terms === true);
+  check("オンにした任意だけが記録される", view.consent?.profile === true && view.consent?.aggregate === false,
+    JSON.stringify(view.consent));
+
+  // 名前 → 土台
+  await page.fill("#nameInput", "はじめのこ");
+  await page.click("#nameForm button[type=submit]");
+  await page.waitForTimeout(2200);
+  check("名前のつぎに土台を聞く",
+    (await page.evaluate(() => document.getElementById("seedForm").classList.contains("show"))) === true);
+  check("なぜ書くのかが出ている",
+    (await page.textContent("#seedWhy")).includes("まだあなたのことを何も知りません"));
+  check("あとで書く道がある", (await page.locator("#seedSkip").count()) === 1);
+  // 入力欄が画面に収まっていること（書く前にスクロールさせない）
+  const fits = await page.evaluate(() => {
+    const r = document.getElementById("seedSave").getBoundingClientRect();
+    return r.bottom > 0 && r.bottom <= window.innerHeight;
+  });
+  check("書いて押すところまで画面に収まる", fits === true);
+
+  await page.fill("#seedInput", "・柴犬のコタロウを飼っている\n・朝がとても弱い");
+  await page.click("#seedSave");
+  await page.waitForTimeout(2600);
+  check("土台を書いたら会話へ進む", page.url().includes("/chat"), page.url().slice(-40));
+
+  const after = await (await fetch(
+    `${BASE}/api/profile?cid=${freshCid}&token=${encodeURIComponent(freshToken)}`
+  )).json();
+  check("書いた土台が保存されている", (after.notesSeed || "").includes("コタロウ"), (after.notesSeed || "").slice(0, 30));
+  check("はじめての流れでJavaScriptエラーを出さない", errs.length === 0, errs.join(" / "));
+
+  // 「あとで書く」でも会話へ行けること（必須にしない）
+  const uid2 = "04" + `${Date.now() + 5}`.slice(-12).replace(/[^0-9a-f]/g, "a").padEnd(12, "d");
+  const born2 = new URL(
+    (await fetch(`${BASE}/t?u=${uid2}`, { redirect: "manual" })).headers.get("location"),
+    BASE
+  );
+  await page.goto(born2.toString(), { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(2200);
+  await page.click(".wtGate button:not(.ghost)");
+  await page.waitForTimeout(4200);
+  await page.fill("#nameInput", "あとでのこ");
+  await page.click("#nameForm button[type=submit]");
+  await page.waitForTimeout(2200);
+  await page.click("#seedSkip");
+  await page.waitForTimeout(2200);
+  check("土台を書かなくても会話へ進める", page.url().includes("/chat"), page.url().slice(-40));
+}
+
 console.log("\n[34] 依代を使わず、Webだけで始める（/w）");
 {
   const res = await fetch(`${BASE}/w`, { redirect: "manual" });
