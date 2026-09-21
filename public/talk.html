@@ -247,6 +247,7 @@
     <div class="row">
       <button class="chip" id="typeBtn" type="button">⌨️ 文字で話す</button>
       <button class="chip on" id="voiceBtn" type="button">🔊 声：オン</button>
+      <button class="chip" id="voiceQualityBtn" type="button" hidden>🎙️ 声質：標準</button>
     </div>
     <div class="row" id="typeRow">
       <input id="typeInput" type="text" maxlength="400" placeholder="話しかけてみよう" autocomplete="off" />
@@ -288,6 +289,7 @@
   </div>
 </div>
 
+<script src="/voiceSpeak.js" defer></script>
 <script>
   // ============================================================
   // かざして話す
@@ -325,6 +327,7 @@
   const typeInput = document.getElementById("typeInput");
   const typeSend = document.getElementById("typeSend");
   const voiceBtn = document.getElementById("voiceBtn");
+  const voiceQualityBtn = document.getElementById("voiceQualityBtn");
   const closeBtn = document.getElementById("closeBtn");
   const infoBtn = document.getElementById("infoBtn");
   const privacyModal = document.getElementById("privacyModal");
@@ -425,36 +428,63 @@
     speechSynthesis.onvoiceschanged = loadVoices;
   }
 
-  function speak(text) {
-    return new Promise((resolve) => {
-      if (!speakEnabled || !speechSupported || !text) return resolve();
+  // 読み上げ中に、うっかりマイクが自分の声を拾って「会話がループする」事故（エコー）を防ぐための旗。
+  // sendTurn() 側の順序（await speak() してから聞き直す）だけに頼らず、ここでも二重に締める。
+  // 実機（iOS Safari / Android Chrome）でしか確認できない類のバグなので、確実性を優先して
+  // 「読み上げ中はマイクを開かせない」を speak() 自体の責務にした（6-3の積み残し）。
+  let ttsPlaying = false;
 
-      // 読み上げの完了待ちは、次のターンに進む条件そのもの。
-      // onend が発火しないブラウザが実在し、そこで詰まると
-      // 「二度と話しかけられない画面」になってしまうので、必ず時間切れで先へ進める。
-      let settled = false;
-      const finish = () => { if (!settled) { settled = true; resolve(); } };
-      const guard = setTimeout(finish, Math.min(20000, 2500 + text.length * 180));
+  async function speak(text) {
+    if (!speakEnabled || !text) return;
 
-      try {
-        speechSynthesis.cancel();
-        const utter = new SpeechSynthesisUtterance(text);
-        utter.lang = "ja-JP";
-        // 声はサーバーが決めている（characterIdから導出）。どの端末でも同じ子の声に聞こえるようにするため。
-        if (japaneseVoices.length > 0) {
-          const idx = voiceProfile ? voiceProfile.voiceIndex % japaneseVoices.length : 0;
-          utter.voice = japaneseVoices[idx];
-        }
-        utter.rate = voiceProfile ? voiceProfile.rate : 1;
-        utter.pitch = voiceProfile ? voiceProfile.pitch : 1;
-        utter.onend = () => { clearTimeout(guard); finish(); };
-        utter.onerror = () => { clearTimeout(guard); finish(); };
-        speechSynthesis.speak(utter);
-      } catch (e) {
-        clearTimeout(guard);
-        finish();
+    ttsPlaying = true;
+    // 読み上げを始める瞬間、マイクが開いたままだったら問答無用で閉じる。
+    // （通常はここに来る前に stopListening 済みのはずだが、recognition.onend の発火待ちなど
+    // タイミングがずれるブラウザが実在するため、念のため二重に締める）
+    if (listening) stopListening(true);
+
+    try {
+      // 「声質：高音質」のときは、まずMeloTTS（/api/voice/speak）を試す。
+      // 失敗したら（対応端末でもネットワークでも起こりうる）黙って標準の読み上げに戻す。
+      if (window.WaketamaVoice && WaketamaVoice.getQuality() === "high") {
+        const ok = await WaketamaVoice.speakHighQuality(text);
+        if (ok) return;
       }
-    });
+
+      await new Promise((resolve) => {
+        if (!speechSupported) return resolve();
+
+        // 読み上げの完了待ちは、次のターンに進む条件そのもの。
+        // onend が発火しないブラウザが実在し、そこで詰まると
+        // 「二度と話しかけられない画面」になってしまうので、必ず時間切れで先へ進める。
+        let settled = false;
+        const finish = () => { if (!settled) { settled = true; resolve(); } };
+        const guard = setTimeout(finish, Math.min(20000, 2500 + text.length * 180));
+
+        try {
+          speechSynthesis.cancel();
+          const utter = new SpeechSynthesisUtterance(text);
+          utter.lang = "ja-JP";
+          // 声はサーバーが決めている（characterIdから導出）。どの端末でも同じ子の声に聞こえるようにするため。
+          if (japaneseVoices.length > 0) {
+            const idx = voiceProfile ? voiceProfile.voiceIndex % japaneseVoices.length : 0;
+            utter.voice = japaneseVoices[idx];
+          }
+          utter.rate = voiceProfile ? voiceProfile.rate : 1;
+          utter.pitch = voiceProfile ? voiceProfile.pitch : 1;
+          utter.onend = () => { clearTimeout(guard); finish(); };
+          utter.onerror = () => { clearTimeout(guard); finish(); };
+          speechSynthesis.speak(utter);
+        } catch (e) {
+          clearTimeout(guard);
+          finish();
+        }
+      });
+    } finally {
+      // ここで初めてマイクを開いてよい状態になる。onendが早すぎる/遅すぎるブラウザ差はあっても、
+      // 「読み上げ中フラグが立っている間は絶対に開かない」という制約自体は常に成り立つ。
+      ttsPlaying = false;
+    }
   }
 
   // ---- カメラ ----
@@ -513,7 +543,9 @@
   }
 
   function startListening() {
-    if (busy || listening) return;
+    // 読み上げ中は、自分の声を拾ってしまう（エコー）ので絶対に開かない。
+    // 読み上げが終わればspeak()側のfinallyでttsPlayingが下り、既存の再開処理が拾ってくれる。
+    if (busy || listening || ttsPlaying) return;
     cancelled = false;
 
     if (SpeechRecognitionCtor) {
@@ -732,8 +764,28 @@
     speakEnabled = !speakEnabled;
     voiceBtn.classList.toggle("on", speakEnabled);
     voiceBtn.textContent = speakEnabled ? "🔊 声：オン" : "🔇 声：オフ";
-    if (!speakEnabled && speechSupported) { try { speechSynthesis.cancel(); } catch (e) {} }
+    if (!speakEnabled) {
+      if (speechSupported) { try { speechSynthesis.cancel(); } catch (e) {} }
+      if (window.WaketamaVoice) WaketamaVoice.stop();
+    }
   });
+
+  // 声質の切り替え（標準 ⇔ MeloTTSの高音質）。既定は標準のまま。
+  // voiceSpeak.js は defer で読み込むため、この場ではまだ window.WaketamaVoice が無いことがある。
+  document.addEventListener("DOMContentLoaded", () => {
+    if (!window.WaketamaVoice) return;
+    voiceQualityBtn.hidden = false;
+    updateVoiceQualityLabel();
+    voiceQualityBtn.addEventListener("click", () => {
+      const next = WaketamaVoice.getQuality() === "high" ? "standard" : "high";
+      WaketamaVoice.setQuality(next);
+      updateVoiceQualityLabel();
+    });
+  });
+  function updateVoiceQualityLabel() {
+    voiceQualityBtn.textContent =
+      window.WaketamaVoice && WaketamaVoice.getQuality() === "high" ? "🎙️ 声質：高音質" : "🎙️ 声質：標準";
+  }
 
   infoBtn.addEventListener("click", () => (privacyModal.hidden = false));
   privacyClose.addEventListener("click", () => (privacyModal.hidden = true));
@@ -742,6 +794,7 @@
     handsFree = false;
     stopListening(true);
     if (speechSupported) { try { speechSynthesis.cancel(); } catch (e) {} }
+    if (window.WaketamaVoice) WaketamaVoice.stop();
     const stream = camEl.srcObject;
     if (stream) stream.getTracks().forEach((t) => t.stop());
     location.href = cid ? `/chat?cid=${encodeURIComponent(cid)}` : "/home";
@@ -750,6 +803,7 @@
 
   window.addEventListener("pagehide", () => {
     if (speechSupported) { try { speechSynthesis.cancel(); } catch (e) {} }
+    if (window.WaketamaVoice) WaketamaVoice.stop();
     stopListening(true);
     const stream = camEl.srcObject;
     if (stream) stream.getTracks().forEach((t) => t.stop());
@@ -799,7 +853,7 @@
     startOverlay.hidden = true;
 
     // iOSは「ユーザー操作を起点にしない音声再生」を禁止している。
-    // このタップの中で無音を1回鳴らして解禁しておく。
+    // このタップの中で無音を1回鳴らして解禁しておく（標準の読み上げ用と、高音質音声用の両方）。
     if (speechSupported) {
       try {
         const unlock = new SpeechSynthesisUtterance(" ");
@@ -807,6 +861,7 @@
         speechSynthesis.speak(unlock);
       } catch (e) {}
     }
+    if (window.WaketamaVoice) WaketamaVoice.unlock();
 
     await startCamera();
 

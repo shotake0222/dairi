@@ -130,22 +130,38 @@ function json(data: unknown, init?: ResponseInit): Response {
 }
 
 /**
+ * CSPのscript-srcに使う、リクエストごとの使い捨てトークン。
+ * HTMLの各 <script> タグに同じ値を nonce 属性として振り、ヘッダの許可リストと突き合わせる。
+ * 推測されると意味が無くなるので、暗号乱数から作る（crypto.randomUUID ではなく getRandomValues
+ * を使うのは、UUIDのハイフンや版数ビットのような固定パターンを含めたくないため）。
+ */
+function randomNonce(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  let binary = "";
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary);
+}
+
+/**
  * HTMLページに付ける保護のヘッダ。
  *
  * - frame-ancestors: 他所のサイトに埋め込ませない。管理画面や引き継ぎ画面を透明なiframeで重ねて
  *   踏ませる手口（クリックジャッキング）を塞ぐ。X-Frame-Options は古いブラウザ向けの保険。
+ * - script-src 'nonce-...': そのレスポンスと一緒に配った nonce を持つ <script> だけを実行させる。
+ *   攻撃者がどこかから文字列を注入できても（XSS）、nonce を知らなければスクリプトとしては動かない。
+ *   全ページのインラインスクリプトに serveAsset() 側で同じ nonce を振っているので、
+ *   'unsafe-inline' を許可する必要がない（詳しくは serveAsset の HTMLRewriter 部分）。
+ * - object-src / base-uri: <object>/<embed>や<base>タグの差し替えでCSPを迂回されないための保険。
+ *   このサービスはどちらも使っていないので、閉じてしまって実害が無い。
  * - nosniff: content-typeを無視した解釈をさせない。
  * - Referrer-Policy: 他所へ遷移するときに、URLのクエリ（cid等）を送らない。
  * - Permissions-Policy: カメラ・マイクは自分のページでだけ使う（かざして話す・通話・視線入力で必要）。
  *   位置情報などは使っていないので明示的に閉じる。
- *
- * CSPはここでは付けていない。全ページがインラインスクリプトで書かれているため、
- * 中途半端に入れると 'unsafe-inline' を許すことになり、意味のある防御にならない。
- * 入れるなら nonce を配る作りに変えてからにする（ROADMAPの積み残し）。
  */
-function securityHeaders(): Record<string, string> {
+function securityHeaders(nonce: string): Record<string, string> {
   return {
-    "content-security-policy": "frame-ancestors 'none'",
+    "content-security-policy":
+      `frame-ancestors 'none'; script-src 'nonce-${nonce}'; object-src 'none'; base-uri 'none'`,
     "x-frame-options": "DENY",
     "x-content-type-options": "nosniff",
     "referrer-policy": "strict-origin-when-cross-origin",
@@ -884,7 +900,8 @@ async function serveAsset(request: Request, url: URL, env: Env, hostEnv: Env = e
   for (const [key, value] of Object.entries(versionHeaders(env))) {
     withVersion.headers.set(key, value);
   }
-  for (const [key, value] of Object.entries(securityHeaders())) {
+  const nonce = randomNonce();
+  for (const [key, value] of Object.entries(securityHeaders(nonce))) {
     withVersion.headers.set(key, value);
   }
 
@@ -907,6 +924,14 @@ async function serveAsset(request: Request, url: URL, env: Env, hostEnv: Env = e
   const stripManifest = isMarketingHost(url, hostEnv);
 
   return new HTMLRewriter()
+    // CSPのnonce方式。すべての<script>タグ（インラインも、外部読み込みも）に
+    // レスポンスヘッダと同じ使い捨てトークンを振る。付け忘れが1つでもあると
+    // そのスクリプトだけ動かなくなる（フェイルセーフ側に倒れる。動いてしまうより安全）。
+    .on("script", {
+      element(element) {
+        element.setAttribute("nonce", nonce);
+      },
+    })
     .on('link[rel="manifest"]', {
       element(element) {
         if (stripManifest) element.remove();

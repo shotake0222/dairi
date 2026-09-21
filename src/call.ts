@@ -22,6 +22,8 @@ import { CharacterState } from "./durable-objects/characterState";
 import { buildCallPrompt } from "./ai/promptBuilder";
 import { retrieveRelevantMemories } from "./ai/memory";
 import { chatModelChain, contextBudgetFor } from "./ai/modelPolicy";
+import { detectsSelfHarmSignal, SELF_HARM_RESPONSE } from "./ai/safetyGuard";
+import { countMetric } from "./persona/registry";
 import { LogContext, logInfo, logWarn, tolerate } from "./lib/log";
 
 export interface CallTurn {
@@ -39,6 +41,8 @@ export interface CallEnv {
   CHARACTER: DurableObjectNamespace<CharacterState>;
   /** 会話モデルの上書き（src/ai/modelPolicy.ts 参照）。 */
   CHAT_MODEL?: string;
+  /** 安全ガード（自傷・自殺のサイン検知）の発生件数だけを集計するために使う。内容は書かない。 */
+  DB: D1Database;
 }
 
 /** クライアントから届いた履歴を、信用せずに切り詰める。 */
@@ -152,6 +156,23 @@ function sseError(message: string): Response {
   return sseResponse(stream);
 }
 
+/**
+ * AIを呼ばずに、決まった文面を1回のdeltaとして返す。
+ * 安全ガード（`src/ai/safetyGuard.ts`）に引っかかったときに使う。
+ * 通常の応答と同じ形（delta → done）で流すので、画面側の分岐を増やさずに済む。
+ */
+function sseFixedReply(text: string): Response {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(encoder.encode(sseEvent({ delta: text })));
+      controller.enqueue(encoder.encode(sseEvent({ done: true })));
+      controller.close();
+    },
+  });
+  return sseResponse(stream);
+}
+
 export interface CallRequestBody {
   characterId?: string;
   message?: string;
@@ -181,6 +202,17 @@ export async function handleCallStream(
   if (!turn.ok) {
     logInfo(log, "call.rejected", { reason: turn.error });
     return sseError(turn.error);
+  }
+
+  // --- 安全ガード: 自傷・自殺のサインは、AIの生成に任せずここで固定文面を返す ---
+  // 通話は「何も保存しない」設計なので、この分岐は特に気を遣わなくてよい
+  // （悩んだ形跡が残らないぶん、ここで確実にケアの言葉を返すことの意味が大きい）。
+  if (detectsSelfHarmSignal(message)) {
+    logInfo(log, "call.safety_guard", { reason: "self_harm_signal" });
+    // fire-and-forgetにしない: ctx.waitUntilをここまで通していないため、
+    // Responseを返した後にPromiseが打ち切られる可能性がある。1回のD1更新なのでawaitしてよい。
+    await countMetric(env, "safety.self_harm_signal");
+    return sseFixedReply(SELF_HARM_RESPONSE);
   }
 
   // 育っているほど、通話でも思い出せる量が増える（文字チャットと同じ方針）。

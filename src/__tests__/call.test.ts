@@ -296,4 +296,22 @@ describe("POST /api/call/stream (その場限りの通話)", () => {
       expect(data?.memorySummary ?? "").not.toContain("秘密のワード");
     });
   });
+
+  describe("安全ガード（自傷・自殺のサイン）", () => {
+    it("AIを呼ばず、固定の案内文を返す", async () => {
+      const cid = freshCid("safety");
+      await createCharacter(cid);
+      const aiSpy = vi.spyOn(env.AI, "run").mockResolvedValue(fakeAiStream(["呼ばれてはいけない"]) as never);
+
+      const res = await SELF.fetch(`${BASE}/api/call/stream`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ characterId: cid, message: "もう疲れた。消えたい", recall: false }),
+      });
+      const events = await readSse(res);
+      const deltas = events.filter((e) => typeof e.delta === "string").map((e) => e.delta as string);
+      expect(deltas.join("")).toContain("よりそいホットライン");
+      expect(aiSpy).not.toHaveBeenCalled();
+    });
+  });
 });

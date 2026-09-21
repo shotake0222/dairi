@@ -30,6 +30,9 @@
     分身とのやり取りにはインターネット接続が必要です。<br />
     電波のいい場所で、もう一度ひらいてみてね。
   </p>
-  <button type="button" onclick="location.reload()">再読み込み</button>
+  <button type="button" id="reloadBtn">再読み込み</button>
+  <script>
+    document.getElementById("reloadBtn").addEventListener("click", () => location.reload());
+  </script>
 </body>
 </html>

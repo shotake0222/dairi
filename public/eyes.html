@@ -216,6 +216,9 @@
     <label><input type="checkbox" id="speakCheck" /> 返事を読み上げる</label>
     <label><input type="checkbox" id="convertCheck" /> 送る前に漢字に直す</label>
   </div>
+  <div class="row" id="voiceQualityRow" hidden>
+    <label><input type="checkbox" id="voiceQualityCheck" /> 高音質の声を使う（読み上げ時に少し時間がかかります）</label>
+  </div>
   <div class="row">
     <button id="recalibBtn" class="ghost" type="button">目の位置を覚え直す</button>
     <button id="toggleModeBtn" class="ghost" type="button">スイッチ操作に切り替える</button>
@@ -224,6 +227,7 @@
   <a id="profileLink" href="/profile">設定を分身に保存する →</a>
 </div>
 
+<script src="/voiceSpeak.js" defer></script>
 <script type="module">
   // ============================================================
   // 視線・スイッチによる文字入力。
@@ -561,8 +565,14 @@
 
   // ---- 読み上げ ----
   const speechOk = typeof speechSynthesis !== "undefined" && typeof SpeechSynthesisUtterance !== "undefined";
-  function speak(text) {
-    if (!state.speak || !speechOk || !text) return;
+  // 「高音質の声を使う」がオンのときは、まずMeloTTS（/api/voice/speak）を試す。
+  // 失敗したら（対応端末でもネットワークでも起こりうる）黙って標準の読み上げに戻す。
+  async function speak(text) {
+    if (!state.speak || !text) return;
+    if (window.WaketamaVoice && WaketamaVoice.getQuality() === "high") {
+      if (await WaketamaVoice.speakHighQuality(text)) return;
+    }
+    if (!speechOk) return;
     try {
       speechSynthesis.cancel();
       const utter = new SpeechSynthesisUtterance(text);
@@ -821,6 +831,8 @@
   const motionCheck = document.getElementById("motionCheck");
   const speakCheck = document.getElementById("speakCheck");
   const convertCheck = document.getElementById("convertCheck");
+  const voiceQualityRow = document.getElementById("voiceQualityRow");
+  const voiceQualityCheck = document.getElementById("voiceQualityCheck");
 
   function applySettings() {
     document.documentElement.style.setProperty("--scale", state.scale);
@@ -843,6 +855,18 @@
   motionCheck.addEventListener("change", () => { state.reduceMotion = motionCheck.checked; applySettings(); });
   speakCheck.addEventListener("change", () => { state.speak = speakCheck.checked; });
   convertCheck.addEventListener("change", () => { state.autoConvert = convertCheck.checked; });
+
+  // 声質（標準 ⇔ MeloTTSの高音質）は端末側の好みなので、ほかの画面と同じくlocalStorageで持つ
+  // （分身に紐づく accessibility 設定とは別枠）。voiceSpeak.jsはこのモジュールスクリプトより
+  // 手前のタグに置いてあり、モジュールもdefer相当で実行されるため通常はこの時点で読み込み済みだが、
+  // 念のため存在確認してから使う。
+  if (window.WaketamaVoice) {
+    voiceQualityRow.hidden = false;
+    voiceQualityCheck.checked = WaketamaVoice.getQuality() === "high";
+    voiceQualityCheck.addEventListener("change", () => {
+      WaketamaVoice.setQuality(voiceQualityCheck.checked ? "high" : "standard");
+    });
+  }
 
   document.getElementById("settingsBtn").addEventListener("click", () => { settingsOverlay.hidden = false; });
   document.getElementById("closeSettings").addEventListener("click", async () => {
@@ -916,6 +940,8 @@
 
   document.getElementById("startGaze").addEventListener("click", async () => {
     startOverlay.hidden = true;
+    // iOSは「ユーザー操作を起点にしない音声再生」を禁止している。最初のタップで解禁しておく。
+    if (window.WaketamaVoice) WaketamaVoice.unlock();
     setHint("カメラを準備しています…");
     const ok = await startGaze();
     if (ok) calibOverlay.hidden = false;
@@ -923,6 +949,7 @@
 
   document.getElementById("startScan").addEventListener("click", () => {
     startOverlay.hidden = true;
+    if (window.WaketamaVoice) WaketamaVoice.unlock();
     fallbackToScan();
     setHint("光っているところで、スイッチかタップで決定できます");
   });
@@ -939,6 +966,7 @@
     const stream = camEl.srcObject;
     if (stream) stream.getTracks().forEach((t) => t.stop());
     if (speechOk) { try { speechSynthesis.cancel(); } catch (e) {} }
+    if (window.WaketamaVoice) WaketamaVoice.stop();
   });
 
   renderComposer();

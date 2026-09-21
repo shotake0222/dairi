@@ -119,6 +119,19 @@ describe("POST /api/chat", () => {
     expect(data.interactionCount).toBe(1);
     expect(data.reply).toBeTruthy();
   });
+
+  it("安全ガード: 自傷・自殺のサインには、AIを呼ばず固定の案内文を返す", async () => {
+    const cid = freshCid("safety");
+    const res = await SELF.fetch(`${BASE}/api/chat`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ characterId: cid, message: "もう死にたい" }),
+    });
+    expect(res.status).toBe(200);
+    const data = await res.json<{ reply?: string }>();
+    expect(data.reply).toContain("よりそいホットライン");
+    expect(data.reply).toContain("0120-279-338");
+  });
 });
 
 describe("GET /api/character", () => {
@@ -477,6 +490,50 @@ describe("静的ファイル配信とPWA/OGP", () => {
     // かざして話す・通話・視線入力で必要なので、カメラとマイクは自分のページにだけ許す
     expect(res.headers.get("permissions-policy")).toContain("camera=(self)");
     expect(res.headers.get("permissions-policy")).toContain("geolocation=()");
+  });
+
+  it("CSPはnonce方式で、'unsafe-inline'を許していない", async () => {
+    const res = await SELF.fetch(`${BASE}/home`);
+    const csp = res.headers.get("content-security-policy") || "";
+    expect(csp).toMatch(/script-src 'nonce-[^']+'/);
+    expect(csp).not.toContain("unsafe-inline");
+    expect(csp).toContain("object-src 'none'");
+    expect(csp).toContain("base-uri 'none'");
+  });
+
+  it("HTML中のすべての<script>タグに、ヘッダと同じnonceが振られている", async () => {
+    const res = await SELF.fetch(`${BASE}/home`);
+    const csp = res.headers.get("content-security-policy") || "";
+    const nonce = /script-src 'nonce-([^']+)'/.exec(csp)?.[1];
+    expect(nonce).toBeTruthy();
+    const body = await res.text();
+    const scriptTags = body.match(/<script\b[^>]*>/g) || [];
+    // かざして話す等と違い/homeに<script>が無い、という事故を検知できるよう、最低1つはあることも確認する
+    expect(scriptTags.length).toBeGreaterThan(0);
+    for (const tag of scriptTags) {
+      expect(tag).toContain(`nonce="${nonce}"`);
+    }
+  });
+
+  it("リクエストごとにnonceが変わる（使い回すと防御にならない）", async () => {
+    const [a, b] = await Promise.all([SELF.fetch(`${BASE}/home`), SELF.fetch(`${BASE}/home`)]);
+    const nonceOf = (res: Response) => /script-src 'nonce-([^']+)'/.exec(res.headers.get("content-security-policy") || "")?.[1];
+    const nonceA = nonceOf(a);
+    const nonceB = nonceOf(b);
+    expect(nonceA).toBeTruthy();
+    expect(nonceB).toBeTruthy();
+    expect(nonceA).not.toBe(nonceB);
+  });
+
+  it("外部スクリプト（model-viewer）を読み込むページでも、そのタグにnonceが振られる", async () => {
+    const res = await SELF.fetch(`${BASE}/chat`);
+    const csp = res.headers.get("content-security-policy") || "";
+    const nonce = /script-src 'nonce-([^']+)'/.exec(csp)?.[1];
+    const body = await res.text();
+    expect(body).toContain("cdn.jsdelivr.net");
+    const externalTag = body.match(/<script[^>]*src="https:\/\/cdn\.jsdelivr\.net[^>]*>/)?.[0];
+    expect(externalTag).toBeTruthy();
+    expect(externalTag).toContain(`nonce="${nonce}"`);
   });
 
   it("存在しないパスには案内付きの404ページを返す（APIは巻き添えにしない）", async () => {

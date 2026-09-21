@@ -155,6 +155,7 @@
   <div class="controls">
     <button id="handsFreeBtn" class="chip" type="button">🔁 ハンズフリー：オフ</button>
     <button id="voiceModeBtn" class="chip" type="button">🔊 読み上げ：オン</button>
+    <button id="voiceQualityBtn" class="chip" type="button" hidden>🎙️ 声質：標準</button>
     <button id="hangupBtn" type="button">通話を終える</button>
   </div>
 </footer>
@@ -171,6 +172,7 @@
   <a class="backLink" id="startBackLink" href="/home">← 会話にもどる</a>
 </div>
 
+<script src="/voiceSpeak.js" defer></script>
 <script>
   const params = new URLSearchParams(location.search);
   const cid = params.get("cid");
@@ -186,6 +188,7 @@
   const micBtn = document.getElementById("micBtn");
   const handsFreeBtn = document.getElementById("handsFreeBtn");
   const voiceModeBtn = document.getElementById("voiceModeBtn");
+  const voiceQualityBtn = document.getElementById("voiceQualityBtn");
   const hangupBtn = document.getElementById("hangupBtn");
   // 引き返す先は、この分身の会話画面（cidが無いときだけ一覧へ）
   document.getElementById("startBackLink").href = cid ? `/chat?cid=${encodeURIComponent(cid)}` : "/home";
@@ -235,39 +238,66 @@
     speechSynthesis.onvoiceschanged = loadVoices;
   }
 
-  /** 読み上げる。終わったらresolveするので、ハンズフリーの再開待ちに使える。 */
-  function speak(text) {
-    return new Promise((resolve) => {
-      if (!speakEnabled || !speechSupported || !text) return resolve();
+  // 読み上げ中に、うっかりマイクが自分の声を拾ってしまう事故（エコー）を防ぐための旗。
+  // ハンズフリーの再開順序（await speak() してから聞き直す）だけに頼らず、ここでも二重に締める。
+  let ttsPlaying = false;
 
-      // onend が発火しないブラウザが実在する。ここで詰まるとハンズフリーが再開せず
-      // 通話が固まってしまうため、読み上げ想定時間を過ぎたら必ず先へ進める。
-      let settled = false;
-      const finish = () => { if (!settled) { settled = true; resolve(); } };
-      const guard = setTimeout(finish, Math.min(20000, 2500 + text.length * 180));
+  /**
+   * 読み上げる。終わったらresolveするので、ハンズフリーの再開待ちに使える。
+   * 「声質：高音質」のときは、まずMeloTTS（/api/voice/speak）を試す。
+   * 失敗したら（対応端末でもネットワークでも起こりうる）黙って標準の読み上げに戻す。
+   */
+  async function speak(text) {
+    if (!speakEnabled || !text) return;
 
-      try {
-        speechSynthesis.cancel();
-        const utter = new SpeechSynthesisUtterance(text);
-        utter.lang = "ja-JP";
-        // 声は分身ごとに固定（サーバーが characterId から導出したもの）。
-        // 取得できていないときだけ、性格から仮の話し方を作る。
-        if (japaneseVoices.length > 0) {
-          const idx = voiceProfile ? voiceProfile.voiceIndex % japaneseVoices.length : 0;
-          utter.voice = japaneseVoices[idx];
-        }
-        const p = personality || {};
-        utter.rate = voiceProfile ? voiceProfile.rate : clamp(0.85 + ((p.cheerfulness ?? 50) / 100) * 0.35, 0.8, 1.3);
-        utter.pitch = voiceProfile ? voiceProfile.pitch : clamp(0.85 + ((p.warmth ?? 50) / 100) * 0.35, 0.8, 1.3);
-        utter.onend = () => { clearTimeout(guard); finish(); };
-        utter.onerror = () => { clearTimeout(guard); finish(); };
+    ttsPlaying = true;
+    // 読み上げを始める瞬間、マイクが開いたままだったら問答無用で閉じる。
+    if (listening) stopListening(true);
+
+    try {
+      if (window.WaketamaVoice && WaketamaVoice.getQuality() === "high") {
         avatarEl.classList.add("speaking");
-        speechSynthesis.speak(utter);
-      } catch (e) {
-        clearTimeout(guard);
-        finish();
+        try {
+          if (await WaketamaVoice.speakHighQuality(text)) return;
+        } finally {
+          avatarEl.classList.remove("speaking");
+        }
       }
-    }).finally(() => avatarEl.classList.remove("speaking"));
+
+      await new Promise((resolve) => {
+        if (!speechSupported) return resolve();
+
+        // onend が発火しないブラウザが実在する。ここで詰まるとハンズフリーが再開せず
+        // 通話が固まってしまうため、読み上げ想定時間を過ぎたら必ず先へ進める。
+        let settled = false;
+        const finish = () => { if (!settled) { settled = true; resolve(); } };
+        const guard = setTimeout(finish, Math.min(20000, 2500 + text.length * 180));
+
+        try {
+          speechSynthesis.cancel();
+          const utter = new SpeechSynthesisUtterance(text);
+          utter.lang = "ja-JP";
+          // 声は分身ごとに固定（サーバーが characterId から導出したもの）。
+          // 取得できていないときだけ、性格から仮の話し方を作る。
+          if (japaneseVoices.length > 0) {
+            const idx = voiceProfile ? voiceProfile.voiceIndex % japaneseVoices.length : 0;
+            utter.voice = japaneseVoices[idx];
+          }
+          const p = personality || {};
+          utter.rate = voiceProfile ? voiceProfile.rate : clamp(0.85 + ((p.cheerfulness ?? 50) / 100) * 0.35, 0.8, 1.3);
+          utter.pitch = voiceProfile ? voiceProfile.pitch : clamp(0.85 + ((p.warmth ?? 50) / 100) * 0.35, 0.8, 1.3);
+          utter.onend = () => { clearTimeout(guard); finish(); };
+          utter.onerror = () => { clearTimeout(guard); finish(); };
+          avatarEl.classList.add("speaking");
+          speechSynthesis.speak(utter);
+        } catch (e) {
+          clearTimeout(guard);
+          finish();
+        }
+      }).finally(() => avatarEl.classList.remove("speaking"));
+    } finally {
+      ttsPlaying = false;
+    }
   }
 
   // ---- 音声入力 ----
@@ -288,7 +318,8 @@
   }
 
   async function startListening() {
-    if (busy || listening) return;
+    // 読み上げ中は、自分の声を拾ってしまう（エコー）ので絶対に開かない。
+    if (busy || listening || ttsPlaying) return;
     cancelledByUser = false;
 
     if (SpeechRecognitionCtor) {
@@ -541,6 +572,7 @@
         speechSynthesis.speak(unlock);
       } catch (e) {}
     }
+    if (window.WaketamaVoice) WaketamaVoice.unlock();
 
     const greeting = `もしもし、${characterName}だよ。どうしたの？`;
     addLine(greeting, "them");
@@ -574,15 +606,36 @@
     speakEnabled = !speakEnabled;
     voiceModeBtn.classList.toggle("on", speakEnabled);
     voiceModeBtn.textContent = speakEnabled ? "🔊 読み上げ：オン" : "🔇 読み上げ：オフ";
-    if (!speakEnabled && speechSupported) { try { speechSynthesis.cancel(); } catch (e) {} }
+    if (!speakEnabled) {
+      if (speechSupported) { try { speechSynthesis.cancel(); } catch (e) {} }
+      if (window.WaketamaVoice) WaketamaVoice.stop();
+    }
   });
   voiceModeBtn.classList.add("on");
+
+  // 声質の切り替え（標準 ⇔ MeloTTSの高音質）。既定は標準のまま。
+  // voiceSpeak.js は defer で読み込むため、この場ではまだ window.WaketamaVoice が無いことがある。
+  document.addEventListener("DOMContentLoaded", () => {
+    if (!window.WaketamaVoice) return;
+    voiceQualityBtn.hidden = false;
+    updateVoiceQualityLabel();
+    voiceQualityBtn.addEventListener("click", () => {
+      const next = WaketamaVoice.getQuality() === "high" ? "standard" : "high";
+      WaketamaVoice.setQuality(next);
+      updateVoiceQualityLabel();
+    });
+  });
+  function updateVoiceQualityLabel() {
+    voiceQualityBtn.textContent =
+      window.WaketamaVoice && WaketamaVoice.getQuality() === "high" ? "🎙️ 声質：高音質" : "🎙️ 声質：標準";
+  }
 
   hangupBtn.addEventListener("click", hangUp);
 
   // 離脱時に確実に音声を止める（読み上げが残ったまま前の画面に戻るのを防ぐ）
   window.addEventListener("pagehide", () => {
     if (speechSupported) { try { speechSynthesis.cancel(); } catch (e) {} }
+    if (window.WaketamaVoice) WaketamaVoice.stop();
     stopListening(true);
   });
 

@@ -23,6 +23,7 @@ import {
   MAX_SEED_LINES,
 } from "../ai/reflection";
 import { deriveVoiceProfile, VoiceProfile } from "../ai/voiceProfile";
+import { detectsSelfHarmSignal, SELF_HARM_RESPONSE } from "../ai/safetyGuard";
 import { logDetachedWarn } from "../lib/log";
 import { ConsentState, hasConsent, normalizeConsent } from "../persona/consent";
 import { personaDepth, PSYCHO_QUESTIONS } from "../persona/survey";
@@ -45,7 +46,7 @@ import {
   mergeValueEstimate,
 } from "../analysis/psychographics";
 import { classifySegment, SegmentResult } from "../analysis/segments";
-import { removeFromRegistry, syncRegistry } from "../persona/registry";
+import { removeFromRegistry, syncRegistry, countMetric } from "../persona/registry";
 import { buildPersonaCard, PersonaCard } from "../persona/personaCard";
 
 export interface Env {
@@ -618,17 +619,28 @@ export class CharacterState extends DurableObject<Env> {
       { role: "user", content: trimmed },
     ];
 
-    const result = await runChat(this.env, messages, {
-      maxTokens: budget.maxTokens,
-      onFailure: (model, err) =>
-        logDetachedWarn("chat.model_failed", {
-          characterId,
-          model,
-          error: err instanceof Error ? err.message : String(err),
-        }),
-    });
-    const reply =
-      result?.text || "（今はうまく考えがまとまらないみたい。少し時間をおいてもう一度話しかけてね）";
+    // --- 安全ガード: 自傷・自殺のサインは、AIの生成に任せずここで固定文面を返す ---
+    // 方針とやらないことの線引きは src/ai/safetyGuard.ts を参照。
+    // 会話としては（記憶にも残る）通常どおり扱う——ここで弾いた事実だけを、
+    // 内容を出さずに集計する（運営が発生頻度を把握できるようにするため）。
+    const selfHarmSignal = detectsSelfHarmSignal(trimmed);
+    let result: Awaited<ReturnType<typeof runChat>> | null = null;
+    let reply: string;
+    if (selfHarmSignal) {
+      reply = SELF_HARM_RESPONSE;
+      this.ctx.waitUntil(countMetric(this.env, "safety.self_harm_signal"));
+    } else {
+      result = await runChat(this.env, messages, {
+        maxTokens: budget.maxTokens,
+        onFailure: (model, err) =>
+          logDetachedWarn("chat.model_failed", {
+            characterId,
+            model,
+            error: err instanceof Error ? err.message : String(err),
+          }),
+      });
+      reply = result?.text || "（今はうまく考えがまとまらないみたい。少し時間をおいてもう一度話しかけてね）";
+    }
 
     // 直近のやり取りを原文のまま積む（これがプロンプトの文脈になる）。
     data.recentTurns = appendTurns(data.recentTurns, [

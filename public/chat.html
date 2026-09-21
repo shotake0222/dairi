@@ -236,9 +236,10 @@
   .speakBtn { border: none; background: transparent; font-size: 15px; line-height: 1; padding: 2px; cursor: pointer; color: #7c5cff; flex-shrink: 0; opacity: 0.75; }
   .speakBtn:active { opacity: 1; }
   .msg.system { align-self: center; background: transparent; color: #999; font-size: 12px; border: none; padding: 4px 10px; }
-  #autoSpeakToggle {
+  #speechControls { display: flex; gap: 8px; margin: 8px 16px 0; align-self: flex-start; flex-wrap: wrap; }
+  #autoSpeakToggle, #voiceQualityToggle {
     border: 1px solid #ddd; background: #fff; color: #7c5cff; font-size: 11px;
-    padding: 4px 10px; border-radius: 999px; white-space: nowrap; margin: 8px 16px 0; align-self: flex-start;
+    padding: 4px 10px; border-radius: 999px; white-space: nowrap;
   }
   form { display: flex; gap: 8px; padding: 12px; background: #fff; border-top: 1px solid #eee; }
   input { flex: 1; padding: 12px 14px; border-radius: 999px; border: 1px solid #ddd; font-size: 14px; }
@@ -269,6 +270,7 @@
 <script src="/gate.js" defer></script>
 <script src="/pulse.js" defer></script>
 <script src="/install-hint.js" defer></script>
+<script src="/voiceSpeak.js" defer></script>
 </head>
 <body>
 <header>
@@ -367,7 +369,10 @@
   </model-viewer>
 </div>
 
-<button id="autoSpeakToggle" type="button" hidden>🔇 自動読み上げ：オフ</button>
+<div id="speechControls">
+  <button id="autoSpeakToggle" type="button" hidden>🔇 自動読み上げ：オフ</button>
+  <button id="voiceQualityToggle" type="button" hidden>声質：標準</button>
+</div>
 
 <div id="conceptBanner" hidden>
   <div class="text">
@@ -462,6 +467,7 @@
   const infoBtn = document.getElementById("infoBtn");
   const conceptModalClose = document.getElementById("conceptModalClose");
   const autoSpeakToggle = document.getElementById("autoSpeakToggle");
+  const voiceQualityToggle = document.getElementById("voiceQualityToggle");
   const toggleSocialBtn = document.getElementById("toggleSocial");
   const socialPanel = document.getElementById("socialPanel");
   const socialOptInBtn = document.getElementById("socialOptInBtn");
@@ -827,9 +833,23 @@
    * 以前ここでは性格からその場で計算していたので、
    * 種族も色も違う子が全員ほぼ同じ声で喋っていた（その報告が来た）。
    * 声の決め方を2箇所に持たない——ここは受け取った値を当てるだけにする。
+   *
+   * 「声質：高音質」を選んでいるときは、まずMeloTTS（/api/voice/speak）を試す。
+   * 現状のMeloTTSは声が1種類しかなく、種族ごとの声の作り分けはできない
+   * ——それでもブラウザ標準より自然に聞こえるか、というのが検証したいところ。
+   * 生成・再生に失敗したら（対応端末でもネットワークでも起こりうる）、
+   * 黙って標準の読み上げに戻す。無音になるよりはそのほうがいい。
    */
-  function speak(text) {
-    if (!speechSupported || !text) return;
+  async function speak(text) {
+    if (!text) return;
+    if (
+      window.WaketamaVoice &&
+      WaketamaVoice.getQuality() === "high" &&
+      (await WaketamaVoice.speakHighQuality(text))
+    ) {
+      return;
+    }
+    if (!speechSupported) return;
     try {
       speechSynthesis.cancel(); // 連打時に前の発話が重ならないようにする
       const utter = new SpeechSynthesisUtterance(text);
@@ -877,6 +897,25 @@
   function updateAutoSpeakToggleLabel() {
     autoSpeakToggle.textContent = autoSpeak ? "🔊 自動読み上げ：オン" : "🔇 自動読み上げ：オフ";
   }
+
+  // 声質の切り替え（標準 ⇔ MeloTTSの高音質）。既定は標準のまま
+  // ——どちらを既定にするかは、実際に聞き比べてから決めるべき事項として残っている（ROADMAP参照）。
+  // voiceSpeak.js は defer で読み込んでいるので、この場ではまだ window.WaketamaVoice が無い。
+  // DOMContentLoaded まで待てば、deferスクリプトは実行済みになっている（gate.js等と同じ扱い）。
+  function updateVoiceQualityToggleLabel() {
+    voiceQualityToggle.textContent =
+      window.WaketamaVoice && WaketamaVoice.getQuality() === "high" ? "🎙️ 声質：高音質" : "🎙️ 声質：標準";
+  }
+  document.addEventListener("DOMContentLoaded", () => {
+    if (!window.WaketamaVoice) return;
+    voiceQualityToggle.hidden = false;
+    updateVoiceQualityToggleLabel();
+    voiceQualityToggle.addEventListener("click", () => {
+      const next = WaketamaVoice.getQuality() === "high" ? "standard" : "high";
+      WaketamaVoice.setQuality(next);
+      updateVoiceQualityToggleLabel();
+    });
+  });
 
   // コンセプト（=あなたの分身を育てるサービスである、ということ）を、
   // 初めてこのページを開いたときにだけさりげなく伝えるバナー。閉じたら二度と出さない。
@@ -1361,6 +1400,9 @@
     e.preventDefault();
     const message = input.value.trim();
     if (!message || !cid) return;
+    // iOSは「ユーザー操作を起点にしない再生」を禁止している。送信という直近のタップの中で
+    // 一度だけ解禁しておくと、この後に届く返答の自動読み上げ（非同期）でも高音質音声を再生できる。
+    if (window.WaketamaVoice) WaketamaVoice.unlock();
     addMessage(message, "user");
     input.value = "";
     input.disabled = true;
