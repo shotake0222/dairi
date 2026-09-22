@@ -434,6 +434,19 @@ describe("法人からの問い合わせ（/api/contact）", () => {
     expect(row!.status).toBe("new");
   });
 
+  it("料金の節から来る分類（サンプル・月額・1体購入）も、そのまま控えに残る", async () => {
+    // /biz のフォームの data-code と、受け付ける分類がずれると "other" に丸められて、
+    // 管理画面で「何の相談か」が分からなくなる
+    for (const topic of ["sample", "plan", "persona"]) {
+      const contact = `biz-${topic}-${crypto.randomUUID()}@example.com`;
+      expect((await post("/api/contact", { kind: "biz", contact, topic })).status).toBe(200);
+      const row = await env.DB.prepare("SELECT topic FROM contact_requests WHERE contact = ?")
+        .bind(contact)
+        .first<{ topic: string }>();
+      expect(row!.topic).toBe(topic);
+    }
+  });
+
   it("falls back to a known topic instead of storing arbitrary values", async () => {
     const contact = `biz2-${crypto.randomUUID()}@example.com`;
     await post("/api/contact", { contact, topic: "'; DROP TABLE contact_requests; --" });

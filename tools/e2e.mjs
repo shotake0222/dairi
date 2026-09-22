@@ -410,6 +410,14 @@ check("到達率の実測値が出ている", bizHtml.includes("到達率") && b
 check("検査を再現できると書いてある", bizHtml.includes("persona:check"));
 check("LLM無しで振る舞いが分かれる例が出ている", bizHtml.includes("policy[].code"));
 check("確かめていないことも書いてある", bizHtml.includes("モデル次第です"));
+check("料金の節があり、ヘッダーから飛べる", bizHtml.includes('id="pricing"') && bizHtml.includes('href="#pricing"'));
+check("料金が税別と明記されている", bizHtml.includes("税別"));
+// 料金のボタンが選ぶ分類は、フォームの選択肢に必ずあること（無いと選ばれずに素通りする）
+{
+  const picks = [...bizHtml.matchAll(/class="pick"[^>]*data-topic="([a-z]+)"/g)].map((m) => m[1]);
+  const codes = new Set([...bizHtml.matchAll(/data-code="([a-z]+)"/g)].map((m) => m[1]));
+  check("料金のボタンの分類がフォームにある", picks.length > 0 && picks.every((p) => codes.has(p)));
+}
 
 await page.goto(`${BASE}/biz`, { waitUntil: "domcontentloaded" });
 await page.waitForTimeout(600);
