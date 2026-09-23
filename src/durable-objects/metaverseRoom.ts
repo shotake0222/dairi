@@ -20,7 +20,7 @@
 
 import { DurableObject } from "cloudflare:workers";
 import type { CharacterState } from "./characterState";
-import { GREETING_LINES, MAX_ACTORS_PER_PERSON, MAX_PEOPLE, STAMPS, WORLD_HALF, type RoomConfig } from "../metaverse";
+import { GREETING_LINES, MAX_ACTORS_PER_PERSON, MAX_PEOPLE, STAMPS, TEST_AREA_ID, WORLD_HALF, type AreaState, type RoomConfig } from "../metaverse";
 
 export interface MetaRoomEnv {
   CHARACTER: DurableObjectNamespace<CharacterState>;
@@ -109,10 +109,28 @@ export class MetaverseRoom extends DurableObject<MetaRoomEnv> {
     await this.ctx.storage.put("config", config);
   }
 
-  /** 部屋の設定が変わったとき（Worker から呼ぶ）。入っている全員へ配り直す。 */
-  async pushConfig(config: RoomConfig): Promise<void> {
-    await this.ctx.storage.put("config", config);
-    this.broadcast({ t: "config", config: this.publicConfig(config) });
+  /**
+   * 部屋の設定が変わったとき（Worker から呼ぶ）。入っている全員へ配り直す。
+   * 公開中でなくなったら（まとめた・閉じた・開放前に戻した）、そのことを知らせて全員を出す。
+   */
+  async pushConfig(config: RoomConfig | null, state: AreaState = "open", movedTo: string | null = null): Promise<void> {
+    // 準備中に戻したエリアからは出てもらう（試し場は管理者しか入れないので、そのまま配り直す）
+    if (config && (state === "open" || (state === "draft" && config.id === TEST_AREA_ID))) {
+      await this.ctx.storage.put("config", config);
+      this.broadcast({ t: "config", config: this.publicConfig(config) });
+      return;
+    }
+    if (config) await this.ctx.storage.put("config", config);
+    else await this.ctx.storage.delete("config");
+    const msg = state === "moved" && movedTo ? { t: "moved", to: movedTo } : { t: "closed", state };
+    for (const ws of this.ctx.getWebSockets()) {
+      try {
+        ws.send(JSON.stringify(msg));
+        ws.close(4003, state);
+      } catch {
+        // もう切れている
+      }
+    }
   }
 
   /** 部屋にいまいる人数（管理画面・ロビー用） */
@@ -194,25 +212,29 @@ export class MetaverseRoom extends DurableObject<MetaRoomEnv> {
     }
 
     const joined: PublicActor[] = [];
-    const rejected: string[] = [];
-    for (const item of list) {
+    // 断った子と理由（符号）。画面は index で自分の一覧と突き合わせ、子の名前つきで直し方を出す
+    const rejected: Array<{ index: number; code: string }> = [];
+    for (const [index, item] of list.entries()) {
       const cid = typeof item?.cid === "string" ? item.cid.slice(0, 200) : "";
       const token = typeof item?.token === "string" ? item.token.slice(0, 200) : "";
-      if (!cid || !token) continue;
+      if (!cid || !token) {
+        rejected.push({ index, code: "no_token" });
+        continue;
+      }
       const cidHash = await hashShort(cid);
       if (present.has(cidHash)) {
-        rejected.push("その子はもう部屋にいます");
+        rejected.push({ index, code: "already_here" });
         continue;
       }
       let result: Awaited<ReturnType<CharacterState["getMetaverseAvatar"]>>;
       try {
         result = await this.env.CHARACTER.getByName(cid).getMetaverseAvatar(token);
       } catch {
-        rejected.push("分身を確かめられませんでした");
+        rejected.push({ index, code: "unavailable" });
         continue;
       }
       if (!result.ok) {
-        rejected.push(result.error === "not found" ? "分身が見つかりませんでした" : "この端末の分身だと確かめられませんでした");
+        rejected.push({ index, code: result.error });
         continue;
       }
       const aid = randomToken(8);
@@ -236,11 +258,7 @@ export class MetaverseRoom extends DurableObject<MetaRoomEnv> {
     }
 
     if (joined.length === 0) {
-      this.send(ws, {
-        t: "error",
-        code: "join_failed",
-        message: rejected[0] || "連れて入れる分身がいませんでした",
-      });
+      this.send(ws, { t: "error", code: "join_failed", rejected, message: "連れて入れる分身がいませんでした" });
       return;
     }
 

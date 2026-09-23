@@ -1194,10 +1194,13 @@ export class CharacterState extends DurableObject<Env> {
       }
     | { ok: false; error: string }
   > {
+    // 断る理由は、画面が直し方を案内できるように**種類ごとの符号**で返す。
+    // 以前はどれも「この端末の分身だと確かめられませんでした」になり、同意がまだなだけの人が
+    // 持ち主でないと言われていた（2026-09-23 に報告）。
     const data = await this.ctx.storage.get<CharacterData>("data");
-    if (!data) return { ok: false, error: "not found" };
-    if (!isOwner(data, ownerToken)) return { ok: false, error: "この操作は分身の持ち主だけが行えます" };
-    if (!hasConsent(data.consent, "terms")) return { ok: false, error: "はじめる前の同意が済んでいません" };
+    if (!data) return { ok: false, error: "not_found" };
+    if (!isOwner(data, ownerToken)) return { ok: false, error: "not_owner" };
+    if (!hasConsent(data.consent, "terms")) return { ok: false, error: "no_consent" };
 
     const characterId = this.ctx.id.name ?? "unknown";
     const card = buildPersonaCard({
@@ -1223,7 +1226,7 @@ export class CharacterState extends DurableObject<Env> {
     const compact = toCompact(card);
     compact.id = "";
     const audit = auditCompact(compact, card);
-    if (!audit.ok) return { ok: false, error: "動きの数値を作れませんでした" };
+    if (!audit.ok) return { ok: false, error: "audit_failed" };
 
     const voice = deriveVoiceProfile(characterId, data.personality, data.species, data.color);
     return {

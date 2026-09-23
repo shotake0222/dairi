@@ -8,7 +8,7 @@ import { handleHealth } from "./health";
 import { handleTranscribe, handleSpeak } from "./voice";
 import { issueTransferCode, claimTransferCode } from "./transfer";
 import { stagingGate, applyStagingHeaders } from "./stagingGuard";
-import { adminGate, applyAdminHeaders, handleAdminOverview, handleAdminPersonas } from "./admin";
+import { adminGate, applyAdminHeaders, handleAdminOverview, handleAdminPersonas, isAdminRequest } from "./admin";
 import {
   handleGetOwnerView,
   handlePersonaCard,
@@ -68,7 +68,22 @@ import {
 } from "./entryPolicy";
 import { handleMcp } from "./mcp";
 import { MetaverseRoom } from "./durable-objects/metaverseRoom";
-import { deleteRoom, getRoom, listAdminRooms, listRooms, metaverseCatalog, saveRoom } from "./metaverse";
+import {
+  areaState,
+  deleteRoom,
+  getGameSettings,
+  getRoom,
+  listAdminRooms,
+  listRooms,
+  mergeRooms,
+  metaverseCatalog,
+  publicRoom,
+  resolveRoom,
+  saveGameSettings,
+  saveRoom,
+  upsertTestArea,
+  type RoomConfig,
+} from "./metaverse";
 import { LogContext, newRequestId } from "./lib/log";
 
 export { CharacterState, MetaverseRoom };
@@ -179,7 +194,9 @@ function securityHeaders(nonce: string): Record<string, string> {
     "x-frame-options": "DENY",
     "x-content-type-options": "nosniff",
     "referrer-policy": "strict-origin-when-cross-origin",
-    "permissions-policy": "camera=(self), microphone=(self), geolocation=(), payment=(), usb=()",
+    // メタバースのミニゲーム（sensorgames.mjs）: 傾き・動き・AR も自分のページでだけ
+    "permissions-policy":
+      "camera=(self), microphone=(self), accelerometer=(self), gyroscope=(self), magnetometer=(self), xr-spatial-tracking=(self), geolocation=(), payment=(), usb=()",
   };
 }
 
@@ -300,19 +317,9 @@ export default {
 
     // --- 管理画面のAPI（adminGate を通過したリクエストだけがここに来る） ---
     // メタバースの部屋（作る・直すのはここだけ。置く物＝看板・動画・ミニゲームもここで決める）
-    if (url.pathname === "/api/admin/meta/rooms" && request.method === "GET") {
-      return json({ rooms: await listAdminRooms(env), builtin: await listRooms(env).then((r) => r.filter((x) => x.builtin)), catalog: metaverseCatalog() });
-    }
-    if (url.pathname === "/api/admin/meta/rooms" && request.method === "POST") {
-      const result = await saveRoom(env, await request.json<Record<string, unknown>>());
-      if (!result.ok) return json({ error: result.error }, { status: result.status });
-      // いま部屋にいる人にも、その場で新しい設定を配る
-      await env.META_ROOM.getByName(result.room.id).pushConfig(result.room).catch(() => undefined);
-      return json({ room: result.room });
-    }
-    if (url.pathname === "/api/admin/meta/rooms" && request.method === "DELETE") {
-      const body = await request.json<{ id?: string }>();
-      return json(await deleteRoom(env, body.id));
+    if (url.pathname.startsWith("/api/admin/meta/")) {
+      const metaAdmin = await handleMetaverseAdmin(request, url, env);
+      if (metaAdmin) return metaAdmin;
     }
     if (url.pathname === "/api/admin/overview" && request.method === "GET") {
       return handleAdminOverview(env, log);
@@ -1131,16 +1138,108 @@ export function pickMostSimilar<T extends Pick<PersonalityTraits, (typeof TRAIT_
 
 
 /**
+ * いま部屋にいる人へ、新しい設定（または「移った」「閉じた」）を配る。
+ * まとめた元のエリアにいる人には、まとめた先を知らせる。
+ */
+async function pushAreaToRoom(env: Env, room: RoomConfig): Promise<void> {
+  const settings = await getGameSettings(env);
+  const state = areaState(room);
+  const view = publicRoom(room, settings);
+  await env.META_ROOM.getByName(room.id)
+    .pushConfig(view, state, room.mergedInto)
+    .catch(() => undefined);
+}
+
+/**
+ * 管理画面のメタバース（adminGate を通過したリクエストだけがここに来る）。
+ *
+ *   GET    /api/admin/meta/rooms         すべてのエリア（状態つき）と選択肢の定義、ミニゲームの設定
+ *   POST   /api/admin/meta/rooms         作る・直す（最初からあるエリアも上書きできる）
+ *   DELETE /api/admin/meta/rooms         消す（最初からあるエリアは元に戻る）
+ *   POST   /api/admin/meta/merge         エリアをまとめる
+ *   GET    /api/admin/meta/games         ミニゲームの設定（止める・既定値）と、どのエリアで使っているか
+ *   POST   /api/admin/meta/games         ミニゲームの設定を保存
+ *   POST   /api/admin/meta/games/test    試し場にそのミニゲームだけを置く（管理者だけが入れる）
+ */
+async function handleMetaverseAdmin(request: Request, url: URL, env: Env): Promise<Response | null> {
+  const p = url.pathname;
+  if (p === "/api/admin/meta/rooms" && request.method === "GET") {
+    const [rooms, settings] = await Promise.all([listAdminRooms(env), getGameSettings(env)]);
+    return json({ rooms, settings, catalog: metaverseCatalog(), now: Date.now() });
+  }
+  if (p === "/api/admin/meta/rooms" && request.method === "POST") {
+    const result = await saveRoom(env, await request.json<Record<string, unknown>>());
+    if (!result.ok) return json({ error: result.error }, { status: result.status });
+    await pushAreaToRoom(env, result.room);
+    return json({ room: result.room, state: areaState(result.room) });
+  }
+  if (p === "/api/admin/meta/rooms" && request.method === "DELETE") {
+    const body = await request.json<{ id?: string }>();
+    const result = await deleteRoom(env, body.id);
+    if (result.ok && typeof body.id === "string") {
+      const now = await getRoom(env, body.id);
+      if (now) await pushAreaToRoom(env, now);
+      else await env.META_ROOM.getByName(body.id).pushConfig(null, "closed", null).catch(() => undefined);
+    }
+    return json(result);
+  }
+  if (p === "/api/admin/meta/merge" && request.method === "POST") {
+    const result = await mergeRooms(env, await request.json<Record<string, unknown>>());
+    if (!result.ok) return json({ error: result.error }, { status: result.status });
+    await pushAreaToRoom(env, result.room);
+    for (const id of result.merged) {
+      const r = await getRoom(env, id);
+      if (r) await pushAreaToRoom(env, r);
+    }
+    return json(result);
+  }
+  if (p === "/api/admin/meta/games" && request.method === "GET") {
+    const [rooms, settings] = await Promise.all([listAdminRooms(env), getGameSettings(env)]);
+    const usedIn: Record<string, Array<{ id: string; name: string; state: string }>> = {};
+    for (const r of rooms) {
+      for (const o of r.objects) {
+        (usedIn[o.type] ??= []).push({ id: r.id, name: r.name, state: r.state });
+      }
+    }
+    return json({ settings, usedIn, catalog: metaverseCatalog() });
+  }
+  if (p === "/api/admin/meta/games" && request.method === "POST") {
+    const settings = await saveGameSettings(env, await request.json<Record<string, unknown>>());
+    // 止めた・戻したミニゲームを、いま開いているエリアにも反映する
+    for (const r of await listAdminRooms(env)) {
+      if (r.state === "open") await pushAreaToRoom(env, r);
+    }
+    return json({ settings });
+  }
+  if (p === "/api/admin/meta/games/test" && request.method === "POST") {
+    const body = await request.json<{ type?: string }>();
+    const result = await upsertTestArea(env, body.type);
+    if (!result.ok) return json({ error: result.error }, { status: 400 });
+    const room = await getRoom(env, result.id);
+    if (room) await pushAreaToRoom(env, room);
+    return json({ id: result.id, url: `/meta?room=${result.id}` });
+  }
+  return null;
+}
+
+/** 状態ごとの、入れないときの説明 */
+const AREA_CLOSED_TEXT: Record<string, string> = {
+  soon: "このエリアはまだ開いていません。開放までお待ちください",
+  draft: "このエリアは準備中です",
+  closed: "このエリアは閉じました",
+};
+
+/**
  * メタバースのAPI。
  *
- *   GET  /api/meta/rooms              ロビーの一覧（最初からある部屋＋一覧に出す部屋）と、選択肢の定義
- *   GET  /api/meta/rooms/:id          1部屋の設定
- *   GET  /api/meta/rooms/:id/ws       入室（WebSocket）
- * 部屋を作る・直すのは管理画面だけ（/api/admin/meta/rooms）。
+ *   GET  /api/meta/rooms              ロビーの一覧（公開中＋近日開放）と、選択肢の定義
+ *   GET  /api/meta/rooms/:id          1エリアの設定（まとめたエリアなら、まとめた先を返す）
+ *   GET  /api/meta/rooms/:id/ws       入室（WebSocket）。公開中のエリアだけ（準備中は管理者だけ）
+ * エリアを作る・直すのは管理画面だけ（/api/admin/meta/*）。
  */
 async function handleMetaverseApi(request: Request, url: URL, env: Env): Promise<Response | null> {
   if (url.pathname === "/api/meta/rooms" && request.method === "GET") {
-    return json({ rooms: await listRooms(env), catalog: metaverseCatalog() }, { headers: { "cache-control": "no-store" } });
+    return json({ rooms: await listRooms(env), catalog: metaverseCatalog(), now: Date.now() }, { headers: { "cache-control": "no-store" } });
   }
 
   const m = /^\/api\/meta\/rooms\/([a-z0-9-]{3,32})(\/ws)?$/.exec(url.pathname);
@@ -1165,17 +1264,39 @@ async function handleMetaverseApi(request: Request, url: URL, env: Env): Promise
       if (!sameSite) return json({ error: "この接続は受け付けられません" }, { status: 403 });
     }
     const room = await getRoom(env, id);
-    if (!room) return json({ error: "その部屋はありません" }, { status: 404 });
+    if (!room) return json({ error: "そのエリアはありません" }, { status: 404 });
+    const state = areaState(room);
+    if (state === "moved") {
+      const resolved = await resolveRoom(env, id);
+      return json({ error: "このエリアは別のエリアにまとまりました", code: "moved", movedTo: resolved?.room.id ?? null }, { status: 409 });
+    }
+    if (state !== "open" && !(state === "draft" && isAdminRequest(request, env))) {
+      return json({ error: AREA_CLOSED_TEXT[state] ?? "このエリアには入れません", code: state }, { status: 409 });
+    }
     // 部屋の設定は、ヘッダに載せず RPC で先に渡す（クイズの問題などで大きくなるとヘッダに収まらない）
     const stub = env.META_ROOM.getByName(id);
-    await stub.setConfig(room);
+    await stub.setConfig(publicRoom(room, await getGameSettings(env)));
     return stub.fetch(request);
   }
 
   if (request.method === "GET") {
-    const room = await getRoom(env, id);
-    if (!room) return json({ error: "その部屋はありません" }, { status: 404 });
-    return json({ room, catalog: metaverseCatalog() }, { headers: { "cache-control": "no-store" } });
+    const resolved = await resolveRoom(env, id);
+    if (!resolved) return json({ error: "そのエリアはありません" }, { status: 404 });
+    const settings = await getGameSettings(env);
+    const state = areaState(resolved.room);
+    const canEnter = state === "open" || (state === "draft" && isAdminRequest(request, env));
+    return json(
+      {
+        room: publicRoom(resolved.room, settings),
+        state,
+        canEnter,
+        movedFrom: resolved.movedFrom,
+        message: canEnter ? null : AREA_CLOSED_TEXT[state] ?? null,
+        catalog: metaverseCatalog(),
+        now: Date.now(),
+      },
+      { headers: { "cache-control": "no-store" } }
+    );
   }
   return null;
 }

@@ -5,14 +5,46 @@
  *   video    動画スクリーン（音なし・くり返し）
  *   members  いまいる子の紹介
  *   treasure / quiz / rally  ミニゲームの屋台。タップするか、前の光る輪に分身が入ると始まる
+ *   tilt / shake / … / xr     センサー・XRのミニゲームの屋台（遊ぶ画面は sensorgames.mjs）
  *
  * 置き場所は決まった7か所（src/metaverse.ts の SLOTS）で、どれも空間の真ん中を向く。
  */
 
 import { textCanvas, wrapText } from "./world.mjs";
 
-const GAME_COLORS = { treasure: 0xffc94d, quiz: 0x6fb8ff, rally: 0x7fdc8a };
-const GAME_ICON = { treasure: "★", quiz: "○×", rally: "旗" };
+const GAME_COLORS = {
+  treasure: 0xffc94d,
+  quiz: 0x6fb8ff,
+  rally: 0x7fdc8a,
+  // センサー・XRのミニゲーム（sensorgames.mjs）
+  tilt: 0xff9f5a,
+  shake: 0xff6f91,
+  balance: 0x9ad06a,
+  voice: 0xc58bff,
+  arhunt: 0x4fd1c5,
+  skycatch: 0x6d7cff,
+  rhythm: 0xff7ad9,
+  hotcold: 0xff5a4f,
+  daruma: 0xe8a33d,
+  xr: 0x39c0ff,
+};
+const GAME_ICON = {
+  treasure: "★",
+  quiz: "○×",
+  rally: "旗",
+  tilt: "傾",
+  shake: "振",
+  balance: "揺",
+  voice: "声",
+  arhunt: "AR",
+  skycatch: "☆",
+  rhythm: "♪",
+  hotcold: "熱",
+  daruma: "鬼",
+  xr: "XR",
+};
+/** センサーを使うゲームか（屋台に「スマホを動かす」の札を付ける） */
+const SENSOR_TYPES = new Set(["tilt", "shake", "balance", "voice", "arhunt", "skycatch", "rhythm", "hotcold", "daruma", "xr"]);
 
 function canvasTexture(THREE, canvas) {
   const tex = new THREE.CanvasTexture(canvas);
@@ -141,6 +173,12 @@ export function buildObjects(THREE, scene, objects, catalog, hooks) {
       const label = sprite(THREE, [obj.title], { width: 768, height: 120, fontSize: 58, bg: "rgba(255,255,255,0.94)", color: "#2a2440", radius: 40 }, 2.3);
       label.position.y = 2.35;
       root.add(base, ring, arch, icon, label);
+      if (SENSOR_TYPES.has(obj.type)) {
+        const tag = sprite(THREE, ["📱 スマホで"], { width: 384, height: 110, fontSize: 56, bg: "rgba(40,36,64,0.9)", color: "#ffffff", radius: 50 }, 1.1);
+        tag.position.y = 0.85;
+        tag.position.z = 0.9;
+        root.add(tag);
+      }
       base.userData.item = item;
       icon.userData.item = item;
       label.userData.item = item;

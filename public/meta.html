@@ -61,8 +61,10 @@
 
   /* ---- 部屋 ---- */
   #stage { position: fixed; inset: 0; background: #000; touch-action: none; }
-  #stage canvas { width: 100%; height: 100%; display: block; }
-  #hud { position: fixed; inset: 0; pointer-events: none; }
+  #stage canvas { width: 100%; height: 100%; display: block; position: relative; z-index: 1; }
+  /* カメラの映像（ARのミニゲーム）。映すだけで、保存も送信もしない */
+  #arVideo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; }
+  #hud { position: fixed; inset: 0; pointer-events: none; z-index: 6; }
   #hud > * { pointer-events: auto; }
   .hudTop {
     position: absolute; top: calc(8px + var(--safe-t)); left: 8px; right: 8px;
@@ -98,6 +100,49 @@
   }
   #greetBtn { background: var(--brand); color: #fff; border: none; border-radius: 999px; padding: 0 16px; height: 40px; font-weight: 700; flex: 0 0 auto; }
 
+  /* ---- センサーのミニゲーム（sensorgames.mjs） ---- */
+  #gameLayer { position: fixed; inset: 0; z-index: 5; touch-action: none; user-select: none; -webkit-user-select: none; }
+  #gameTouch { position: absolute; inset: 0; touch-action: none; }
+  #gameCenter { position: absolute; inset: 0; pointer-events: none; display: flex; align-items: center; justify-content: center; }
+  .gameReticle {
+    width: 70px; height: 70px; border-radius: 50%; border: 3px solid rgba(255,255,255,.85);
+    background: conic-gradient(rgba(255,226,90,.75) calc(var(--p, 0) * 360deg), transparent 0);
+    box-shadow: 0 0 0 2px rgba(0,0,0,.25);
+  }
+  .gameReticle.on { border-color: #ffe25a; }
+  .gameArrow {
+    position: absolute; left: 50%; top: 50%; width: 40px; height: 40px; margin: -20px 0 0 -20px;
+    color: #fff; font-size: 34px; line-height: 40px; text-align: center; text-shadow: 0 2px 6px rgba(0,0,0,.5);
+  }
+  #gameMeters { position: absolute; left: 12px; right: 12px; bottom: calc(96px + var(--safe-b)); display: grid; gap: 6px; pointer-events: none; }
+  .gameMeter { display: flex; align-items: center; gap: 8px; background: rgba(28,22,48,.7); color: #fff; border-radius: 999px; padding: 6px 12px; font-size: 12px; font-weight: 700; }
+  .gameMeter i { position: relative; flex: 1; height: 10px; background: rgba(255,255,255,.25); border-radius: 999px; overflow: hidden; }
+  .gameMeter b { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: #8b6cff; border-radius: 999px; transition: width .08s linear; }
+  .gameMeter em { position: absolute; top: -2px; bottom: -2px; width: 2px; background: #fff; }
+  .gameMeter em[hidden] { display: none; }
+  #gameCtrl {
+    position: absolute; left: 0; right: 0; bottom: 0; padding: 10px 12px calc(16px + var(--safe-b));
+    display: flex; gap: 12px; justify-content: center;
+  }
+  #gameCtrl:empty { display: none; }
+  .gameBtn {
+    min-width: 120px; height: 64px; border: none; border-radius: 999px; background: rgba(255,255,255,.94); color: var(--ink);
+    font-size: 16px; font-weight: 800; box-shadow: 0 4px 14px rgba(0,0,0,.2); touch-action: none; padding: 0 18px;
+  }
+  .gameBtn.wide { min-width: 220px; }
+  .gameBtn.on { background: var(--brand); color: #fff; transform: scale(.97); }
+  #gameHint {
+    position: absolute; left: 50%; top: calc(194px + var(--safe-t)); transform: translateX(-50%); width: max-content; max-width: calc(100vw - 32px);
+    background: rgba(255,255,255,.95); color: var(--ink); border-radius: 14px; padding: 8px 14px; font-size: 13.5px; font-weight: 700;
+    text-align: center; pointer-events: none; box-shadow: 0 4px 14px rgba(0,0,0,.18);
+  }
+  /* ARの最中（WebXR の dom-overlay）は部屋のHUDが見えないので、ゲームの層に同じ表示を出す */
+  #gameInfo, #quitGame2 { display: none; }
+  body.sensorGame .hudBottom, body.sensorGame #camBtn { display: none; }
+  .roomCard.soon { opacity: .78; filter: saturate(.6); }
+  .soonTag { background: rgba(255,255,255,.25); border-radius: 999px; padding: 1px 8px; justify-self: start; margin-top: 4px; }
+  #directNote:empty { display: none; }
+
   /* ---- 重なるもの ---- */
   #dialog, #lost, #noWebgl {
     position: fixed; inset: 0; background: rgba(20,16,42,.45); display: flex; align-items: flex-end; justify-content: center; z-index: 20;
@@ -114,6 +159,14 @@
   }
   [hidden] { display: none !important; }
 </style>
+<style>
+  /* 対応していないブラウザでは、この塊ごと無視される（:xr-overlay を知らない） */
+  #gameLayer:xr-overlay #gameInfo {
+    display: block; position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+    background: rgba(28,22,48,.86); color: #fff; border-radius: 14px; padding: 8px 14px; font-size: 14px; font-weight: 700;
+  }
+  #gameLayer:xr-overlay #quitGame2 { display: block; position: absolute; top: 16px; right: 12px; }
+</style>
 </head>
 <body>
 
@@ -128,6 +181,7 @@
   <div id="directRoom" hidden>
     <p>招待された部屋</p>
     <b id="directName"></b>
+    <p id="directNote" style="margin:6px 0 0"></p>
     <div style="margin-top:10px"><button id="directGo" type="button">この部屋に入る</button></div>
   </div>
 
@@ -141,7 +195,17 @@
   </div>
 </div>
 
-<div id="stage" hidden></div>
+<div id="stage" hidden><video id="arVideo" playsinline muted hidden></video></div>
+
+<div id="gameLayer" hidden>
+  <div id="gameTouch"></div>
+  <div id="gameCenter"></div>
+  <div id="gameMeters"></div>
+  <div id="gameInfo"></div>
+  <button class="pill" id="quitGame2" type="button">やめる</button>
+  <div id="gameHint" hidden></div>
+  <div id="gameCtrl"></div>
+</div>
 
 <div id="hud" hidden>
   <div class="hudTop">
@@ -193,6 +257,7 @@
 <div id="toast" hidden></div>
 
 <script src="/species.js"></script>
+<script src="/gate.js" defer></script>
 <script src="/voiceSpeak.js" defer></script>
 <script type="module" src="/meta/app.mjs"></script>
 </body>

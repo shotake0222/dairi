@@ -38,6 +38,9 @@ const APP_ONLY_PATHS = new Set([
   "/history",
   "/friends",
   "/recover",
+  // メタバースは持ち主の印（localStorage）で分身を連れて入る。apex で開くと印が見えず、
+  // 「この端末の分身だと確かめられません」になる
+  "/meta",
   // --- 分身が生まれる入口 ---
   "/add", // 依代を持たない人の入口
   "/t", // 共通URLのNFCタグ（/t?u=<UID>）

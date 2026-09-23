@@ -27,6 +27,11 @@ describe("hostRedirect", () => {
     expect(res?.headers.get("location")).toBe("https://app.waketama.com/chat?cid=abc");
   });
 
+  it("メタバース（/meta）も本体側へ送る（apex だと持ち主の印が見えず、分身を連れて入れない）", () => {
+    const res = hostRedirect(u("https://waketama.com/meta?cid=abc"), PROD);
+    expect(res?.headers.get("location")).toBe("https://app.waketama.com/meta?cid=abc");
+  });
+
   it("NFCタグのURL(/t/:id)も本体側へ送る", () => {
     const res = hostRedirect(u("https://waketama.com/t/tag123"), PROD);
     expect(res?.headers.get("location")).toBe("https://app.waketama.com/t/tag123");

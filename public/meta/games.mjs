@@ -1,5 +1,6 @@
 /**
- * メタバースのミニゲーム（宝さがし・○×クイズ・スタンプラリー）。
+ * メタバースのミニゲーム（宝さがし・○×クイズ・スタンプラリー）と、センサー・XRのミニゲーム10種の進行役。
+ * センサーのゲームの中身は sensorgames.mjs（部屋とは別の場面で遊び、終わったら部屋に戻る）。
  *
  * どれも「分身を歩かせて遊ぶ」形にしてある。自分の分身が主役で、クリアするとその子が
  * 自分の声で喜ぶ（人格の数値どおりの身振りつき）。
@@ -9,6 +10,7 @@
  */
 
 import { textCanvas } from "./world.mjs";
+import { SENSOR_BEST, SENSOR_GAME_CLASSES } from "./sensorgames.mjs";
 
 const BEST_KEY = (roomId, objId) => `sodatsukake_metaBest_${roomId}_${objId}`;
 
@@ -69,13 +71,31 @@ export class GameRunner {
     if (this.active) return;
     const o = item.obj;
     const best = loadBest(BEST_KEY(this.ctx.roomId, o.id));
-    const desc = {
+    let desc = {
       treasure: `${o.seconds}秒で、星を${o.count}こ集めよう。分身を歩かせて、星にふれると拾えます。`,
       rally: `空間のあちこちにある旗（${o.points}本）を、ぜんぶまわろう。`,
       quiz: `問題は${o.questions?.length || 0}問。答えの場所（○か×）へ、分身を歩かせてね。`,
     }[o.type];
+    const spec = this.ctx.catalog.sensorGames?.[o.type];
+    if (spec) {
+      const lines = [spec.how];
+      const rule = [spec.goal && o.goal ? `${spec.goal.label}: ${o.goal}` : "", spec.seconds && o.seconds ? `制限 ${o.seconds}秒` : "", `むずかしさ ${"★".repeat(o.level || 2)}`];
+      lines.push(rule.filter(Boolean).join("／"));
+      lines.push(`使うもの: ${spec.sensors.join("・")}（使えないときは${spec.fallback}）`);
+      // 端末をふる・映すゲームは、周りの安全をひとこと
+      if (spec.sensors.some((x) => ["加速度", "カメラ", "WebXR"].includes(x))) lines.push("まわりに気をつけて、端末をしっかり持って遊んでね。");
+      desc = lines.join("\n");
+    }
     const bestText =
-      best === null ? "" : o.type === "treasure" ? `自己ベスト: 残り${best}秒` : o.type === "rally" ? `自己ベスト: ${best}秒` : `自己ベスト: ${best}問正解`;
+      best === null
+        ? ""
+        : SENSOR_BEST[o.type]
+          ? `自己ベスト: ${SENSOR_BEST[o.type](best)}`
+          : o.type === "treasure"
+            ? `自己ベスト: 残り${best}秒`
+            : o.type === "rally"
+              ? `自己ベスト: ${best}秒`
+              : `自己ベスト: ${best}問正解`;
     this.ctx.dialog({
       title: o.title,
       body: [o.text, desc, bestText].filter(Boolean).join("\n"),
@@ -99,6 +119,48 @@ export class GameRunner {
     if (o.type === "treasure") this.startTreasure(game);
     else if (o.type === "rally") this.startRally(game);
     else if (o.type === "quiz") this.startQuiz(game);
+    else if (SENSOR_GAME_CLASSES[o.type]) this.startSensor(game, me);
+  }
+
+  /** センサーのゲームが動いている間、描画する場面（部屋の代わりに映す）。無ければ null */
+  get view() {
+    const g = this.active;
+    return g?.impl && g.ready ? g.impl.view : null;
+  }
+
+  // ---- センサー・XRのゲーム ----
+  startSensor(game, me) {
+    const Cls = SENSOR_GAME_CLASSES[game.obj.type];
+    const layer = this.ctx.layer;
+    layer.root.hidden = false;
+    document.body.classList.add("sensorGame");
+    const api = {
+      THREE: this.ctx.THREE,
+      me: { species: me.species, color: me.color, name: me.name, voice: me.voice },
+      layer,
+      renderer: this.ctx.renderer,
+      hud: (text) => this.ctx.hud(text),
+      hint: (text, ms) => this.ctx.hint(text, ms),
+      sound: () => this.ctx.sound(),
+      speak: (text) => this.ctx.speak?.(text, me.voice),
+      aspect: () => this.ctx.aspect(),
+      end: (result) => {
+        if (this.active === game) this.finish(result);
+      },
+    };
+    game.impl = new Cls(api, game.obj);
+    game.ready = false;
+    this.ctx.hud("じゅんびしています…");
+    // start は、はじめるボタンのタップの中で呼ばれる（iOS のセンサー許可・ARの開始に必要）。
+    // 許可を待つ間は、まだ場面を動かさない（ready になってから update・描画する）
+    game.impl.start().then(() => {
+      game.ready = true;
+    }).catch((e) => {
+      console.warn("[game] 始められませんでした", e);
+      if (this.active !== game) return;
+      this.stop();
+      this.ctx.dialog({ title: game.obj.title, body: "このミニゲームを始められませんでした。ブラウザの許可の設定を確かめてください。", actions: [{ label: "とじる" }] });
+    });
   }
 
   stop() {
@@ -115,6 +177,19 @@ export class GameRunner {
       });
     }
     clearInterval(g.timer);
+    if (g.impl) {
+      try {
+        g.impl.dispose();
+      } catch (e) {
+        console.warn(e);
+      }
+      const layer = this.ctx.layer;
+      for (const el of [layer.ctrl, layer.meter, layer.center]) el.innerHTML = "";
+      layer.info.textContent = "";
+      layer.root.hidden = true;
+      document.body.classList.remove("sensorGame");
+      this.ctx.hint(null);
+    }
     this.active = null;
     this.ctx.hud(null);
   }
@@ -318,7 +393,18 @@ export class GameRunner {
     };
   }
 
-  update(dt, t) {
-    this.active?.update?.(t);
+  update(dt, t, frame) {
+    const g = this.active;
+    if (!g) return;
+    if (g.impl) {
+      if (!g.ready) return;
+      try {
+        g.impl.update(dt, t, frame);
+      } catch (e) {
+        console.warn("[game]", e);
+      }
+      return;
+    }
+    g.update?.(t);
   }
 }

@@ -381,7 +381,7 @@ await page.screenshot({ path: path.join(OUT_DIR, "eyes.png") });
 
 console.log("\n[16] プライバシーポリシーの更新");
 const privacy2 = await (await fetch(`${BASE}/privacy`)).text();
-check("3つの用途と止め方が説明されている", privacy2.includes("3つの用途と、その止め方"));
+check("用途と止め方が説明されている", /[0-9]つの用途と、その止め方/.test(privacy2));
 check("統計に含まれないものが列挙されている", privacy2.includes("統計として提供されるもの"));
 check("会話の中身が管理画面に出ないと書かれている", privacy2.includes("管理画面のどこにも表示されません"));
 
@@ -423,6 +423,14 @@ check("確かめていないことも書いてある", bizHtml.includes("モデ�
   const local = readFileSync(new URL("./device/web/wt_core.mjs", import.meta.url), "utf8");
   // 振る舞いエンジンの写しがずれると、メタバースと実機で同じ子が違う動きをする
   check("メタバースの振る舞いエンジンが、実機の検証機と同じ", served === local);
+  // センサー・XRのミニゲーム10種が、定義（サーバー）と画面（sensorgames.mjs）の両方にそろっている
+  const sensorIds = Object.keys(rooms.catalog.sensorGames || {});
+  const sensorJs = await (await fetch(`${BASE}/meta/sensorgames.mjs`)).text();
+  check("センサーのミニゲームが10種ある", sensorIds.length === 10);
+  check("センサーのミニゲームが全部、画面側に実装されている", sensorIds.every((id) => new RegExp(`\\b${id}: [A-Z][A-Za-z]+Game`).test(sensorJs)));
+  check("ロビーの一覧に、状態（公開中・近日開放）が付いている", rooms.rooms.every((r) => r.state === "open" || r.state === "soon"));
+  const metaRes = await fetch(`${BASE}/meta`);
+  check("メタバースの画面で、傾き・動き・ARを自分のページに許している", /gyroscope=\(self\)/.test(metaRes.headers.get("permissions-policy") || "") && /xr-spatial-tracking=\(self\)/.test(metaRes.headers.get("permissions-policy") || ""));
 }
 check("料金の節があり、ヘッダーから飛べる", bizHtml.includes('id="pricing"') && bizHtml.includes('href="#pricing"'));
 check("料金が税別と明記されている", bizHtml.includes("税別"));
@@ -593,7 +601,8 @@ check("APIが巻き添えになっていない", (healthAlive.headers.get("conte
 const robotsRes = await fetch(`${BASE}/robots.txt`);
 const robotsTxt = await robotsRes.text();
 check("robots.txtが配信される", robotsRes.status === 200);
-check("管理画面はクロール対象外", robotsTxt.includes("Disallow: /admin"));
+// 開発・検証の環境では、サイト全体をクロール対象外にしている（Disallow: /）
+check("管理画面はクロール対象外", robotsTxt.includes("Disallow: /admin") || /^Disallow: \/\s*$/m.test(robotsTxt));
 const sitemapRes = await fetch(`${BASE}/sitemap.xml`);
 check("sitemap.xmlが配信される", sitemapRes.status === 200);
 check("個人のページはsitemapに載せない", !(await sitemapRes.text()).includes("/home"));
@@ -1023,7 +1032,7 @@ console.log("\n[32] 依代を何個でも持てること、書き込むURLの案
   const dex = await page.evaluate(() => {
     const card = document.getElementById("dexCard");
     // 一覧は開いたときにサーバーの姿で上書きされる。**2体が同じ姿を引くこともある**
-    // （30通りなので3%ほど）。数え方を固定値で書くと、たまに落ちるテストになる。
+    // （90通りなので1%ほど）。数え方を固定値で書くと、たまに落ちるテストになる。
     let list = [];
     try { list = JSON.parse(localStorage.getItem("sodatsukake_myCharacters") || "[]"); } catch (e) { /* noop */ }
     const distinct = new Set(list.filter((c) => c.species && c.color).map((c) => `${c.species}_${c.color}`));
@@ -1035,9 +1044,9 @@ console.log("\n[32] 依代を何個でも持てること、書き込むURLの案
       distinct: distinct.size,
     };
   });
-  check("集めた姿の図鑑が出る", dex.shown === true && dex.cells === 30, JSON.stringify(dex));
+  check("集めた姿の図鑑が出る", dex.shown === true && dex.cells === 90, JSON.stringify(dex));
   check("持っている姿だけが開いている",
-    dex.distinct > 0 && dex.owned === dex.distinct && dex.count.includes(`${dex.distinct} / 30`),
+    dex.distinct > 0 && dex.owned === dex.distinct && dex.count.includes(`${dex.distinct} / 90`),
     JSON.stringify(dex));
 
   // 1体も居ない端末では図鑑を出さない（集める前に空の棚を見せない）

@@ -70,6 +70,17 @@ function myCharacters() {
   }
 }
 
+/** ミニゲームかどうか（種類の定義は、サーバーが返す catalog.objectTypes） */
+function isGame(catalog, type) {
+  return !!(catalog.objectTypes || []).find((t) => t.id === type && t.game);
+}
+
+function formatDate(ms) {
+  if (!ms) return "";
+  const d = new Date(ms);
+  return `${d.getMonth() + 1}月${d.getDate()}日 ${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
 function labelOf(list, id) {
   return (list.find((x) => x.id === id) || {}).label || id;
 }
@@ -98,6 +109,47 @@ function dialog({ title, body, actions }) {
     bar.appendChild(b);
   }
   $("dialog").hidden = false;
+}
+
+/**
+ * 部屋に断られた子について、理由ごとに直し方を案内する。
+ * （以前はすべて「この端末の分身だと確かめられませんでした」だった）
+ */
+const REJECT_TEXT = {
+  not_owner: (n) =>
+    `「${n}」は、この端末では持ち主だと確かめられませんでした。別の端末で育てた子か、この端末の持ち主の印が古くなっています。` +
+    `もとの端末で「📦 保存/復元」から引き継ぎコードを出すと、この端末に戻せます。`,
+  no_token: (n) => `「${n}」の持ち主の印が、この端末にありません。引き継ぎコードで戻せます。`,
+  no_consent: (n) => `「${n}」は、まだ「はじめる前の同意」が済んでいません。キャラクター画面を開くと、同意の画面が出ます。`,
+  not_found: (n) => `「${n}」が見つかりませんでした。削除された子かもしれません。`,
+  already_here: (n) => `「${n}」は、もうこの部屋にいます（別のタブや端末で入っています）。`,
+  unavailable: (n) => `「${n}」をいま確かめられませんでした。少し待ってから入り直してください。`,
+  audit_failed: (n) => `「${n}」の動きの数値を用意できませんでした。少し待ってから入り直してください。`,
+};
+
+function explainRejections(rejected, chosen) {
+  const lines = [];
+  let fixCid = null;
+  for (const r of rejected || []) {
+    const c = chosen[r.index];
+    const name = (c && c.name) || "この子";
+    lines.push((REJECT_TEXT[r.code] || REJECT_TEXT.unavailable)(name));
+    if (c && ["no_consent", "not_owner", "no_token"].includes(r.code)) fixCid = fixCid || c.cid;
+  }
+  return { text: lines.join("\n\n"), fixCid };
+}
+
+/** ミニゲーム中の短い案内（画面の上の方に、しばらく出す）。null で消す */
+function hint(text, ms = 2200) {
+  const el = $("gameHint");
+  clearTimeout(hint.timer);
+  if (!text) {
+    el.hidden = true;
+    return;
+  }
+  el.textContent = text;
+  el.hidden = false;
+  hint.timer = setTimeout(() => (el.hidden = true), ms);
 }
 
 function toast(text) {
@@ -150,7 +202,7 @@ async function showLobby() {
   const chosen = () =>
     [...picker.querySelectorAll("input:checked")].map((el) => chars.find((c) => c.cid === el.value)).filter(Boolean);
 
-  const go = (room) => {
+  const go = async (room) => {
     const list = chosen();
     if (list.length === 0) {
       toast("いっしょに行く子を選んでね");
@@ -158,31 +210,57 @@ async function showLobby() {
     }
     store(NOTICE_KEY, "1");
     unlockAudio();
+    // 「はじめる前の同意」がまだの子（同意の文面の版が上がった後、まだ開いていない子など）は、
+    // ここで同意の画面を出す。入ってから断られるより先に済ませる
+    const ready = [];
+    for (const c of list) {
+      const ok = window.waketamaGate ? await window.waketamaGate.require(c.cid, c.token) : true;
+      if (ok) ready.push(c);
+    }
+    if (ready.length === 0) return;
+    list.length = 0;
+    list.push(...ready);
     $("lobby").hidden = true;
     history.replaceState(null, "", `/meta?room=${encodeURIComponent(room.id)}${fromCid ? `&cid=${encodeURIComponent(fromCid)}` : ""}`);
     enterRoom(room, catalog, list);
   };
 
   $("roomList").innerHTML = "";
+  if (rooms.length === 0) $("roomList").innerHTML = `<p class="empty">いま開いているエリアはありません。</p>`;
   for (const r of rooms) {
     const b = document.createElement("button");
     b.type = "button";
-    b.className = `roomCard place-${r.place} time-${r.time}`;
-    const games = r.objects.filter((o) => ["treasure", "quiz", "rally"].includes(o.type)).map((o) => o.title);
+    b.className = `roomCard place-${r.place} time-${r.time}${r.state === "soon" ? " soon" : ""}`;
+    const games = r.objects.filter((o) => isGame(catalog, o.type)).map((o) => o.title);
+    const soon = r.state === "soon" ? `<em class="soonTag">近日開放: ${escapeHtml(formatDate(r.opensAt))}</em>` : "";
     b.innerHTML = `<b>${escapeHtml(r.name)}</b><span>${escapeHtml(labelOf(catalog.places, r.place))}・${escapeHtml(labelOf(catalog.times, r.time))}</span>${
       games.length ? `<em>あそべる: ${escapeHtml(games.join("・"))}</em>` : ""
-    }`;
-    b.addEventListener("click", () => go(r));
+    }${soon}`;
+    b.addEventListener("click", () => {
+      if (r.state === "soon") {
+        toast(`「${r.name}」は ${formatDate(r.opensAt)} に開きます`);
+        return;
+      }
+      go(r);
+    });
     $("roomList").appendChild(b);
   }
 
-  // リンクで部屋が決まっているとき（一覧に出していない部屋も含む）
+  // リンクでエリアが決まっているとき（一覧に出していないエリアも含む）
   if (roomId) {
     try {
-      const { room } = await api(`/api/meta/rooms/${encodeURIComponent(roomId)}`);
+      const info = await api(`/api/meta/rooms/${encodeURIComponent(roomId)}`);
+      const { room } = info;
       $("directRoom").hidden = false;
       $("directName").textContent = room.name;
-      $("directGo").addEventListener("click", () => go(room));
+      // まとめたエリアの古いリンク: まとめた先へ案内する
+      if (info.movedFrom) $("directNote").textContent = "このエリアは、ほかのエリアとひとつになりました。新しいエリアへご案内します。";
+      if (!info.canEnter) {
+        $("directNote").textContent = info.message || "このエリアには、いまは入れません。";
+        $("directGo").disabled = true;
+      } else {
+        $("directGo").addEventListener("click", () => go(room));
+      }
     } catch (e) {
       toast(e.message);
     }
@@ -246,9 +324,11 @@ function enterRoom(room, catalog, chosen) {
   $("hudName").textContent = room.name;
 
   const dpr = Math.min(window.devicePixelRatio || 1, 1.75);
-  const renderer = new THREE.WebGLRenderer({ antialias: dpr < 2, powerPreference: "low-power" });
+  // alpha: カメラの映像を背景に映すミニゲーム（AR）のため。部屋の空は scene.background で塗る
+  const renderer = new THREE.WebGLRenderer({ antialias: dpr < 2, powerPreference: "low-power", alpha: true });
   renderer.setPixelRatio(dpr);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.setClearColor(0x000000, 0);
   stage.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
@@ -267,8 +347,22 @@ function enterRoom(room, catalog, chosen) {
   const games = new GameRunner({
     THREE,
     scene,
+    renderer,
     roomId: room.id,
     catalog,
+    layer: {
+      root: $("gameLayer"),
+      touch: $("gameTouch"),
+      ctrl: $("gameCtrl"),
+      meter: $("gameMeters"),
+      center: $("gameCenter"),
+      info: $("gameInfo"),
+      video: $("arVideo"),
+    },
+    hint,
+    sound: () => soundOn,
+    speak,
+    aspect: () => camera.aspect,
     me: () => selected,
     get avoid() {
       return (things?.items || []).map((i) => ({ x: i.root.position.x, z: i.root.position.z }));
@@ -276,6 +370,7 @@ function enterRoom(room, catalog, chosen) {
     hud: (text) => {
       $("gameHud").hidden = !text;
       $("gameHud").textContent = text || "";
+      $("gameInfo").textContent = text || "";
       $("quitGame").hidden = !text;
     },
     dialog,
@@ -289,6 +384,7 @@ function enterRoom(room, catalog, chosen) {
     },
   });
   $("quitGame").addEventListener("click", () => games.stop());
+  $("quitGame2").addEventListener("click", () => games.stop());
 
   // --- カメラ ---
   const CAMERA_MODES = catalog.cameras.map((c) => c.id);
@@ -437,7 +533,10 @@ function enterRoom(room, catalog, chosen) {
         for (const a of msg.actors || []) addActor(a);
         selected = actors.get(mine[0]) || null;
         if (msg.config) applyConfig({ ...config, ...msg.config });
-        (msg.notices || []).forEach((n) => toast(n));
+        if ((msg.notices || []).length) {
+          const { text } = explainRejections(msg.notices, chosen);
+          dialog({ title: "いっしょに入れなかった子がいます", body: text, actions: [{ label: "とじる" }] });
+        }
         renderMine();
         refreshPeople();
         break;
@@ -472,9 +571,47 @@ function enterRoom(room, catalog, chosen) {
         applyConfig({ ...config, ...msg.config });
         toast("部屋の様子が変わりました");
         break;
+      case "moved":
+        // エリアがまとめられた: まとめた先へ、同じ子たちで入り直す
+        closedByUs = true;
+        games.stop();
+        dialog({
+          title: "エリアがひとつになりました",
+          body: "このエリアは、ほかのエリアとまとめられました。新しいエリアへ移動します。",
+          actions: [
+            {
+              label: "移動する",
+              primary: true,
+              run: () => (location.href = `/meta?room=${encodeURIComponent(msg.to)}${fromCid ? `&cid=${encodeURIComponent(fromCid)}` : ""}`),
+            },
+            { label: "ロビーへ", run: () => (location.href = fromCid ? `/meta?cid=${encodeURIComponent(fromCid)}` : "/meta") },
+          ],
+        });
+        break;
+      case "closed":
+        closedByUs = true;
+        games.stop();
+        $("lostText").textContent = msg.state === "soon" ? "このエリアは、開放の準備に戻りました。" : "このエリアは閉じられました。";
+        $("reconnect").hidden = true;
+        $("lost").hidden = false;
+        break;
       case "error":
+        if (msg.code === "join_failed") {
+          const { text, fixCid } = explainRejections(msg.rejected, chosen);
+          closedByUs = true;
+          ws?.close();
+          dialog({
+            title: "部屋に入れませんでした",
+            body: text || msg.message,
+            actions: [
+              ...(fixCid ? [{ label: "キャラクター画面を開く", primary: true, run: () => (location.href = `/chat?cid=${encodeURIComponent(fixCid)}`) }] : []),
+              { label: "ロビーへ", run: () => (location.href = fromCid ? `/meta?cid=${encodeURIComponent(fromCid)}` : "/meta") },
+            ],
+          });
+          break;
+        }
         toast(msg.message || "うまくいきませんでした");
-        if (msg.code === "join_failed" || msg.code === "full") {
+        if (msg.code === "full") {
           $("lost").hidden = false;
           $("lostText").textContent = msg.message;
         }
@@ -501,7 +638,7 @@ function enterRoom(room, catalog, chosen) {
   // --- 看板・屋台をタップしたとき ---
   function onObjectTap(item) {
     const o = item.obj;
-    if (["treasure", "quiz", "rally"].includes(o.type)) {
+    if (isGame(catalog, o.type)) {
       if (!games.running) games.offer(item);
       return;
     }
@@ -692,6 +829,8 @@ function enterRoom(room, catalog, chosen) {
 
   // --- 描画 ---
   function resize() {
+    // ARの最中は、画面の大きさを端末（WebXR）が決める
+    if (renderer.xr.isPresenting) return;
     const w = stage.clientWidth;
     const h = stage.clientHeight;
     renderer.setSize(w, h, false);
@@ -702,19 +841,31 @@ function enterRoom(room, catalog, chosen) {
   resize();
 
   const clock = new THREE.Clock();
-  function frame() {
-    requestAnimationFrame(frame);
-    if (document.hidden) return;
+  // setAnimationLoop: ふだんは requestAnimationFrame と同じ。ARの最中は、端末（WebXR）の描画の合図で回る
+  function frame(_time, xrFrame) {
+    if (document.hidden && !renderer.xr.isPresenting) return;
     const dt = Math.min(0.05, clock.getDelta());
     const t = clock.elapsedTime;
     for (const a of actors.values()) a.update(dt, t);
+    games.update(dt, t, xrFrame);
+    const view = games.view;
+    if (view) {
+      // センサーのミニゲーム中は、その場面を映す（部屋は止めずに裏で動かしておく）
+      if (view.camera.aspect !== camera.aspect) {
+        view.camera.aspect = camera.aspect;
+        view.camera.updateProjectionMatrix();
+      }
+      stage.classList.toggle("ar", !!view.transparent);
+      renderer.render(view.scene, view.camera);
+      return;
+    }
+    stage.classList.remove("ar");
     world?.update(t);
     things?.update(t);
-    games.update(dt, t);
     placeCamera(dt);
     renderer.render(scene, camera);
   }
-  frame();
+  renderer.setAnimationLoop(frame);
   connect();
 
   // 手元の開発サーバーでだけ、画面の中身を外から確かめられるようにする（自動の画面確認用）

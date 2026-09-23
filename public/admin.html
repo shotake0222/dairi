@@ -98,6 +98,23 @@
   .metaObj .quizRow input, .metaObj .quizRow select { padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; font: inherit; font-size: 12.5px; }
   @media (max-width: 600px) { .metaObj .quizRow { grid-template-columns: 1fr 7em; } }
   .adTag { font-size: 10px; background: #2a2440; color: #fff; border-radius: 999px; padding: 2px 8px; }
+  /* エリアの状態 */
+  .stateTag { font-size: 11px; border-radius: 999px; padding: 2px 9px; white-space: nowrap; border: 1px solid transparent; }
+  .stateTag.open { background: #e8f7ef; color: #1c7a4d; border-color: #b6e6cd; }
+  .stateTag.soon { background: #eef3ff; color: #3553b8; border-color: #c4d2ff; }
+  .stateTag.draft { background: #fff4e2; color: #9a6b1a; border-color: #ffd9a0; }
+  .stateTag.closed { background: #f3f1f7; color: #7a7290; border-color: #ddd8ea; }
+  .stateTag.moved { background: #f7ecff; color: #7a3db8; border-color: #e1c8ff; }
+  .metaNote { font-size: 12px; color: var(--muted); background: #f7f5ff; border-radius: 10px; padding: 10px 12px; margin: 8px 0; }
+  .metaNote.warn { background: #fff6ef; color: #a3552b; }
+  .sensorHow { font-size: 11.5px; color: var(--muted); margin: -2px 0 8px; }
+  .mergeList { display: flex; gap: 6px 14px; flex-wrap: wrap; margin: 8px 0; }
+  .mergeList label { display: inline-flex; gap: 5px; align-items: center; font-size: 12.5px; }
+  .mergeList input { width: auto; }
+  .gameDefaults { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .gameDefaults input, .gameDefaults select { width: 5.5em; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; font: inherit; font-size: 12px; }
+  .gameDefaults select { width: 7.5em; }
+  .gameDefaults span { font-size: 11px; color: var(--muted); }
 </style>
 </head>
 <body>
@@ -121,7 +138,8 @@
     <button class="tab" data-panel="delivery" type="button">納品</button>
     <button class="tab" data-panel="yorishiro" type="button">依代（タグ・QR）</button>
     <button class="tab" data-panel="recovery" type="button">分身の復旧</button>
-    <button class="tab" data-panel="meta" type="button">メタバース</button>
+    <button class="tab" data-panel="meta" type="button">メタバース管理</button>
+    <button class="tab" data-panel="games" type="button">ミニゲーム管理</button>
   </div>
 
   <div class="panel" id="panel-overview">
@@ -513,36 +531,65 @@
   </div>
   <div class="panel" id="panel-meta" hidden>
     <section>
-      <h2>メタバースの部屋</h2>
+      <h2>メタバースのエリア</h2>
       <p class="lead">
-        部屋はここでだけ作れます（利用者は作れません）。部屋ごとに、場所・時間帯・最初の視点と、
+        エリアはここでだけ作れます（利用者は作れません）。エリアごとに、場所・時間帯・最初の視点と、
         <strong>置く物（看板＝広告・お知らせ／動画／いまいる子の紹介／ミニゲーム）</strong>を決めます。
-        保存すると、いま部屋にいる人の画面もその場で変わります。
+        保存すると、いまエリアにいる人の画面もその場で変わります。
       </p>
+      <ul class="lead" style="margin-top:0">
+        <li><b>新しいエリアの開放</b>: 状態を「公開」にして<strong>開放日時</strong>を入れると、それまでは一覧に「近日開放」と出て、日時になると自動で入れるようになります。「準備中」は管理者（この画面を開いているブラウザ）だけが入れます。</li>
+        <li><b>エリアをまとめる</b>: 下の「エリアをまとめる」で、2つ以上のエリアを1つにできます。まとめた元のエリアのリンクで来た人・いま入っている人は、まとめた先へ案内されます。</li>
+        <li><b>最初からあるエリア</b>（ひろば・夜空の丘）も直せます。直した設定は上書きとして保存され、「元に戻す」で最初の状態に戻ります。</li>
+      </ul>
       <div class="scroll"><table id="metaRoomTable"></table></div>
       <div class="row" style="margin-top:10px">
-        <button type="button" id="metaNewBtn">＋ 新しい部屋</button>
+        <button type="button" id="metaNewBtn">＋ 新しいエリア</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>エリアをまとめる</h2>
+      <p class="lead">まとめ先を1つ選び、まとめるエリアに印を付けて「まとめる内容を決める」を押すと、置く物を合わせた下書きが開きます。置き場所が重なった物は、空いている場所へ移すか外してから保存してください。</p>
+      <div class="formGrid">
+        <label>まとめ先（残るエリア）<select id="mergeTarget"></select></label>
+      </div>
+      <div id="mergeSources" class="mergeList"></div>
+      <div class="row">
+        <button type="button" id="mergeStartBtn">まとめる内容を決める</button>
+        <span id="mergeStatus" style="font-size:12px;color:var(--muted)"></span>
       </div>
     </section>
 
     <section id="metaEditor" hidden>
-      <h2 id="metaEditorTitle">部屋を作る</h2>
+      <h2 id="metaEditorTitle">エリアを作る</h2>
+      <div id="metaEditorNote"></div>
       <div class="formGrid">
-        <label>部屋の名前<input type="text" id="metaName" maxlength="30" placeholder="春のキャンペーン会場" /></label>
+        <label>エリアの名前<input type="text" id="metaName" maxlength="30" placeholder="春のキャンペーン会場" /></label>
         <label>場所<select id="metaPlace"></select></label>
         <label>時間帯<select id="metaTime"></select></label>
         <label>最初の視点<select id="metaCamera"></select></label>
       </div>
+      <div class="formGrid">
+        <label>状態<select id="metaStatusSel"></select></label>
+        <label>開放日時（任意。これより前は「近日開放」）<input type="datetime-local" id="metaOpensAt" /></label>
+        <label>終了日時（任意。過ぎたら閉鎖）<input type="datetime-local" id="metaClosesAt" /></label>
+        <label>一覧の並び（小さいほど上）<input type="number" id="metaSort" min="0" max="9999" value="100" /></label>
+      </div>
       <label class="wide" style="display:flex;gap:6px;align-items:center">
         <input type="checkbox" id="metaListed" style="width:auto;margin:0" checked />
         メタバースの一覧に出す（外すと、リンクを知っている人だけが入れる）
+      </label>
+      <label class="wide" id="metaUnmergeWrap" style="display:flex;gap:6px;align-items:center" hidden>
+        <input type="checkbox" id="metaUnmerge" style="width:auto;margin:0" />
+        まとめを解く（このエリアに、また入れるようにする）
       </label>
 
       <h2 style="margin-top:14px">置く物 <span id="metaObjCount" style="font-weight:400;color:var(--muted)"></span></h2>
       <p class="lead">
         置き場所は7か所。1か所に1つです。<strong>広告の看板には「広告」の表示が自動で付きます</strong>（外せません）。
         画像・動画は https:// のURLで、相手のサーバーが外部からの読み込み（CORS）を許していないと表示されません。
-        ミニゲームの結果はサーバーに残りません（遊んだ端末の中だけ）。
+        ミニゲームの結果はサーバーに残りません（遊んだ端末の中だけ）。「📱」の付いたミニゲームはスマホのセンサー（ジャイロ・加速度・マイク・カメラ・AR）を使います。
       </p>
       <div id="metaObjects"></div>
       <div class="row">
@@ -553,8 +600,28 @@
       <div class="row" style="margin-top:16px">
         <button type="button" id="metaSaveBtn" style="background:var(--brand);color:#fff;border-color:transparent">保存する</button>
         <button type="button" id="metaCancelBtn">やめる</button>
-        <a id="metaOpenLink" href="#" target="_blank" rel="noopener" hidden style="font-size:12px">この部屋を開く ↗</a>
+        <a id="metaOpenLink" href="#" target="_blank" rel="noopener" hidden style="font-size:12px">このエリアを開く ↗</a>
         <span id="metaStatus" style="font-size:12px;color:var(--muted)"></span>
+      </div>
+    </section>
+  </div>
+
+  <div class="panel" id="panel-games" hidden>
+    <section>
+      <h2>ミニゲーム</h2>
+      <p class="lead">
+        メタバースに置けるミニゲームの一覧です。<b>止める</b>と、置いたままでもどのエリアにも出なくなります（置いた設定は残るので、戻せばまた出ます）。
+        <b>既定値</b>は、エリアに新しく置くときの初期値です。<b>試す</b>を押すと、そのゲームだけを置いた試し場（管理者だけが入れる）を開きます。
+      </p>
+      <div class="metaNote">
+        センサーを使うゲームは、始めるときにブラウザが許可を求めます（iPhone は「動きと向き」、マイク・カメラ）。
+        値・映像・声はその端末の中だけで使い、サーバーへは送りません。使えない端末では画面の操作で遊べます。
+        「ARでおでかけ」は WebXR 対応端末（Android の Chrome など）で本物のARに、それ以外ではカメラの映像の上で遊ぶ形になります。
+      </div>
+      <div class="scroll"><table id="metaGameTable"></table></div>
+      <div class="row" style="margin-top:10px">
+        <button type="button" id="gamesSaveBtn" style="background:var(--brand);color:#fff;border-color:transparent">保存する</button>
+        <span id="gamesStatus" style="font-size:12px;color:var(--muted)"></span>
       </div>
     </section>
   </div>
@@ -629,6 +696,7 @@
       if (tab.dataset.panel === "yorishiro") loadYorishiro();
       if (tab.dataset.panel === "delivery") loadDelivery();
       if (tab.dataset.panel === "meta" && typeof loadMetaRooms === "function") loadMetaRooms();
+      if (tab.dataset.panel === "games" && typeof loadMetaGames === "function") loadMetaGames();
     });
   });
 

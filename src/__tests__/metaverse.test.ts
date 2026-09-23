@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { env, SELF } from "cloudflare:test";
-import { listRooms, sanitizeObjects, saveRoom } from "../metaverse";
+import { SENSOR_GAMES, areaState, deleteRoom, getGameSettings, listRooms, mergeRooms, sanitizeObjects, saveGameSettings, saveRoom } from "../metaverse";
 
 /**
  * メタバースの検証。
@@ -80,8 +80,8 @@ describe("部屋の設定（何を映すか・何で遊ぶか）", () => {
     }>();
     const hiroba = data.rooms.find((r) => r.id === "hiroba")!;
     expect(hiroba).toBeTruthy();
-    // 見本として、看板・紹介・3つのミニゲームが全部置いてある
-    expect(new Set(hiroba.objects.map((o) => o.type))).toEqual(new Set(["board", "treasure", "quiz", "members", "rally"]));
+    // 見本として、看板・紹介・3つのミニゲームと、センサーのミニゲームが置いてある
+    expect(new Set(hiroba.objects.map((o) => o.type))).toEqual(new Set(["board", "treasure", "quiz", "members", "rally", "tilt", "shake"]));
     expect(data.catalog.cameras.length).toBe(4);
     expect(data.catalog.slots.length).toBe(7);
   });
@@ -150,9 +150,117 @@ describe("部屋の設定（何を映すか・何で遊ぶか）", () => {
     expect(b.ok && b.value[0].title).toBe("a b");
   });
 
-  it("最初からある部屋は直せない・消せない", async () => {
-    const res = await saveRoom(env, { id: "hiroba", name: "のっとり" });
-    expect(res.ok).toBe(false);
+  it("最初からあるエリアも管理画面から直せて、消すと元に戻る", async () => {
+    const res = await saveRoom(env, { id: "hiroba", name: "秋のひろば", objects: [{ type: "members", slot: "back" }] });
+    expect(res.ok).toBe(true);
+    let got = await (await SELF.fetch(`${BASE}/api/meta/rooms/hiroba`)).json<{ room: { name: string; builtin: boolean } }>();
+    expect(got.room.name).toBe("秋のひろば");
+    expect(got.room.builtin).toBe(true);
+    const del = await deleteRoom(env, "hiroba");
+    expect(del.restored).toBe(true);
+    got = await (await SELF.fetch(`${BASE}/api/meta/rooms/hiroba`)).json<{ room: { name: string; builtin: boolean } }>();
+    expect(got.room.name).toBe("わけたまのひろば");
+  });
+});
+
+describe("エリアの管理（開放予約・閉鎖・まとめる）", () => {
+  it("開放日時より前は「近日開放」で一覧に出るが、入れない", async () => {
+    const saved = await saveRoom(env, { name: "冬のエリア", opensAt: Date.now() + 86_400_000 });
+    if (!saved.ok) throw new Error(saved.error);
+    expect(areaState(saved.room)).toBe("soon");
+    const lobby = await listRooms(env);
+    expect(lobby.find((r) => r.id === saved.room.id)?.state).toBe("soon");
+    const info = await (await SELF.fetch(`${BASE}/api/meta/rooms/${saved.room.id}`)).json<{ canEnter: boolean; state: string }>();
+    expect(info.canEnter).toBe(false);
+    const ws = await SELF.fetch(`${BASE}/api/meta/rooms/${saved.room.id}/ws`, { headers: { upgrade: "websocket" } });
+    expect(ws.status).toBe(409);
+    expect((await ws.json<{ code: string }>()).code).toBe("soon");
+  });
+
+  it("終了日時を過ぎた・閉鎖した・準備中のエリアは一覧に出ず、入れない", async () => {
+    const ended = await saveRoom(env, { name: "夏祭り", opensAt: Date.now() - 2000, closesAt: Date.now() - 1000 });
+    const closed = await saveRoom(env, { name: "閉じた", status: "closed" });
+    const draft = await saveRoom(env, { name: "準備中", status: "draft" });
+    if (!ended.ok || !closed.ok || !draft.ok) throw new Error("save failed");
+    const ids = (await listRooms(env)).map((r) => r.id);
+    for (const r of [ended.room, closed.room, draft.room]) {
+      expect(ids).not.toContain(r.id);
+      const ws = await SELF.fetch(`${BASE}/api/meta/rooms/${r.id}/ws`, { headers: { upgrade: "websocket" } });
+      expect(ws.status).toBe(409);
+    }
+    // 終了日時は開放日時より後でなければならない
+    expect((await saveRoom(env, { name: "x", opensAt: 2000, closesAt: 1000 })).ok).toBe(false);
+  });
+
+  it("2つのエリアを1つにまとめると、古いエリアのリンクはまとめた先へ案内される", async () => {
+    const merged = await mergeRooms(env, {
+      targetId: "hiroba",
+      sourceIds: ["yozora"],
+      room: { name: "ひろばと夜空", place: "meadow", time: "evening", objects: [{ type: "members", slot: "back" }, { type: "skycatch", slot: "left" }] },
+    });
+    expect(merged.ok).toBe(true);
+    const lobby = (await listRooms(env)).map((r) => r.id);
+    expect(lobby).toContain("hiroba");
+    expect(lobby).not.toContain("yozora");
+    // 古いリンク（yozora）で来ても、まとめた先の設定が返る
+    const info = await (await SELF.fetch(`${BASE}/api/meta/rooms/yozora`)).json<{ room: { id: string; name: string }; movedFrom: string }>();
+    expect(info.room.id).toBe("hiroba");
+    expect(info.movedFrom).toBe("yozora");
+    // 入室の口は、まとめた先を教えて断る
+    const ws = await SELF.fetch(`${BASE}/api/meta/rooms/yozora/ws`, { headers: { upgrade: "websocket" } });
+    expect(ws.status).toBe(409);
+    expect(await ws.json()).toMatchObject({ code: "moved", movedTo: "hiroba" });
+    // まとめ先を消すと、まとめた元は元に戻る（行き先の無いリンクを作らない）
+    await deleteRoom(env, "hiroba");
+    const back = await (await SELF.fetch(`${BASE}/api/meta/rooms/yozora`)).json<{ room: { id: string }; movedFrom: string | null }>();
+    expect(back.room.id).toBe("yozora");
+    expect(back.movedFrom).toBeNull();
+    // 自分自身へはまとめられない
+    expect((await mergeRooms(env, { targetId: "hiroba", sourceIds: ["hiroba"], room: { name: "x" } })).ok).toBe(false);
+  });
+});
+
+describe("ミニゲームの管理", () => {
+  it("センサーのミニゲームは10種類あり、目標と時間は決めた範囲に収める", () => {
+    expect(Object.keys(SENSOR_GAMES).length).toBe(10);
+    for (const [type, spec] of Object.entries(SENSOR_GAMES)) {
+      const r = sanitizeObjects([{ type, slot: "back", goal: 99999, seconds: 99999, level: 9 }]);
+      expect(r.ok).toBe(true);
+      if (!r.ok) continue;
+      const o = r.value[0];
+      expect(o.type).toBe(type);
+      if (spec.goal) expect(o.goal).toBe(spec.goal.max);
+      else expect(o.goal).toBeUndefined();
+      if (spec.seconds) expect(o.seconds).toBe(spec.seconds.max);
+      else expect(o.seconds).toBeUndefined();
+      expect(o.level).toBe(3);
+    }
+  });
+
+  it("止めたミニゲームは、置いたままでもどのエリアにも出ない", async () => {
+    await saveGameSettings(env, { disabled: ["tilt", "treasure", "no-such-game"], defaults: { shake: { goal: 50, seconds: 5 } } });
+    const settings = await getGameSettings(env);
+    expect(settings.disabled).toEqual(["tilt", "treasure"]);
+    // 既定値も範囲に収める
+    expect(settings.defaults.shake.goal).toBe(50);
+    expect(settings.defaults.shake.seconds).toBe(10);
+    const got = await (await SELF.fetch(`${BASE}/api/meta/rooms/hiroba`)).json<{ room: { objects: Array<{ type: string }> } }>();
+    const types = got.room.objects.map((o) => o.type);
+    expect(types).not.toContain("tilt");
+    expect(types).not.toContain("treasure");
+    expect(types).toContain("shake");
+  });
+
+  it("管理のAPIは管理者だけ", async () => {
+    for (const [path, method] of [
+      ["/api/admin/meta/games", "GET"],
+      ["/api/admin/meta/games", "POST"],
+      ["/api/admin/meta/merge", "POST"],
+      ["/api/admin/meta/games/test", "POST"],
+    ]) {
+      const res = await SELF.fetch(`${BASE}${path}`, { method, headers: { "content-type": "application/json" }, body: method === "POST" ? "{}" : undefined });
+      expect([401, 403, 404]).toContain(res.status);
+    }
   });
 });
 
@@ -182,9 +290,45 @@ describe("入室と中継", () => {
     const a = await makeCharacter("steal");
     const c = await connect("hiroba");
     c.ws!.send(JSON.stringify({ t: "join", characters: [{ cid: a.cid, token: "not-the-owner" }] }));
-    const msg = (await c.next()) as Record<string, unknown>;
+    const msg = (await c.next()) as { t: string; code: string; rejected: Array<{ index: number; code: string }> };
     expect(msg.t).toBe("error");
+    // 画面が「どうすれば入れるか」を案内できるように、断った理由を種類で返す
+    expect(msg.code).toBe("join_failed");
+    expect(msg.rejected).toEqual([{ index: 0, code: "not_owner" }]);
     c.ws!.close();
+  });
+
+  it("利用規約に同意していない子は連れて入れず、理由は no_consent と分かる", async () => {
+    const a = await makeCharacter("noconsent", false);
+    const c = await connect("hiroba");
+    c.ws!.send(JSON.stringify({ t: "join", characters: [{ cid: a.cid, token: a.token }] }));
+    const msg = (await c.next()) as { t: string; rejected: Array<{ code: string }> };
+    expect(msg.t).toBe("error");
+    expect(msg.rejected[0].code).toBe("no_consent");
+    c.ws!.close();
+  });
+
+  it("入れた子と入れなかった子が混ざるときは、入れた子だけで入り、入れなかった理由を知らせる", async () => {
+    const ok = await makeCharacter("mix-ok");
+    const ng = await makeCharacter("mix-ng", false);
+    const c = await connect("hiroba");
+    c.ws!.send(JSON.stringify({ t: "join", characters: [{ cid: ok.cid, token: ok.token }, { cid: ng.cid, token: ng.token }] }));
+    const msg = (await c.next()) as { t: string; mine: string[]; notices: Array<{ index: number; code: string }> };
+    expect(msg.t).toBe("welcome");
+    expect(msg.mine.length).toBe(1);
+    expect(msg.notices).toEqual([{ index: 1, code: "no_consent" }]);
+    c.ws!.close();
+  });
+
+  it("いる間にエリアがまとめられたら、まとめた先を知らせる", async () => {
+    const created = await saveRoom(env, { name: `move-${crypto.randomUUID().slice(0, 8)}`, listed: false });
+    if (!created.ok) throw new Error(created.error);
+    const a = await makeCharacter("moved");
+    const c = await connect(created.room.id);
+    c.ws!.send(JSON.stringify({ t: "join", characters: [{ cid: a.cid, token: a.token }] }));
+    expect(((await c.next()) as { t: string }).t).toBe("welcome");
+    await env.META_ROOM.getByName(created.room.id).pushConfig(created.room, "moved", "hiroba");
+    expect(await c.next()).toMatchObject({ t: "moved", to: "hiroba" });
   });
 
   it("移動・スタンプ・挨拶は、同じ部屋の他の人に届く（挨拶は台詞の番号だけ）", async () => {
