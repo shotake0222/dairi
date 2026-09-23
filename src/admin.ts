@@ -32,6 +32,9 @@ export interface AdminEnv {
   ADMIN_PASSCODE?: string;
   APP_VERSION?: string;
   ENVIRONMENT?: string;
+  /** 本番の2つのホスト。管理者の印を両方で共有するために使う（未設定なら共有しない） */
+  SITE_HOST?: string;
+  APP_HOST?: string;
 }
 
 const COOKIE_NAME = "waketama_admin";
@@ -73,6 +76,26 @@ function readCookie(request: Request, name: string): string | null {
     if (key === name) return rest.join("=");
   }
   return null;
+}
+
+/**
+ * 管理者の印（Cookie）を、紹介ドメイン（waketama.com）と本体（app.waketama.com）で共有するための Domain 属性。
+ *
+ * **なぜ要るか。** 以前は host-only の Cookie だったので、`waketama.com/admin?key=…` で入ると
+ * 印は apex にだけ付き、分身を作る本体（app）では**管理者だと分からず**、依代を持たない人と同じ
+ * 1日の上限（3体）に当たっていた。本番の2つのホストのどちらかで開いたときだけ、親ドメインに付ける。
+ *
+ * ステージング（staging.waketama.com）など、SITE_HOST/APP_HOST が無い環境では付けない。
+ * 付けると検証環境の印が本番の印を上書きしてしまう。
+ */
+export function adminCookieDomain(url: URL, env: Pick<AdminEnv, "SITE_HOST" | "APP_HOST">): string {
+  const site = env.SITE_HOST?.toLowerCase();
+  const app = env.APP_HOST?.toLowerCase();
+  if (!site || !app) return "";
+  const host = url.hostname.toLowerCase();
+  if (host !== site && host !== app) return "";
+  if (app !== site && !app.endsWith(`.${site}`)) return "";
+  return `; Domain=${site}`;
 }
 
 function isAdminPath(pathname: string): boolean {
@@ -118,13 +141,12 @@ export function adminGate(request: Request, url: URL, env: AdminEnv): Response |
   // **降りる手立てが無いと、人に貸した端末を戻す方法が「合言葉を変える」しかない**
   // （変えると自分の他の端末も全部落ちる）。
   if (url.searchParams.get("logout") === "1") {
-    return new Response(null, {
-      status: 302,
-      headers: {
-        location: "/home",
-        "set-cookie": `${COOKIE_NAME}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`,
-      },
-    });
+    const headers = new Headers({ location: "/home" });
+    // 共有の印と、以前の host-only の印の両方を消す
+    headers.append("set-cookie", `${COOKIE_NAME}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`);
+    const domain = adminCookieDomain(url, env);
+    if (domain) headers.append("set-cookie", `${COOKIE_NAME}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0${domain}`);
+    return new Response(null, { status: 302, headers });
   }
 
   const provided = url.searchParams.get("key");
@@ -136,7 +158,7 @@ export function adminGate(request: Request, url: URL, env: AdminEnv): Response |
       status: 302,
       headers: {
         location: clean.pathname + (clean.search || ""),
-        "set-cookie": `${COOKIE_NAME}=${encodeURIComponent(passcode)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${ADMIN_COOKIE_MAX_AGE}`,
+        "set-cookie": `${COOKIE_NAME}=${encodeURIComponent(passcode)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${ADMIN_COOKIE_MAX_AGE}${adminCookieDomain(url, env)}`,
       },
     });
   }

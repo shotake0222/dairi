@@ -20,6 +20,8 @@ import { buildWorld } from "./world.mjs";
 import { Actor } from "./actors.mjs";
 import { buildObjects } from "./objects.mjs";
 import { GameRunner } from "./games.mjs";
+import { buildPlacements } from "./land.mjs";
+import { openGazePicker } from "./gaze.mjs";
 
 const MY_CHARACTERS_KEY = "sodatsukake_myCharacters";
 const SOUND_KEY = "sodatsukake_metaSound";
@@ -335,7 +337,12 @@ function enterRoom(room, catalog, chosen) {
   const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 120);
   let world = null;
   let things = null;
+  let land = null;
   let config = room;
+  /** 自分の子の aid → 分身の識別子（自分の子と話すときに使う。端末の外へは出さない） */
+  const mineCid = new Map();
+  /** 話しかける相手（null なら自分の子と話す） */
+  let talkTarget = null;
 
   const actors = new Map(); // aid -> Actor
   let mine = [];
@@ -449,7 +456,47 @@ function enterRoom(room, catalog, chosen) {
     things?.dispose();
     world = buildWorld(THREE, scene, config.place, config.time);
     things = buildObjects(THREE, scene, config.objects || [], catalog);
+    land?.dispose();
+    land = buildPlacements(THREE, scene, config.placements || [], config.plotsForSale || [], catalog);
+    syncNpcs(config.npcs || []);
     refreshPeople();
+  }
+
+  // --- NPC（運営が置いた分身）。動きは各端末で同じ規則（時刻と番号から決まる散歩）で計算する ---
+  function syncNpcs(list) {
+    const keep = new Set(list.map((n) => n.aid));
+    for (const [aid, a] of [...actors]) if (a.npc && !keep.has(aid)) removeActor(aid);
+    for (const n of list) {
+      if (actors.has(n.aid)) continue;
+      const a = new Actor(THREE, n, { mine: false, scene, npc: n });
+      a.npcHome = { x: n.x, z: n.z };
+      actors.set(n.aid, a);
+    }
+  }
+
+  function hashNum(text) {
+    let h = 2166136261;
+    for (const ch of text) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+    return (h >>> 0) / 4294967296;
+  }
+
+  function wanderNpcs() {
+    const now = Date.now() / 1000;
+    for (const a of actors.values()) {
+      if (!a.npc || !(a.npc.radius > 0) || a.busy) continue;
+      const phase = hashNum(a.aid) * 8;
+      const epoch = Math.floor((now + phase) / 8);
+      if (a.npcEpoch === epoch) continue;
+      a.npcEpoch = epoch;
+      const r = hashNum(`${a.aid}:${epoch}`);
+      const ang = hashNum(`${epoch}:${a.aid}`) * Math.PI * 2;
+      const dist = a.npc.radius * Math.sqrt(r);
+      const half = catalog.worldHalf - 0.5;
+      a.setDestination(
+        Math.max(-half, Math.min(half, a.npcHome.x + Math.cos(ang) * dist)),
+        Math.max(-half, Math.min(half, a.npcHome.z + Math.sin(ang) * dist))
+      );
+    }
   }
   applyConfig(room);
 
@@ -468,6 +515,7 @@ function enterRoom(room, catalog, chosen) {
     a.dispose(scene);
     actors.delete(aid);
     if (selected === a) selected = null;
+    if (talkTarget === a) setTalkTarget(null);
   }
 
   function renderMine() {
@@ -482,6 +530,7 @@ function enterRoom(room, catalog, chosen) {
       b.innerHTML = `<img src="${escapeHtml(window.WaketamaSpecies.image(a.species, a.color))}" alt="" /><span>${escapeHtml(a.name)}</span>`;
       b.addEventListener("click", () => {
         selected = a;
+        setTalkTarget(talkTarget);
         renderMine();
       });
       bar.appendChild(b);
@@ -530,6 +579,11 @@ function enterRoom(room, catalog, chosen) {
       case "welcome": {
         $("hudStatus").textContent = "";
         mine = msg.mine || [];
+        {
+          const rejectedIdx = new Set((msg.notices || []).map((n) => n.index));
+          const ok = chosen.filter((_, i) => !rejectedIdx.has(i));
+          mine.forEach((aid, i) => ok[i] && mineCid.set(aid, ok[i].cid));
+        }
         for (const a of msg.actors || []) addActor(a);
         selected = actors.get(mine[0]) || null;
         if (msg.config) applyConfig({ ...config, ...msg.config });
@@ -570,6 +624,31 @@ function enterRoom(room, catalog, chosen) {
       case "config":
         applyConfig({ ...config, ...msg.config });
         toast("部屋の様子が変わりました");
+        break;
+      case "typing": {
+        const a = actors.get(msg.aid);
+        if (a) a.bubble("…", 4000, "talk");
+        break;
+      }
+      case "say": {
+        const a = actors.get(msg.aid);
+        if (!a) break;
+        a.bubble(msg.line, 7000, "talk");
+        a.act("greet");
+        const other = actors.get(msg.to);
+        if (other) {
+          a.other = other;
+          a.faceOther = true;
+          setTimeout(() => (a.faceOther = false), 2500);
+        }
+        // 自分の子が関わる会話か、近くの会話だけ声に出す
+        const near = selected && a.position.distanceTo(selected.position) < 6;
+        if (a.mine || other?.mine || near) speak(msg.line, a.voice);
+        if (other?.mine || a.mine) addTalkLog(a.name, msg.line, a.mine);
+        break;
+      }
+      case "talk_failed":
+        toast(msg.message || "うまく話せなかったみたい");
         break;
       case "moved":
         // エリアがまとめられた: まとめた先へ、同じ子たちで入り直す
@@ -642,6 +721,14 @@ function enterRoom(room, catalog, chosen) {
       if (!games.running) games.offer(item);
       return;
     }
+    if (o.type === "board" && (o.ad || o.couponCode || o.detail || o.qrUrl)) {
+      openAdDetail({
+        key: `o-${room.id}-${o.id}`,
+        ad: !!o.ad,
+        content: { title: o.title, text: o.text, detail: o.detail, imageUrl: o.imageUrl, linkUrl: o.linkUrl, sponsor: "", couponCode: o.couponCode, couponNote: o.couponNote, couponUntil: o.couponUntil, qrUrl: o.qrUrl },
+      });
+      return;
+    }
     if (o.type === "board") {
       const actions = [];
       if (o.linkUrl) {
@@ -661,6 +748,292 @@ function enterRoom(room, catalog, chosen) {
       actions.push({ label: "とじる" });
       dialog({ title: `${o.ad ? "【広告】" : ""}${o.title}`, body: o.text || "", actions });
     }
+  }
+
+  // --- NPC をタップしたとき ---
+  function openNpcDialog(actor) {
+    const n = actor.npc;
+    const species = window.WaketamaSpecies.label(actor.species);
+    const actions = [];
+    if (n.talk !== false && selected) {
+      actions.push({
+        label: "話しかける",
+        primary: true,
+        run: () => {
+          setTalkTarget(actor);
+          openTalk();
+        },
+      });
+    }
+    if (n.linkUrl) {
+      let host = "";
+      try {
+        host = new URL(n.linkUrl).host;
+      } catch {
+        host = "";
+      }
+      actions.push({ label: `${host || "リンク"} を開く`, run: () => window.open(n.linkUrl, "_blank", "noopener,noreferrer") });
+    }
+    actions.push({ label: "とじる" });
+    actor.bubble(catalog.greetings[Math.floor(Math.random() * catalog.greetings.length)], 2500);
+    speak(n.message || "こんにちは！", actor.voice);
+    dialog({
+      title: `${n.ad ? "【広告】" : ""}${actor.name}${n.role ? `（${n.role}）` : ""}`,
+      body: `${n.message || `わけたまの${species}の${actor.name}です。`}\n\n運営の分身（NPC）です。話しかけると、この子が自分の言葉で答えます。`,
+      actions,
+    });
+  }
+
+  // --- 区画の広告・ランドマーク・販売中の目印 ---
+  function onLandTap(item) {
+    if (item.kind === "forsale") {
+      const f = item.plot;
+      const prices = [
+        f.adPrice != null && (f.sale === "ad" || f.sale === "both") ? `広告 ${f.adPrice.toLocaleString()}円〜` : "",
+        f.landmarkPrice != null && (f.sale === "landmark" || f.sale === "both") ? `ランドマーク ${f.landmarkPrice.toLocaleString()}円〜` : "",
+      ].filter(Boolean);
+      dialog({
+        title: "この区画は販売中です",
+        body: `広告の看板や、デジタルランドマーク（記念の塔・鳥居・像など）を置けます。\n${prices.join("／")}`,
+        actions: [
+          { label: "申し込みページを開く", primary: true, run: () => window.open(`/land?area=${encodeURIComponent(room.id)}&spot=${encodeURIComponent(f.spot)}`, "_blank", "noopener") },
+          { label: "とじる" },
+        ],
+      });
+      return;
+    }
+    const p = item.placement;
+    openAdDetail({ key: `p-${p.id}`, ad: p.kind === "ad", landmark: p.kind === "landmark", content: p.content || {} });
+  }
+
+  function adEvent(key, type) {
+    fetch("/api/meta-ad-event", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key, type }), keepalive: true }).catch(() => undefined);
+  }
+
+  /** 広告の詳細（画像・説明・QRコード・リンク・特別クーポン） */
+  function openAdDetail({ key, ad, landmark, content: c }) {
+    const sheet = $("adSheet");
+    $("adTag").hidden = !ad;
+    $("adTag").textContent = ad ? "広告" : "";
+    $("adTitle").textContent = (landmark ? c.plaque || c.title : c.title) || "お知らせ";
+    $("adSponsor").textContent = c.sponsor ? `提供: ${c.sponsor}` : "";
+    $("adImage").hidden = !c.imageUrl;
+    if (c.imageUrl) $("adImage").src = c.imageUrl;
+    $("adText").textContent = [c.text, c.detail].filter(Boolean).join("\n\n");
+    // クーポン（押すまでコードは隠す。押した回数だけ数える）
+    const couponBox = $("adCoupon");
+    const expired = c.couponUntil && Date.now() > c.couponUntil;
+    couponBox.hidden = !c.couponCode;
+    $("adCouponNote").textContent = c.couponNote || "";
+    $("adCouponUntil").textContent = c.couponUntil ? `有効期限: ${new Date(c.couponUntil).toLocaleDateString("ja-JP")}` : "";
+    $("adCouponCode").hidden = true;
+    $("adCouponShow").hidden = false;
+    $("adCouponShow").disabled = !!expired;
+    $("adCouponShow").textContent = expired ? "期限が過ぎました" : "🎟 クーポンを表示";
+    $("adCouponShow").onclick = () => {
+      $("adCouponCode").hidden = false;
+      $("adCouponCodeText").textContent = c.couponCode;
+      $("adCouponShow").hidden = true;
+      adEvent(key, "coupon");
+    };
+    $("adCouponCopy").onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(c.couponCode);
+        toast("コードをコピーしました");
+      } catch {
+        toast(c.couponCode);
+      }
+    };
+    // QRコード（行き先: 指定があればそれ、無ければリンク先）
+    const qrTarget = c.qrUrl || c.linkUrl || "";
+    const qrBox = $("adQr");
+    qrBox.hidden = !qrTarget || typeof window.qrcode !== "function";
+    if (!qrBox.hidden) {
+      const qr = window.qrcode(0, "M");
+      qr.addData(qrTarget);
+      qr.make();
+      $("adQrImg").innerHTML = qr.createSvgTag({ cellSize: 4, margin: 2 });
+      $("adQrCap").textContent = "スマホのカメラで読み取ると開きます";
+    }
+    const link = $("adLink");
+    link.hidden = !c.linkUrl;
+    if (c.linkUrl) {
+      let host = "";
+      try {
+        host = new URL(c.linkUrl).host;
+      } catch {
+        host = "";
+      }
+      link.textContent = `${host || "リンク"} を開く ↗`;
+      link.onclick = () => {
+        adEvent(key, "click");
+        // 外のサイトへ出る。わけたまの情報（どの分身か等）は渡さない
+        window.open(c.linkUrl, "_blank", "noopener,noreferrer");
+      };
+    }
+    sheet.hidden = false;
+    adEvent(key, "view");
+  }
+  $("adClose").addEventListener("click", () => ($("adSheet").hidden = true));
+
+  // --- メタバースでの会話（吹き出しの中で、文字・声・視線で入力する） ---
+  //   相手なし  … 自分の子と話す（ふだんの会話と同じ。育つ。返事は自分の画面だけに出す＝覚えていることを人前で言わない）
+  //   相手あり  … 伝えたいことを、自分の子が自分の言葉で相手に伝える（部屋の全員に見えるのは分身の言葉だけ）
+  const talkBox = $("talkBox");
+  const talkInput = $("talkInput");
+  let talkLog = [];
+  let gaze = null;
+
+  function setTalkTarget(actor) {
+    talkTarget = actor && !actor.mine ? actor : null;
+    $("talkWho").textContent = talkTarget
+      ? `${talkTarget.name}${talkTarget.npc?.role ? `（${talkTarget.npc.role}）` : ""}に話しかける`
+      : selected
+        ? `${selected.name}と話す（育つ）`
+        : "話す";
+    $("talkSelf").hidden = !talkTarget;
+    talkInput.placeholder = talkTarget ? "伝えたいこと（あなたの子が、自分の言葉で伝えます）" : "話しかける";
+  }
+  function openTalk() {
+    if (!selected) {
+      toast("話す子を下から選んでね");
+      return;
+    }
+    setTalkTarget(talkTarget);
+    talkBox.hidden = false;
+    $("talkBtn").classList.add("on");
+    renderTalkLog();
+  }
+  function closeTalk() {
+    talkBox.hidden = true;
+    $("talkBtn").classList.remove("on");
+    gaze?.close();
+    gaze = null;
+  }
+  $("talkBtn").addEventListener("click", () => (talkBox.hidden ? openTalk() : closeTalk()));
+  $("talkClose").addEventListener("click", closeTalk);
+  $("talkSelf").addEventListener("click", () => setTalkTarget(null));
+
+  function addTalkLog(name, text, mineSide) {
+    talkLog.push({ name, text, mine: mineSide });
+    if (talkLog.length > 30) talkLog = talkLog.slice(-30);
+    renderTalkLog();
+  }
+  function renderTalkLog() {
+    const box = $("talkLog");
+    box.innerHTML = "";
+    for (const l of talkLog.slice(-6)) {
+      const row = document.createElement("div");
+      row.className = `tl${l.mine ? " me" : ""}`;
+      row.innerHTML = `<b>${escapeHtml(l.name)}</b>${escapeHtml(l.text)}`;
+      box.appendChild(row);
+    }
+    box.scrollTop = box.scrollHeight;
+  }
+
+  let talking = false;
+  async function sendTalk(text) {
+    text = String(text || "").trim().slice(0, 200);
+    if (!text || !selected || talking) return;
+    talkInput.value = "";
+    if (talkTarget) {
+      if (!actors.has(talkTarget.aid)) {
+        toast("その子は、もうここにいないみたい");
+        setTalkTarget(null);
+        return;
+      }
+      addTalkLog("あなた", `（${talkTarget.name}へ）${text}`, true);
+      send({ t: "talk", aid: selected.aid, to: talkTarget.aid, hint: text.slice(0, 80) });
+      selected.stepToward(talkTarget, 20);
+      return;
+    }
+    const cid = mineCid.get(selected.aid);
+    if (!cid) return;
+    talking = true;
+    addTalkLog("あなた", text, true);
+    send({ t: "typing", aid: selected.aid });
+    selected.bubble("…", 8000, "talk");
+    const me = selected;
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ characterId: cid, message: text }),
+      });
+      const data = await res.json();
+      const reply = data.reply || "……";
+      // 返事は自分の画面だけに出す（覚えていることを、同じ部屋の人に見せない）
+      me.bubble(reply.length > 60 ? `${reply.slice(0, 58)}…` : reply, 8000, "talk");
+      me.act("greet");
+      speak(reply, me.voice);
+      addTalkLog(me.name, reply, false);
+    } catch {
+      toast("うまく話せなかったみたい");
+    } finally {
+      talking = false;
+    }
+  }
+  $("talkForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    sendTalk(talkInput.value);
+  });
+
+  // 声で入力（端末の音声認識。対応していないブラウザではボタンを出さない）
+  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  $("talkMic").hidden = !Recognition;
+  let recognizing = null;
+  $("talkMic").addEventListener("click", () => {
+    if (recognizing) {
+      recognizing.stop();
+      return;
+    }
+    const r = new Recognition();
+    r.lang = "ja-JP";
+    r.interimResults = true;
+    r.maxAlternatives = 1;
+    recognizing = r;
+    $("talkMic").classList.add("on");
+    r.onresult = (e) => {
+      const text = [...e.results].map((x) => x[0].transcript).join("");
+      talkInput.value = text;
+      if (e.results[e.results.length - 1].isFinal) sendTalk(text);
+    };
+    r.onend = () => {
+      recognizing = null;
+      $("talkMic").classList.remove("on");
+    };
+    r.onerror = () => toast("声を聞き取れませんでした");
+    r.start();
+  });
+
+  // 視線で選ぶ（よく使う言葉を、見つめて選ぶ）
+  $("talkGaze").addEventListener("click", () => {
+    if (gaze) {
+      gaze.close();
+      gaze = null;
+      return;
+    }
+    gaze = openGazePicker($("talkGazeBox"), {
+      onPick: (text) => sendTalk(text),
+      onClose: () => (gaze = null),
+    });
+  });
+
+  /** 吹き出しを、話している子の頭の上に寄せる（画面の外へははみ出さない） */
+  function placeTalkBox() {
+    if (talkBox.hidden || !selected) return;
+    const v = selected.position.clone();
+    v.y += 2.4;
+    v.project(camera);
+    const w = stage.clientWidth;
+    const h = stage.clientHeight;
+    const bw = talkBox.offsetWidth || 300;
+    const bh = talkBox.offsetHeight || 160;
+    let x = ((v.x + 1) / 2) * w - bw / 2;
+    let y = ((1 - v.y) / 2) * h - bh - 14;
+    x = Math.max(8, Math.min(w - bw - 8, x));
+    y = Math.max(60, Math.min(h - bh - 150, y));
+    talkBox.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
   }
 
   // --- 操作（タップで移動・挨拶、ドラッグで回す、ピンチで寄る） ---
@@ -720,11 +1093,17 @@ function enterRoom(room, catalog, chosen) {
     const hits = raycaster.intersectObjects([...actors.values()].map((a) => a.hit), false);
     if (hits.length) {
       const actor = hits[0].object.userData.actor;
+      if (actor.npc) {
+        openNpcDialog(actor);
+        return;
+      }
       if (actor.mine) {
         if (selected === actor) greetFrom(actor, randomLine(), { broadcast: true });
         selected = actor;
+        setTalkTarget(null);
         renderMine();
       } else if (selected) {
+        setTalkTarget(actor);
         // 他の子をタップ: 自分の子がそばまで歩いて行って、挨拶する
         toast(`${actor.name}（${window.WaketamaSpecies.label(actor.species)}）`);
         selected.other = actor;
@@ -736,6 +1115,11 @@ function enterRoom(room, catalog, chosen) {
     const objHit = things ? raycaster.intersectObjects(things.hitTargets, false)[0] : null;
     if (objHit) {
       onObjectTap(objHit.object.userData.item);
+      return;
+    }
+    const landHit = land ? raycaster.intersectObjects(land.hitTargets, false)[0] : null;
+    if (landHit) {
+      onLandTap(landHit.object.userData.item);
       return;
     }
     if (!selected || !world) return;
@@ -779,6 +1163,7 @@ function enterRoom(room, catalog, chosen) {
   let insideStart = null; // いま入っている屋台の輪（入った瞬間だけ案内する）
   setInterval(() => {
     if (document.hidden) return;
+    wanderNpcs();
     const now = performance.now();
     const list = [...actors.values()];
     for (const a of list) {
@@ -808,6 +1193,21 @@ function enterRoom(room, catalog, chosen) {
         const z = Math.max(-half, Math.min(half, a.position.z + (Math.random() * 2 - 1) * 2.5));
         a.setDestination(x, z);
         send({ t: "move", aid: a.aid, x, z });
+      }
+    }
+    // NPC は、自分の子が近くに来たら、決まった台詞で声をかける（25秒に1回まで）
+    if (selected) {
+      for (const a of list) {
+        if (!a.npc || a.busy) continue;
+        if (a.position.distanceTo(selected.position) < 2.2 && now - (a.npcGreetAt || -Infinity) > 25000) {
+          a.npcGreetAt = now;
+          a.other = selected;
+          a.faceOther = true;
+          const line = a.npc.message && Math.random() < 0.5 ? a.npc.message : catalog.greetings[Math.floor(hashNum(a.aid + Math.floor(now / 25000)) * catalog.greetings.length)];
+          a.bubble(line.length > 40 ? `${line.slice(0, 38)}…` : line, 3500, "talk");
+          speak(line, a.voice);
+          setTimeout(() => (a.faceOther = false), 2500);
+        }
       }
     }
     if (pendingGreet && !pendingGreet.me.walking) {
@@ -862,7 +1262,9 @@ function enterRoom(room, catalog, chosen) {
     stage.classList.remove("ar");
     world?.update(t);
     things?.update(t);
+    land?.update(t);
     placeCamera(dt);
+    placeTalkBox();
     renderer.render(scene, camera);
   }
   renderer.setAnimationLoop(frame);
@@ -878,6 +1280,12 @@ function enterRoom(room, catalog, chosen) {
       get things() {
         return things;
       },
+      get land() {
+        return land;
+      },
+      sendTalk,
+      openTalk,
+      setTalkTarget,
       get selected() {
         return selected;
       },

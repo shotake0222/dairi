@@ -51,6 +51,16 @@
   .roomCard.place-beach { background: linear-gradient(135deg, #5fc2ea, #f0c86a); }
   .roomCard.place-hill, .roomCard.time-night { background: linear-gradient(135deg, #2c3570, #6a4fb8); }
   .roomCard.time-evening { background: linear-gradient(135deg, #f28c5c, #b25ab0); }
+  .roomCard.place-sakura { background: linear-gradient(135deg, #f7a8c8, #d8606e); }
+  .roomCard.place-garden { background: linear-gradient(135deg, #7fb56a, #3f8f7a); }
+  .roomCard.place-onsen { background: linear-gradient(135deg, #c9a27a, #8a6a9a); }
+  .roomCard.place-bamboo { background: linear-gradient(135deg, #8fc46a, #3f7a4a); }
+  .roomCard.place-momiji { background: linear-gradient(135deg, #f2a23a, #c9453a); }
+  .roomCard.place-matsuri { background: linear-gradient(135deg, #e0453a, #3a2a6a); }
+  .roomCard.place-snow { background: linear-gradient(135deg, #a8c8ec, #6a8ac4); }
+  .roomCard.place-lake { background: linear-gradient(135deg, #3a6ab8, #2a2f6a); }
+  .roomCard.place-forest { background: linear-gradient(135deg, #5fa65a, #2f6a45); }
+  .roomCard.place-flower { background: linear-gradient(135deg, #f2b3d8, #f2c23a); }
   #directRoom { background: #fff; border: 2px solid var(--brand); border-radius: 16px; padding: 14px 16px; margin-top: 14px; }
   #directRoom p { margin: 0 0 8px; font-size: 13px; color: var(--muted); }
   .primaryBtn, #dlgActions .primary, #directGo {
@@ -143,6 +153,64 @@
   .soonTag { background: rgba(255,255,255,.25); border-radius: 999px; padding: 1px 8px; justify-self: start; margin-top: 4px; }
   #directNote:empty { display: none; }
 
+  /* ---- メタバースでの会話（吹き出し） ---- */
+  #talkBtn { background: #ffc440; color: #3a3020; border: none; border-radius: 999px; padding: 0 14px; height: 40px; font-weight: 700; flex: 0 0 auto; }
+  #talkBtn.on { background: #fff; outline: 2px solid #ffc440; }
+  #talkBox {
+    position: fixed; left: 0; top: 0; z-index: 7; width: min(340px, calc(100vw - 16px));
+    background: #fffbea; border: 2px solid #ffc440; border-radius: 18px; padding: 10px 12px 12px;
+    box-shadow: 0 8px 24px rgba(40,30,0,.22); will-change: transform;
+  }
+  #talkBox::after {
+    content: ""; position: absolute; left: 50%; bottom: -12px; transform: translateX(-50%);
+    border: 10px solid transparent; border-top-color: #ffc440; border-bottom: 0;
+  }
+  .talkHead { display: flex; gap: 6px; align-items: center; font-size: 12.5px; font-weight: 700; color: #6a5520; margin-bottom: 6px; }
+  .talkHead span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .talkHead button { border: 1px solid #e8d8a0; background: #fff; border-radius: 999px; font-size: 11.5px; padding: 3px 9px; }
+  #talkLog { max-height: 110px; overflow-y: auto; display: grid; gap: 4px; margin-bottom: 6px; font-size: 12.5px; }
+  #talkLog:empty { display: none; }
+  .tl { background: #fff; border-radius: 10px; padding: 4px 8px; }
+  .tl.me { background: #fff2c4; }
+  .tl b { margin-right: 6px; color: #8a6a1a; font-size: 11.5px; }
+  #talkForm { display: flex; gap: 6px; align-items: center; }
+  #talkInput { flex: 1; min-width: 0; border: 1px solid #e8d8a0; border-radius: 999px; padding: 9px 12px; font: inherit; font-size: 14px; background: #fff; }
+  #talkForm button { width: 38px; height: 38px; border-radius: 50%; border: none; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.12); font-size: 16px; flex: 0 0 auto; }
+  #talkForm button.send { background: var(--brand); color: #fff; }
+  #talkForm button.on { background: #ff6f91; color: #fff; }
+  .gzHead { display: flex; gap: 6px; align-items: center; font-size: 11.5px; color: #6a5520; margin: 8px 0 6px; }
+  .gzHead span { flex: 1; }
+  .gzHead button { border: 1px solid #e8d8a0; background: #fff; border-radius: 999px; font-size: 11.5px; padding: 3px 9px; }
+  .gzGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .gzCell {
+    border: 2px solid #e8d8a0; border-radius: 12px; min-height: 52px; font-size: 13px; font-weight: 700; color: #3a3020;
+    background: linear-gradient(to top, rgba(255,196,64,.55) calc(var(--p, 0) * 100%), #fff 0);
+  }
+  .gzCell.on { border-color: #ffb000; }
+  .gzCam { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+
+  /* ---- 広告の詳細（QR・リンク・クーポン） ---- */
+  #adSheet { position: fixed; inset: 0; z-index: 21; background: rgba(20,16,42,.5); display: flex; align-items: flex-end; justify-content: center; padding: 16px 16px calc(16px + var(--safe-b)); }
+  #adSheet .sheet { max-height: 86vh; overflow-y: auto; }
+  .adHead { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; }
+  .adHead h3 { margin: 0; flex: 1; }
+  #adTag { font-size: 11px; background: #2a2440; color: #fff; border-radius: 999px; padding: 2px 8px; }
+  #adSponsor { font-size: 12px; color: var(--muted); margin: 0 0 8px; }
+  #adImage { width: 100%; border-radius: 12px; margin-bottom: 8px; max-height: 220px; object-fit: cover; }
+  #adText { white-space: pre-line; font-size: 13.5px; color: var(--ink); margin: 0 0 10px; }
+  #adCoupon { border: 2px dashed #ff6f91; border-radius: 14px; padding: 10px 12px; margin-bottom: 10px; background: #fff6f8; }
+  #adCoupon b { color: #d8456a; }
+  #adCouponNote, #adCouponUntil { font-size: 12.5px; color: var(--muted); margin: 2px 0; }
+  #adCouponShow { margin-top: 6px; background: #ff6f91; color: #fff; border: none; border-radius: 999px; padding: 9px 16px; font-weight: 700; }
+  #adCouponShow:disabled { background: #ccc; }
+  #adCouponCode { margin-top: 6px; display: flex; gap: 8px; align-items: center; }
+  #adCouponCodeText { font-size: 22px; font-weight: 800; letter-spacing: .08em; color: #2a2440; background: #fff; border-radius: 10px; padding: 4px 12px; }
+  #adCouponCopy { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 6px 12px; }
+  #adQr { display: flex; gap: 12px; align-items: center; margin-bottom: 10px; }
+  #adQrImg svg { width: 120px; height: 120px; display: block; background: #fff; border-radius: 8px; }
+  #adQrCap { font-size: 12px; color: var(--muted); }
+  #adLink { display: block; width: 100%; text-align: center; background: var(--brand); color: #fff; border: none; border-radius: 999px; padding: 11px; font-weight: 700; margin-bottom: 8px; }
+
   /* ---- 重なるもの ---- */
   #dialog, #lost, #noWebgl {
     position: fixed; inset: 0; background: rgba(20,16,42,.45); display: flex; align-items: flex-end; justify-content: center; z-index: 20;
@@ -173,7 +241,7 @@
 <div id="lobby" hidden>
   <div class="top"><a id="backLink" href="/home">← もどる</a></div>
   <h1>メタバース</h1>
-  <p class="lead">分身が、育った性格のとおりに動く空間です。ほかの人の分身と会ったり、ミニゲームで遊んだりできます。</p>
+  <p class="lead">分身が、育った性格のとおりに動く空間です。ほかの人の分身とお話ししたり、ミニゲームで遊んだりできます。</p>
 
   <h2>いっしょに行く子（3体まで）</h2>
   <div id="picker"></div>
@@ -191,7 +259,8 @@
   <div id="noticeBox">
     <b>同じ部屋の人に見えるもの</b>: 分身の名前・姿・声の高さ・動き方（性格から決まる数値）。
     会話の中身や、分身が覚えていること、あなたの情報は見えません。
-    ほかの人と文字でやりとりする機能はありません（挨拶とスタンプだけです）。
+    ほかの子に話しかけると、<b>あなたの子が自分の言葉で</b>伝えます（あなたが入力した文字そのものは、ほかの人に見えません）。
+    自分の子との会話の返事は、あなたの画面にだけ出ます。
   </div>
 </div>
 
@@ -222,9 +291,41 @@
   <div class="hudBottom">
     <div id="mineBar"></div>
     <div class="actRow">
+      <button id="talkBtn" type="button">💬 話す</button>
       <button id="greetBtn" type="button">あいさつ</button>
       <span id="stampBar" style="display:flex;gap:6px"></span>
     </div>
+  </div>
+</div>
+
+<div id="talkBox" hidden>
+  <div class="talkHead"><span id="talkWho">話す</span><button type="button" id="talkSelf" hidden>自分の子と話す</button><button type="button" id="talkClose">とじる</button></div>
+  <div id="talkLog"></div>
+  <form id="talkForm" autocomplete="off">
+    <input id="talkInput" type="text" maxlength="200" placeholder="話しかける" enterkeyhint="send" />
+    <button type="button" id="talkMic" title="声で入力">🎤</button>
+    <button type="button" id="talkGaze" title="視線で選ぶ">👀</button>
+    <button type="submit" class="send" title="送る">➤</button>
+  </form>
+  <div id="talkGazeBox"></div>
+</div>
+
+<div id="adSheet" hidden>
+  <div class="sheet">
+    <div class="adHead"><span id="adTag">広告</span><h3 id="adTitle"></h3></div>
+    <p id="adSponsor"></p>
+    <img id="adImage" alt="" hidden />
+    <p id="adText"></p>
+    <div id="adCoupon" hidden>
+      <b>🎟 特別クーポン</b>
+      <p id="adCouponNote"></p>
+      <p id="adCouponUntil"></p>
+      <button type="button" id="adCouponShow">🎟 クーポンを表示</button>
+      <div id="adCouponCode" hidden><span id="adCouponCodeText"></span><button type="button" id="adCouponCopy">コピー</button></div>
+    </div>
+    <div id="adQr" hidden><div id="adQrImg"></div><span id="adQrCap"></span></div>
+    <button type="button" id="adLink" hidden></button>
+    <div style="display:flex;justify-content:flex-end"><button type="button" class="pill" id="adClose">とじる</button></div>
   </div>
 </div>
 
@@ -257,6 +358,7 @@
 <div id="toast" hidden></div>
 
 <script src="/species.js"></script>
+<script src="/vendor/qrcode.js"></script>
 <script src="/gate.js" defer></script>
 <script src="/voiceSpeak.js" defer></script>
 <script type="module" src="/meta/app.mjs"></script>

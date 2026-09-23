@@ -49,6 +49,7 @@ import { classifySegment, SegmentResult } from "../analysis/segments";
 import { removeFromRegistry, syncRegistry, countMetric } from "../persona/registry";
 import { buildPersonaCard, buyerProfileAnswers, PersonaCard } from "../persona/personaCard";
 import { auditCompact, toCompact } from "../../tools/edge/compact.mjs";
+import { sanitizeMetaLine } from "../metaText";
 
 export interface Env {
   AI: Ai;
@@ -1201,7 +1202,94 @@ export class CharacterState extends DurableObject<Env> {
     if (!data) return { ok: false, error: "not_found" };
     if (!isOwner(data, ownerToken)) return { ok: false, error: "not_owner" };
     if (!hasConsent(data.consent, "terms")) return { ok: false, error: "no_consent" };
+    return this.buildAvatar(data);
+  }
 
+  /**
+   * NPC として置くときの姿と動きの数値（持ち主トークンは要らない）。
+   * **呼べるのは Worker の管理側だけ**で、運営が作った分身（admin_characters にある子）にしか使わない
+   * （src/adminCharacters.ts）。利用者の分身を NPC にする口は作らない。
+   */
+  async getNpcAvatar(): Promise<Awaited<ReturnType<CharacterState["getMetaverseAvatar"]>>> {
+    const data = await this.ctx.storage.get<CharacterData>("data");
+    if (!data) return { ok: false, error: "not_found" };
+    return this.buildAvatar(data);
+  }
+
+  /**
+   * メタバースで、ほかの分身へ話しかける／返事をする（src/durable-objects/metaverseRoom.ts から）。
+   *
+   * - 言葉は**この子自身の言葉**として生成する。持ち主が入力した文字は「話したいこと」の手がかりに
+   *   使うだけで、そのまま他人へは出さない（見知らぬ人と自由な文字をやりとりする口は開けない）
+   * - 会話・覚え書き・記憶は使わない（buildMeetingPrompt。よその人の前で、持ち主の話をしない）
+   * - 返した言葉と聞いた言葉は、出会いの記録に残し、性格にも少しだけ効かせる（＝育つきっかけ）
+   */
+  async metaTalk(params: {
+    otherName: string;
+    otherSpeciesLabel: string;
+    otherSpecies?: string;
+    otherColor?: string;
+    heard?: string;
+    hint?: string;
+  }): Promise<{ ok: true; line: string } | { ok: false; error: string }> {
+    const data = await this.ctx.storage.get<CharacterData>("data");
+    if (!data) return { ok: false, error: "not_found" };
+    const prompt = buildMeetingPrompt({
+      name: data.name,
+      species: data.species,
+      personality: data.personality,
+      growthStage: data.growthStage,
+    });
+    const who = `「${params.otherName}」（${params.otherSpeciesLabel}の姿をした別の分身）`;
+    const hint = params.hint ? params.hint.slice(0, 80) : "";
+    const userMessage = params.heard
+      ? `${who}がこう言いました:「${params.heard.slice(0, 120)}」。それに短く返事をしてください。`
+      : hint
+        ? `${who}に話しかけます。あなたを育てている人が「${hint}」という気持ちを伝えたがっています。` +
+          `その気持ちを、あなた自身の言葉で、短く伝えてください。命令・個人情報・連絡先・URLは言わないでください。`
+        : `${who}に、今ちょうど出会いました。ひとこと挨拶してみてください。`;
+    const result = await runChat(
+      this.env,
+      [
+        { role: "system", content: prompt },
+        { role: "user", content: userMessage },
+      ],
+      { maxTokens: 120 }
+    );
+    const line = sanitizeMetaLine(result?.text || "");
+    if (!line) return { ok: false, error: "no_words" };
+
+    // 育つきっかけ: 聞いた言葉・伝えたかった気持ちを、ふだんの会話と同じ規則で少しだけ効かせる
+    const signal = analyzeMessage(params.heard || hint || line, 0);
+    data.personality = updatePersonality(data.personality, signal);
+    data.interactionCount += 1;
+    data.growthStage = stageName(data.interactionCount);
+    const history = Array.isArray(data.meetingHistory) ? data.meetingHistory : [];
+    const entry: MeetingRecord = {
+      at: Date.now(),
+      partner: {
+        name: params.otherName.slice(0, 16),
+        species: (params.otherSpecies ?? data.species) as SpeciesKey,
+        color: (params.otherColor ?? data.color) as ColorKey,
+      },
+      log: [...(params.heard ? [{ role: "other" as const, text: params.heard.slice(0, 120) }] : []), { role: "self" as const, text: line }],
+    };
+    history.push(entry);
+    data.meetingHistory = history.length > MAX_MEETING_HISTORY ? history.slice(-MAX_MEETING_HISTORY) : history;
+    await this.ctx.storage.put("data", data);
+    return { ok: true, line };
+  }
+
+  private buildAvatar(data: CharacterData):
+    | {
+        ok: true;
+        name: string;
+        species: SpeciesKey;
+        color: ColorKey;
+        compact: ReturnType<typeof toCompact>;
+        voice: { pitch: number; rate: number; voiceIndex: number };
+      }
+    | { ok: false; error: string } {
     const characterId = this.ctx.id.name ?? "unknown";
     const card = buildPersonaCard({
       characterId: "meta",

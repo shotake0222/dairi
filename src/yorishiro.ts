@@ -61,7 +61,7 @@ export interface YorishiroEnv {
  * web と direct は中身が同じ（どちらも依代に紐づかない）が、**分けて数えられるようにしている**。
  * 配ったリンクがどれだけ効いたのかは、混ぜると分からなくなる。
  */
-export type OriginKind = "nfc" | "qr" | "web" | "direct" | "import";
+export type OriginKind = "nfc" | "qr" | "web" | "direct" | "import" | "admin" | "invite";
 
 /**
  * 依代を持たずに作れる分身の、1日あたりの上限（同じ回線から）。

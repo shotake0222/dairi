@@ -46,6 +46,7 @@ const APP_ONLY_PATHS = new Set([
   "/t", // 共通URLのNFCタグ（/t?u=<UID>）
   "/q", // QR
   "/w", // リンクだけで始める
+  "/apply", // Web申し込み（承認されたら、この画面から招待リンクへ）
 ]);
 
 /** apex（紹介用ドメイン）で見せるパス。app に来たら apex へ送る。 */
@@ -104,6 +105,8 @@ function isAppOnly(pathname: string): boolean {
     pathname === "/admin" ||
     pathname.startsWith("/t/") ||
     pathname.startsWith("/q/") ||
+    // 招待リンク（/i/<コード>）も、開いた端末に持ち主の印を渡す入口
+    pathname.startsWith("/i/") ||
     pathname === "/w/"
   );
 }

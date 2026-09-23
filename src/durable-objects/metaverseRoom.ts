@@ -10,6 +10,12 @@
  *   - **利用者が書いた文字を、他人に配らない。** 挨拶は決まった台詞の番号、スタンプは決まった種類だけ。
  *     子どもも使うサービスで、見知らぬ人と自由に文字をやりとりする口は開けない
  *   - **分身の識別子・持ち主トークンを、他人に配らない。** 部屋の中では、入室のたびに振る番号（aid）で呼ぶ
+ *     （分身どうしの会話のために、識別子はこの部屋のメモリ＝attachment にだけ持つ。配る電文には入れない）
+ *
+ * 分身どうしの会話（talk）:
+ *   持ち主が「伝えたいこと」を入力すると、**自分の分身が自分の言葉で**相手に話しかけ、相手の分身が返事をする。
+ *   配るのは AI が生成した分身の言葉だけ（metaText.ts で連絡先・URL・不適切な語を落とす）。持ち主の入力は配らない。
+ *   話したこと・聞いたことは、それぞれの分身の出会いの記録と性格に少しだけ残る（育つきっかけ）。
  *
  * 分身の動きそのもの（間・身振り・近づくか）は、配った数値から各端末が同じ規則
  * （public/meta/wt_core.mjs ＝ 実機の検証機と同じエンジン）で計算する。サーバーは位置と合図だけを配る。
@@ -19,7 +25,8 @@
  */
 
 import { DurableObject } from "cloudflare:workers";
-import type { CharacterState } from "./characterState";
+import { SPECIES_LABELS, type CharacterState, type SpeciesKey } from "./characterState";
+import { sanitizeHint } from "../metaText";
 import { GREETING_LINES, MAX_ACTORS_PER_PERSON, MAX_PEOPLE, STAMPS, TEST_AREA_ID, WORLD_HALF, type AreaState, type RoomConfig } from "../metaverse";
 
 export interface MetaRoomEnv {
@@ -41,18 +48,24 @@ export interface PublicActor {
 interface Attachment {
   pid: string;
   joined: boolean;
-  actors: Array<{ aid: string; x: number; z: number; cidHash: string }>;
+  actors: Array<{ aid: string; x: number; z: number; cidHash: string; cid: string }>;
   /** 移動の回数制限（1秒の窓） */
   moveWindow: number;
   moveCount: number;
   lastStampAt: number;
   lastGreetAt: number;
+  lastTalkAt?: number;
+  talkCount?: number;
+  lastTypingAt?: number;
 }
 
 const MAX_MESSAGE_BYTES = 4096;
 const MOVES_PER_SECOND = 8;
 const STAMP_INTERVAL_MS = 700;
 const GREET_INTERVAL_MS = 2500;
+/** 分身どうしの会話は AI を使うので、間隔と1回の入室あたりの回数を絞る */
+const TALK_INTERVAL_MS = 5000;
+const TALKS_PER_CONNECTION = 80;
 
 function randomToken(n: number): string {
   const alphabet = "abcdefghijkmnpqrstuvwxyz23456789";
@@ -172,6 +185,12 @@ export class MetaverseRoom extends DurableObject<MetaRoomEnv> {
       case "greet":
         this.onGreet(ws, att, msg);
         return;
+      case "talk":
+        await this.onTalk(ws, att, msg);
+        return;
+      case "typing":
+        this.onTyping(ws, att, msg);
+        return;
       case "ping":
         this.send(ws, { t: "pong" });
         return;
@@ -252,7 +271,7 @@ export class MetaverseRoom extends DurableObject<MetaRoomEnv> {
         z: Math.round(Math.sin(angle) * radius * 100) / 100,
       };
       await this.ctx.storage.put(`actor:${aid}`, actor);
-      att.actors.push({ aid, x: actor.x, z: actor.z, cidHash });
+      att.actors.push({ aid, x: actor.x, z: actor.z, cidHash, cid });
       present.add(cidHash);
       joined.push(actor);
     }
@@ -320,6 +339,99 @@ export class MetaverseRoom extends DurableObject<MetaRoomEnv> {
     this.broadcast({ t: "greet", aid: actor.aid, line }, ws);
   }
 
+  /** 「いま自分の分身と話している」印（吹き出しに「…」を出すだけ。中身は配らない） */
+  private onTyping(ws: WebSocket, att: Attachment, msg: Record<string, unknown>) {
+    if (!att.joined) return;
+    const now = Date.now();
+    if (now - (att.lastTypingAt ?? 0) < 1500) return;
+    const actor = att.actors.find((a) => a.aid === msg.aid);
+    if (!actor) return;
+    att.lastTypingAt = now;
+    ws.serializeAttachment(att);
+    this.broadcast({ t: "typing", aid: actor.aid }, ws);
+  }
+
+  /** 部屋の中で、aid から「分身の識別子・名前・姿」を引く（利用者の分身と NPC） */
+  private async findSpeaker(aid: string): Promise<{ cid: string; name: string; species: string; color: string; npc: boolean } | null> {
+    const config = await this.ctx.storage.get<RoomConfig>("config");
+    const npc = config?.npcs?.find((n) => n.aid === aid);
+    if (npc) {
+      if ((npc as { talk?: boolean }).talk === false) return null;
+      return { cid: npc.cid, name: String(npc.name), species: String(npc.species), color: String(npc.color), npc: true };
+    }
+    for (const other of this.ctx.getWebSockets()) {
+      const a = other.deserializeAttachment() as Attachment | null;
+      const hit = a?.joined ? a.actors.find((x) => x.aid === aid) : undefined;
+      if (hit) {
+        const pub = await this.ctx.storage.get<PublicActor>(`actor:${aid}`);
+        if (!pub) return null;
+        return { cid: hit.cid, name: pub.name, species: pub.species, color: pub.color, npc: false };
+      }
+    }
+    return null;
+  }
+
+  private async onTalk(ws: WebSocket, att: Attachment, msg: Record<string, unknown>) {
+    if (!att.joined) return;
+    const now = Date.now();
+    if (now - (att.lastTalkAt ?? 0) < TALK_INTERVAL_MS) {
+      this.send(ws, { t: "talk_failed", code: "too_fast", message: "少し待ってから、また話しかけてね" });
+      return;
+    }
+    if ((att.talkCount ?? 0) >= TALKS_PER_CONNECTION) {
+      this.send(ws, { t: "talk_failed", code: "limit", message: "今日はたくさんお話ししたね。また入り直すと話せるよ" });
+      return;
+    }
+    const mine = att.actors.find((a) => a.aid === msg.aid);
+    const toAid = typeof msg.to === "string" ? msg.to.slice(0, 40) : "";
+    if (!mine || !toAid || toAid === mine.aid) return;
+    const me = await this.findSpeaker(mine.aid);
+    const target = await this.findSpeaker(toAid);
+    if (!me || !target) {
+      this.send(ws, { t: "talk_failed", code: "no_target", message: "その子とは、いまお話しできないみたい" });
+      return;
+    }
+    att.lastTalkAt = now;
+    att.talkCount = (att.talkCount ?? 0) + 1;
+    ws.serializeAttachment(att);
+
+    const hint = sanitizeHint(msg.hint);
+    const label = (species: string) => SPECIES_LABELS[species as SpeciesKey] ?? "ふしぎな生きもの";
+    this.broadcast({ t: "typing", aid: mine.aid });
+    let first: Awaited<ReturnType<CharacterState["metaTalk"]>>;
+    try {
+      first = await this.env.CHARACTER.getByName(me.cid).metaTalk({
+        otherName: target.name,
+        otherSpeciesLabel: label(target.species),
+        otherSpecies: target.species,
+        otherColor: target.color,
+        hint,
+      });
+    } catch {
+      first = { ok: false, error: "unavailable" };
+    }
+    if (!first.ok) {
+      this.send(ws, { t: "talk_failed", code: first.error, message: "うまく言葉が出てこなかったみたい" });
+      return;
+    }
+    this.broadcast({ t: "say", aid: mine.aid, to: toAid, line: first.line });
+
+    // 相手の返事（相手の分身が、自分の言葉で返す）
+    this.broadcast({ t: "typing", aid: toAid });
+    try {
+      const reply = await this.env.CHARACTER.getByName(target.cid).metaTalk({
+        otherName: me.name,
+        otherSpeciesLabel: label(me.species),
+        otherSpecies: me.species,
+        otherColor: me.color,
+        heard: first.line,
+      });
+      if (reply.ok) this.broadcast({ t: "say", aid: toAid, to: mine.aid, line: reply.line });
+    } catch {
+      /* 返事が無くても、話しかけたほうは成立している */
+    }
+  }
+
   private async leave(ws: WebSocket) {
     const att = ws.deserializeAttachment() as Attachment | null;
     if (!att || !att.joined) return;
@@ -363,6 +475,10 @@ export class MetaverseRoom extends DurableObject<MetaRoomEnv> {
       time: config.time,
       camera: config.camera,
       objects: config.objects,
+      // NPC は分身の識別子（cid）を抜いて渡す
+      npcs: (config.npcs ?? []).map(({ cid: _cid, ...rest }) => rest),
+      placements: config.placements ?? [],
+      plotsForSale: config.plotsForSale ?? [],
     };
   }
 

@@ -114,6 +114,17 @@
   .gameDefaults { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
   .gameDefaults input, .gameDefaults select { width: 5.5em; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; font: inherit; font-size: 12px; }
   .gameDefaults select { width: 7.5em; }
+  .badge { display: inline-block; min-width: 18px; padding: 0 6px; border-radius: 999px; background: #ff5a5a; color: #fff; font-size: 11px; line-height: 18px; margin-left: 4px; }
+  .badge[hidden] { display: none; }
+  .subTabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  .subTabs button.on { background: var(--brand); color: #fff; border-color: transparent; }
+  .cardList { display: grid; gap: 10px; }
+  .card { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; background: #fcfbff; font-size: 12.5px; }
+  .card h4 { margin: 0 0 4px; font-size: 14px; }
+  .card .meta { color: var(--muted); font-size: 12px; }
+  .card .acts { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; word-break: break-all; }
+  .stat { display: inline-block; background: #f3efff; border-radius: 8px; padding: 2px 8px; margin-right: 4px; font-size: 11.5px; }
   .gameDefaults span { font-size: 11px; color: var(--muted); }
 </style>
 </head>
@@ -140,6 +151,9 @@
     <button class="tab" data-panel="recovery" type="button">分身の復旧</button>
     <button class="tab" data-panel="meta" type="button">メタバース管理</button>
     <button class="tab" data-panel="games" type="button">ミニゲーム管理</button>
+    <button class="tab" data-panel="npc" type="button">NPC・運営の分身</button>
+    <button class="tab" data-panel="land" type="button">広告・ランドマーク <span class="badge" id="badgeOrders" hidden></span></button>
+    <button class="tab" data-panel="entry" type="button">招待・申し込み <span class="badge" id="badgeApps" hidden></span></button>
   </div>
 
   <div class="panel" id="panel-overview">
@@ -625,6 +639,162 @@
       </div>
     </section>
   </div>
+  <div class="panel" id="panel-npc" hidden>
+    <section>
+      <h2>運営の分身（人格データ）</h2>
+      <p class="lead">
+        管理者は<strong>上限なし</strong>で分身を作れます（依代・1日の上限を通りません）。作った子は「この端末で育てる」で会話して育て、
+        NPC としてメタバースに置いたり、引き渡しリンク（招待・申し込みタブ）で利用者に渡したりできます。
+        <strong>NPC にできるのは、ここで作った運営の分身だけ</strong>です（利用者の分身は置けません）。
+      </p>
+      <div class="formGrid">
+        <label>名前（複数なら「名前1」「名前2」…）<input id="acName" maxlength="16" placeholder="案内係" /></label>
+        <label>作る数（1回に50体まで。何回でも作れます）<input id="acCount" type="number" min="1" max="50" value="1" /></label>
+        <label>メモ（管理画面だけに出ます）<input id="acLabel" maxlength="40" placeholder="夏祭りのNPC用" /></label>
+      </div>
+      <div class="row"><button type="button" id="acCreate" style="background:var(--brand);color:#fff;border-color:transparent">＋ 作る</button><span id="acStatus" style="font-size:12px;color:var(--muted)"></span></div>
+      <div class="scroll" style="margin-top:10px"><table id="acTable"></table></div>
+    </section>
+    <section>
+      <h2>メタバースの NPC</h2>
+      <p class="lead">
+        運営の分身を、エリアに NPC として置きます。NPC は性格の数値どおりに動き、近づいた子に声をかけ、話しかけられると自分の言葉で答えます。
+        「最新の性格にする」で、育てた結果を NPC に反映します（6時間ごとにも自動で取り直します）。
+      </p>
+      <div class="formGrid">
+        <label>分身<select id="npcChar"></select></label>
+        <label>エリア<select id="npcArea"></select></label>
+        <label>位置<select id="npcSpot"></select></label>
+        <label>歩き回る広さ（m・0で立ったまま）<input id="npcRadius" type="number" min="0" max="4" step="0.5" value="1.5" /></label>
+        <label>役目（名札に出る。12文字）<input id="npcRole" maxlength="12" placeholder="案内係" /></label>
+        <label>ひとこと（タップしたとき・近づいたとき。80文字）<input id="npcMessage" maxlength="80" placeholder="ようこそ！ 屋台の輪に入るとミニゲームができるよ" /></label>
+        <label>リンク（https://、任意）<input id="npcLink" placeholder="https://…" /></label>
+        <label>並び<input id="npcSort" type="number" min="0" max="9999" value="100" /></label>
+      </div>
+      <label class="wide" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="npcTalk" style="width:auto;margin:0" checked /> 話しかけられたら答える（AIで返事を作ります）</label>
+      <label class="wide" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="npcAd" style="width:auto;margin:0" /> 広告として出す（名前に【広告】が付きます）</label>
+      <label class="wide" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="npcActive" style="width:auto;margin:0" checked /> 出す（外すと、置いたまま隠れます）</label>
+      <div class="row">
+        <button type="button" id="npcSave" style="background:var(--brand);color:#fff;border-color:transparent">置く・直す</button>
+        <button type="button" id="npcNew">新しく置く（入力を空に）</button>
+        <button type="button" id="npcRefresh">すべて最新の性格にする</button>
+        <span id="npcStatus" style="font-size:12px;color:var(--muted)"></span>
+      </div>
+      <div class="scroll" style="margin-top:10px"><table id="npcTable"></table></div>
+    </section>
+  </div>
+
+  <div class="panel" id="panel-land" hidden>
+    <div class="subTabs" id="landTabs">
+      <button type="button" data-sub="orders" class="on">申込</button>
+      <button type="button" data-sub="ads">広告・クーポン</button>
+      <button type="button" data-sub="plots">区画と価格</button>
+      <button type="button" data-sub="place">運営が置く</button>
+      <button type="button" data-sub="settings">受付の設定</button>
+    </div>
+    <section data-subpanel="orders">
+      <h2>広告・ランドマークの申込</h2>
+      <p class="lead">
+        申込は <code>/land</code> から届きます。中身を確かめて<strong>承認</strong>（金額と決済リンク）→ 入金を確かめたら<strong>支払い済み</strong>（その日から掲載）。
+        申込者は状況ページで金額と決済リンクを見られます（メールは自動では送りません。連絡先へお知らせください）。
+      </p>
+      <div class="row"><select id="orderFilter"><option value="">すべて</option><option value="pending">確認中</option><option value="approved">承認済み・支払い待ち</option><option value="paid">掲載</option><option value="rejected">見送り</option><option value="cancelled">取り消し</option></select></div>
+      <div class="cardList" id="orderList" style="margin-top:10px"></div>
+    </section>
+    <section data-subpanel="ads" hidden>
+      <h2>広告・クーポン</h2>
+      <p class="lead">
+        エリアに置いた広告の看板（メタバース管理の「看板」）と、区画の広告・ランドマークの一覧です。直近30日の
+        <span class="stat">詳細を開いた</span><span class="stat">リンクを開いた</span><span class="stat">クーポンを表示</span> の回数が出ます（誰が見たかは記録しません）。
+        メタバースで広告をタップすると、詳細（画像・説明・QRコード・リンク・特別クーポン）が開きます。
+      </p>
+      <div class="scroll"><table id="adTable"></table></div>
+    </section>
+    <section data-subpanel="plots" hidden>
+      <h2>区画と価格</h2>
+      <p class="lead">エリアの外周に8つの区画があります。区画ごとに、売る物と価格（1単位あたり。単位の日数は「受付の設定」）を決めます。</p>
+      <div class="formGrid"><label>エリア<select id="plotArea"></select></label></div>
+      <div class="scroll"><table id="plotTable"></table></div>
+      <div class="row" style="margin-top:10px"><button type="button" id="plotSave" style="background:var(--brand);color:#fff;border-color:transparent">保存する</button><span id="plotStatus" style="font-size:12px;color:var(--muted)"></span></div>
+    </section>
+    <section data-subpanel="place" hidden>
+      <h2>運営が置く・設置中の物</h2>
+      <p class="lead">運営の告知・協賛・記念などを、申込を通さずに区画へ置けます（無料）。一覧から直す・いますぐ終える・消すもできます。</p>
+      <div class="formGrid">
+        <label>エリア<select id="plEdArea"></select></label>
+        <label>区画<select id="plEdSpot"></select></label>
+        <label>種類<select id="plEdKind"><option value="ad">広告の看板</option><option value="landmark">ランドマーク</option></select></label>
+        <label>提供者の表示名（必須）<input id="plEdSponsor" maxlength="30" /></label>
+        <label>見出し<input id="plEdTitle" maxlength="24" /></label>
+        <label>本文<input id="plEdText" maxlength="80" /></label>
+        <label>画像のURL<input id="plEdImage" placeholder="https://…" /></label>
+        <label>形（ランドマーク）<select id="plEdModel"></select></label>
+        <label>色（ランドマーク）<select id="plEdColor"></select></label>
+        <label>銘板（ランドマーク）<input id="plEdPlaque" maxlength="20" /></label>
+        <label>リンク<input id="plEdLink" placeholder="https://…" /></label>
+        <label>QRコードの行き先（空ならリンク）<input id="plEdQr" placeholder="https://…" /></label>
+        <label>クーポンのコード<input id="plEdCoupon" maxlength="24" /></label>
+        <label>クーポンの説明<input id="plEdCouponNote" maxlength="60" /></label>
+        <label>クーポンの有効期限<input id="plEdCouponUntil" type="date" /></label>
+        <label>始まり<input id="plEdStart" type="datetime-local" /></label>
+        <label>終わり（空なら無期限）<input id="plEdEnd" type="datetime-local" /></label>
+      </div>
+      <label class="wide">詳しい説明（詳細画面に出る。300文字）<textarea id="plEdDetail" maxlength="300" rows="3"></textarea></label>
+      <div class="row"><button type="button" id="plEdSave" style="background:var(--brand);color:#fff;border-color:transparent">置く・直す</button><button type="button" id="plEdNew">新しく置く（入力を空に）</button><span id="plEdStatus" style="font-size:12px;color:var(--muted)"></span></div>
+      <div class="scroll" style="margin-top:10px"><table id="placeTable"></table></div>
+    </section>
+    <section data-subpanel="settings" hidden>
+      <h2>受付の設定</h2>
+      <label class="wide" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="lsOpen" style="width:auto;margin:0" /> 申し込みを受け付ける（/land）</label>
+      <label class="wide" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="lsShow" style="width:auto;margin:0" /> メタバースの中に「区画 販売中」の目印を出す</label>
+      <div class="formGrid">
+        <label>広告の1単位（日）<input id="lsAdDays" type="number" min="1" max="90" /></label>
+        <label>ランドマークの1単位（日）<input id="lsLmDays" type="number" min="1" max="365" /></label>
+        <label>1回に申し込める単位の数<input id="lsMax" type="number" min="1" max="52" /></label>
+        <label>決済リンクの既定値（Stripe の Payment Link など）<input id="lsPay" placeholder="https://…" /></label>
+      </div>
+      <label class="wide">申込者に見せる支払いの案内<textarea id="lsNote" rows="3" maxlength="300"></textarea></label>
+      <div class="row"><button type="button" id="lsSave" style="background:var(--brand);color:#fff;border-color:transparent">保存する</button><span id="lsStatus" style="font-size:12px;color:var(--muted)"></span></div>
+      <p class="lead" style="margin-top:10px">カード番号などの決済情報は、このサービスでは預かりません。決済は外部（決済リンク・請求書）で行い、入金を確かめてから「支払い済み」にします。</p>
+    </section>
+  </div>
+
+  <div class="panel" id="panel-entry" hidden>
+    <section>
+      <h2>依代を使わない入口</h2>
+      <p class="lead">
+        キーホルダー（NFC）以外からはじめてもらう方法です。どれも<strong>開いた端末が持ち主</strong>になり、持ち主の印は画面のURLで一度だけ渡します。
+      </p>
+      <ul class="lead" style="margin-top:0">
+        <li><b>招待リンク</b>（/i/…）: 1回だけ／N回まで使える・期限つき。イベント・キャンペーン・法人の配布に</li>
+        <li><b>Web申し込み</b>（/apply）: 申し込み → ここで承認 → 申込者の状況ページに「はじめる」ボタン（招待リンク）が出る</li>
+        <li><b>引き渡しリンク</b>: 運営の分身（育てた人格データ）を、開いた人に渡す。渡すと運営の一覧から外れる（1回だけ）</li>
+        <li>これまでの入口: 依代をかざす（/t）・QR（/q）・リンクだけ（/w。<code>ENTRY_OPEN</code> のときだけ）</li>
+      </ul>
+    </section>
+    <section>
+      <h2>招待リンクを作る</h2>
+      <div class="formGrid">
+        <label>種類<select id="invKind"><option value="new">新しい分身がはじまる</option><option value="handover">運営の分身を渡す（引き渡し）</option></select></label>
+        <label>渡す分身（引き渡しのとき）<select id="invChar"></select></label>
+        <label>作る本数（別々のリンク）<input id="invCount" type="number" min="1" max="200" value="1" /></label>
+        <label>1本あたり使える回数<input id="invMax" type="number" min="1" max="100000" value="1" /></label>
+        <label>有効期限（任意）<input id="invExpires" type="datetime-local" /></label>
+        <label>メモ<input id="invLabel" maxlength="40" placeholder="10月のイベント" /></label>
+      </div>
+      <div class="row"><button type="button" id="invCreate" style="background:var(--brand);color:#fff;border-color:transparent">作る</button><span id="invStatus" style="font-size:12px;color:var(--muted)"></span></div>
+      <div id="invCreated" class="mono" style="margin-top:8px"></div>
+      <div class="scroll" style="margin-top:10px"><table id="invTable"></table></div>
+    </section>
+    <section>
+      <h2>Web申し込み</h2>
+      <label class="wide" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="apOpen" style="width:auto;margin:0" /> 申し込みを受け付ける（/apply）</label>
+      <label class="wide" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="apAuto" style="width:auto;margin:0" /> 承認せずに、すぐ「はじめる」リンクを出す（イベント期間などに。1回線1日3件まで）</label>
+      <label class="wide">申込ページに出す一言<textarea id="apNote" rows="2" maxlength="300"></textarea></label>
+      <div class="row"><button type="button" id="apSave">保存する</button><span id="apStatus" style="font-size:12px;color:var(--muted)"></span></div>
+      <div class="cardList" id="appList" style="margin-top:10px"></div>
+    </section>
+  </div>
 </main>
 
 <script src="/vendor/qrcode.js"></script>
@@ -697,6 +867,9 @@
       if (tab.dataset.panel === "delivery") loadDelivery();
       if (tab.dataset.panel === "meta" && typeof loadMetaRooms === "function") loadMetaRooms();
       if (tab.dataset.panel === "games" && typeof loadMetaGames === "function") loadMetaGames();
+      if (tab.dataset.panel === "npc" && typeof loadNpcPanel === "function") loadNpcPanel();
+      if (tab.dataset.panel === "land" && typeof loadLandPanel === "function") loadLandPanel();
+      if (tab.dataset.panel === "entry" && typeof loadEntryPanel === "function") loadEntryPanel();
     });
   });
 
@@ -1571,5 +1744,6 @@
   });
 </script>
 <script src="/admin-meta.js"></script>
+<script src="/admin-extra.js"></script>
 </body>
 </html>

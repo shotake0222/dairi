@@ -385,6 +385,12 @@
         adWrap.appendChild(ad);
         adWrap.appendChild(document.createTextNode(" 広告として出す（「広告」の表示が付きます）"));
         grid.appendChild(adWrap);
+        // タップで開く詳細（説明・QRコード・特別クーポン）
+        grid.appendChild(field("詳しい説明（詳細画面に出る。200文字・任意）", o.detail, function (v) { o.detail = v; }, { maxLength: 200 }));
+        grid.appendChild(field("QRコードの行き先（https://。空ならリンク先）", o.qrUrl, function (v) { o.qrUrl = v; }, { placeholder: "https://…" }));
+        grid.appendChild(field("特別クーポンのコード（任意）", o.couponCode, function (v) { o.couponCode = v; }, { maxLength: 24, placeholder: "例: WAKE10" }));
+        grid.appendChild(field("クーポンの説明（任意）", o.couponNote, function (v) { o.couponNote = v; }, { maxLength: 60, placeholder: "例: 会計時にこの画面を見せると10%引き" }));
+        grid.appendChild(field("クーポンの有効期限（任意）", o.couponUntil ? toLocalInput(o.couponUntil).slice(0, 10) : "", function (v) { o.couponUntil = v ? new Date(v + "T23:59:59").getTime() : null; }, { type: "date" }));
       } else if (o.type === "video") {
         grid.appendChild(field("動画のURL", o.videoUrl, function (v) { o.videoUrl = v; }, { placeholder: "https://…/movie.mp4" }));
       } else if (o.type === "treasure") {

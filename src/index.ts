@@ -68,6 +68,54 @@ import {
 } from "./entryPolicy";
 import { handleMcp } from "./mcp";
 import { MetaverseRoom } from "./durable-objects/metaverseRoom";
+import { roomView } from "./metaRoomView";
+import {
+  createAdminCharacters,
+  deleteAdminCharacter,
+  deleteNpc,
+  listAdminCharacters,
+  listNpcs,
+  NPC_SPOTS,
+  refreshNpcAvatars,
+  saveNpc,
+} from "./adminCharacters";
+import {
+  createOrder,
+  deletePlacement,
+  endPlacement,
+  getLandSettings,
+  LAND_SPOTS,
+  LANDMARK_COLORS,
+  LANDMARK_MODELS,
+  landCatalog,
+  listAdsAndCoupons,
+  listOrders,
+  listPlacements,
+  listPlots,
+  orderAction,
+  orderStatus,
+  pendingOrderCount,
+  recordAdEvent,
+  SALE_KINDS,
+  saveLandSettings,
+  savePlacement,
+  savePlots,
+} from "./land";
+import {
+  applicationStatus,
+  createApplication,
+  createInvites,
+  decideApplication,
+  getApplicationSettings,
+  INVITE_FAIL_TEXT,
+  isInviteCode,
+  listApplications,
+  listInvites,
+  pendingApplicationCount,
+  redeemInvite,
+  saveApplicationSettings,
+  setInviteActive,
+} from "./invites";
 import {
   areaState,
   deleteRoom,
@@ -283,6 +331,26 @@ export default {
       const metaResponse = await handleMetaverseApi(request, url, env);
       if (metaResponse) return metaResponse;
     }
+    // --- 区画（広告・ランドマーク）の申込と、依代を使わない入口（Web申し込み・招待リンク） ---
+    if (url.pathname.startsWith("/api/land/") || url.pathname.startsWith("/api/apply") || url.pathname === "/api/meta-ad-event") {
+      const publicResponse = await handlePublicLandAndEntry(request, url, env, log);
+      if (publicResponse) return publicResponse;
+    }
+    // 招待リンク: /i/<コード>（開いた端末に分身と持ち主の印を渡す）
+    if (url.pathname.startsWith("/i/")) {
+      const code = url.pathname.slice(3).replace(/\/$/, "");
+      if (!isInviteCode(code)) return Response.redirect(new URL("/apply?invite=not_found", url.origin).toString(), 302);
+      const result = await redeemInvite(env, code, request);
+      if (!result.ok) return Response.redirect(new URL(`/apply?invite=${result.reason}`, url.origin).toString(), 302);
+      ctx.waitUntil(countMetric(env, "new_character"));
+      const next = new URL("/summon", url.origin);
+      next.searchParams.set("cid", result.characterId);
+      // 引き渡し（もう名前も性格もある運営の分身）は、名付けの場面を出さない
+      if (result.kind === "new") next.searchParams.set("first", "1");
+      // 持ち主の印は、この一度だけURLで渡す（summon.html がすぐ端末に保存して、URLから消す。/t と同じ）
+      next.searchParams.set("token", result.ownerToken);
+      return Response.redirect(next.toString(), 302);
+    }
 
     if (url.pathname === "/api/delivery" && request.method === "GET") {
       const scopeParam = url.searchParams.get("scope") || "card";
@@ -317,6 +385,17 @@ export default {
 
     // --- 管理画面のAPI（adminGate を通過したリクエストだけがここに来る） ---
     // メタバースの部屋（作る・直すのはここだけ。置く物＝看板・動画・ミニゲームもここで決める）
+    if (
+      url.pathname.startsWith("/api/admin/characters") ||
+      url.pathname.startsWith("/api/admin/npcs") ||
+      url.pathname.startsWith("/api/admin/land/") ||
+      url.pathname.startsWith("/api/admin/invites") ||
+      url.pathname.startsWith("/api/admin/applications") ||
+      url.pathname === "/api/admin/badges"
+    ) {
+      const extra = await handleAdminExtra(request, url, env);
+      if (extra) return extra;
+    }
     if (url.pathname.startsWith("/api/admin/meta/")) {
       const metaAdmin = await handleMetaverseAdmin(request, url, env);
       if (metaAdmin) return metaAdmin;
@@ -1142,9 +1221,8 @@ export function pickMostSimilar<T extends Pick<PersonalityTraits, (typeof TRAIT_
  * まとめた元のエリアにいる人には、まとめた先を知らせる。
  */
 async function pushAreaToRoom(env: Env, room: RoomConfig): Promise<void> {
-  const settings = await getGameSettings(env);
   const state = areaState(room);
-  const view = publicRoom(room, settings);
+  const view = await roomView(env, room);
   await env.META_ROOM.getByName(room.id)
     .pushConfig(view, state, room.mergedInto)
     .catch(() => undefined);
@@ -1275,19 +1353,21 @@ async function handleMetaverseApi(request: Request, url: URL, env: Env): Promise
     }
     // 部屋の設定は、ヘッダに載せず RPC で先に渡す（クイズの問題などで大きくなるとヘッダに収まらない）
     const stub = env.META_ROOM.getByName(id);
-    await stub.setConfig(publicRoom(room, await getGameSettings(env)));
+    await stub.setConfig(await roomView(env, room));
     return stub.fetch(request);
   }
 
   if (request.method === "GET") {
     const resolved = await resolveRoom(env, id);
     if (!resolved) return json({ error: "そのエリアはありません" }, { status: 404 });
-    const settings = await getGameSettings(env);
     const state = areaState(resolved.room);
     const canEnter = state === "open" || (state === "draft" && isAdminRequest(request, env));
+    const view = await roomView(env, resolved.room);
+    // NPC の分身の識別子は、画面へは渡さない（部屋の中だけで使う）
+    view.npcs = (view.npcs ?? []).map(({ cid: _cid, ...rest }) => rest) as unknown as RoomConfig["npcs"];
     return json(
       {
-        room: publicRoom(resolved.room, settings),
+        room: view,
         state,
         canEnter,
         movedFrom: resolved.movedFrom,
@@ -1297,6 +1377,217 @@ async function handleMetaverseApi(request: Request, url: URL, env: Env): Promise
       },
       { headers: { "cache-control": "no-store" } }
     );
+  }
+  return null;
+}
+
+
+/** エリアIDから部屋へ配り直す（NPC・設置物を変えたとき） */
+async function pushAreaById(env: Env, areaId: string | null | undefined): Promise<void> {
+  if (!areaId) return;
+  const room = await getRoom(env, areaId);
+  if (room) await pushAreaToRoom(env, room);
+}
+
+/**
+ * 管理画面の、運営の分身・NPC・区画（広告・ランドマーク）・招待と申し込み（adminGate を通過したリクエストだけ）。
+ *
+ *   /api/admin/characters        GET 一覧 / POST 作る（上限なし）/ DELETE 消す
+ *   /api/admin/npcs              GET 一覧と選択肢 / POST 置く・直す / DELETE 外す
+ *   /api/admin/npcs/refresh      POST 姿と動きの数値を取り直す（育てた結果を反映）
+ *   /api/admin/land/settings     GET / POST 受付・販売中の表示・支払いの案内
+ *   /api/admin/land/plots        GET ?area= / POST 区画ごとの販売設定
+ *   /api/admin/land/placements   GET / POST 運営が置く・直す / DELETE
+ *   /api/admin/land/placements/end POST いますぐ終える
+ *   /api/admin/land/orders       GET 申込一覧 / POST 操作（承認・支払い済み・見送り・取り消し・メモ）
+ *   /api/admin/land/ads          GET 広告・クーポンの一覧（直近30日の回数つき）
+ *   /api/admin/invites           GET / POST 招待リンク（新しい分身・運営の分身の引き渡し）
+ *   /api/admin/invites/active    POST 止める・戻す
+ *   /api/admin/applications      GET / POST 承認・見送り
+ *   /api/admin/applications/settings GET / POST
+ *   /api/admin/badges            GET 確認待ちの数（タブの印）
+ */
+async function handleAdminExtra(request: Request, url: URL, env: Env): Promise<Response | null> {
+  const p = url.pathname;
+  const m = request.method;
+  const body = async () => (await request.json().catch(() => ({}))) as Record<string, unknown>;
+
+  if (p === "/api/admin/badges" && m === "GET") {
+    return json({ pendingOrders: await pendingOrderCount(env), pendingApplications: await pendingApplicationCount(env) });
+  }
+
+  // ---- 運営の分身 ----
+  if (p === "/api/admin/characters" && m === "GET") return json({ characters: await listAdminCharacters(env) });
+  if (p === "/api/admin/characters" && m === "POST") {
+    const result = await createAdminCharacters(env, await body());
+    if (!result.ok) return json({ error: result.error }, { status: 400 });
+    return json({ created: result.created });
+  }
+  if (p === "/api/admin/characters" && m === "DELETE") {
+    const b = await body();
+    const result = await deleteAdminCharacter(env, String(b.characterId || ""));
+    for (const a of result.areas) await pushAreaById(env, a);
+    return json(result, { status: result.ok ? 200 : 404 });
+  }
+
+  // ---- NPC ----
+  if (p === "/api/admin/npcs" && m === "GET") {
+    const [npcs, characters, rooms] = await Promise.all([listNpcs(env), listAdminCharacters(env), listAdminRooms(env)]);
+    return json({
+      npcs,
+      characters: characters.map(({ ownerToken: _t, ...rest }) => rest),
+      areas: rooms.map((r) => ({ id: r.id, name: r.name, state: r.state })),
+      spots: NPC_SPOTS,
+      greetings: metaverseCatalog().greetings,
+    });
+  }
+  if (p === "/api/admin/npcs" && m === "POST") {
+    const b = await body();
+    const before = typeof b.id === "string" ? (await listNpcs(env)).find((n) => n.id === b.id)?.areaId : null;
+    const result = await saveNpc(env, b);
+    if (!result.ok) return json({ error: result.error }, { status: result.status });
+    await pushAreaById(env, result.npc.areaId);
+    if (before && before !== result.npc.areaId) await pushAreaById(env, before);
+    return json({ npc: result.npc });
+  }
+  if (p === "/api/admin/npcs" && m === "DELETE") {
+    const area = await deleteNpc(env, (await body()).id);
+    await pushAreaById(env, area);
+    return json({ ok: !!area });
+  }
+  if (p === "/api/admin/npcs/refresh" && m === "POST") {
+    const b = await body();
+    const areaId = typeof b.areaId === "string" ? b.areaId : undefined;
+    const n = await refreshNpcAvatars(env, areaId);
+    for (const r of await listAdminRooms(env)) if (!areaId || r.id === areaId) await pushAreaToRoom(env, r);
+    return json({ refreshed: n });
+  }
+
+  // ---- 区画・広告・ランドマーク ----
+  if (p === "/api/admin/land/settings" && m === "GET") {
+    return json({ settings: await getLandSettings(env), spots: LAND_SPOTS, models: LANDMARK_MODELS, colors: LANDMARK_COLORS, saleKinds: SALE_KINDS });
+  }
+  if (p === "/api/admin/land/settings" && m === "POST") {
+    const settings = await saveLandSettings(env, await body());
+    for (const r of await listAdminRooms(env)) if (r.state === "open") await pushAreaToRoom(env, r);
+    return json({ settings });
+  }
+  if (p === "/api/admin/land/plots" && m === "GET") {
+    const areaId = url.searchParams.get("area") || "";
+    return json({ plots: await listPlots(env, areaId) });
+  }
+  if (p === "/api/admin/land/plots" && m === "POST") {
+    const b = await body();
+    const areaId = String(b.areaId || "");
+    const result = await savePlots(env, areaId, b.plots);
+    if (!result.ok) return json({ error: result.error }, { status: 400 });
+    await pushAreaById(env, areaId);
+    return json({ plots: await listPlots(env, areaId) });
+  }
+  if (p === "/api/admin/land/placements" && m === "GET") {
+    return json({ placements: await listPlacements(env, { areaId: url.searchParams.get("area") || undefined }) });
+  }
+  if (p === "/api/admin/land/placements" && m === "POST") {
+    const result = await savePlacement(env, await body());
+    if (!result.ok) return json({ error: result.error }, { status: result.status });
+    await pushAreaById(env, result.placement.areaId);
+    return json({ placement: result.placement });
+  }
+  if (p === "/api/admin/land/placements" && m === "DELETE") {
+    const area = await deletePlacement(env, (await body()).id);
+    await pushAreaById(env, area);
+    return json({ ok: !!area });
+  }
+  if (p === "/api/admin/land/placements/end" && m === "POST") {
+    const area = await endPlacement(env, (await body()).id);
+    await pushAreaById(env, area);
+    return json({ ok: !!area });
+  }
+  if (p === "/api/admin/land/orders" && m === "GET") {
+    return json({ orders: await listOrders(env, url.searchParams.get("status") || undefined) });
+  }
+  if (p === "/api/admin/land/orders" && m === "POST") {
+    const result = await orderAction(env, await body());
+    if (!result.ok) return json({ error: result.error }, { status: result.status });
+    await pushAreaById(env, result.areaId);
+    return json(result);
+  }
+  if (p === "/api/admin/land/ads" && m === "GET") return json({ ads: await listAdsAndCoupons(env) });
+
+  // ---- 招待リンク・Web申し込み ----
+  if (p === "/api/admin/invites" && m === "GET") {
+    const [invites, characters] = await Promise.all([listInvites(env), listAdminCharacters(env)]);
+    return json({ invites, origin: url.origin, characters: characters.map(({ ownerToken: _t, ...rest }) => rest) });
+  }
+  if (p === "/api/admin/invites" && m === "POST") {
+    const result = await createInvites(env, await body());
+    if (!result.ok) return json({ error: result.error }, { status: 400 });
+    return json({ invites: result.invites, origin: url.origin });
+  }
+  if (p === "/api/admin/invites/active" && m === "POST") {
+    const b = await body();
+    return json({ ok: await setInviteActive(env, b.code, b.active === true) });
+  }
+  if (p === "/api/admin/applications" && m === "GET") {
+    return json({ applications: await listApplications(env), settings: await getApplicationSettings(env), origin: url.origin });
+  }
+  if (p === "/api/admin/applications" && m === "POST") {
+    const result = await decideApplication(env, await body());
+    if (!result.ok) return json({ error: result.error }, { status: result.status });
+    return json(result);
+  }
+  if (p === "/api/admin/applications/settings" && m === "POST") {
+    return json({ settings: await saveApplicationSettings(env, await body()) });
+  }
+  return null;
+}
+
+/**
+ * 誰でも使える口（区画の申込・広告の回数・Web申し込み）。
+ *
+ *   GET  /api/land/catalog         申込ページの一覧（売っている区画・価格・形と色）
+ *   POST /api/land/orders          申し込む（連絡先つき。1回線1日5件まで）
+ *   GET  /api/land/orders/:id      申込の状況（?key= が合うときだけ）
+ *   POST /api/meta-ad-event        広告の詳細を開いた・リンクを開いた・クーポンを出した（回数だけ）
+ *   GET  /api/apply/settings       Web申し込みを受け付けているか
+ *   POST /api/apply                申し込む
+ *   GET  /api/apply/:id            状況（?key=。承認されたら招待リンク）
+ */
+async function handlePublicLandAndEntry(request: Request, url: URL, env: Env, log: LogContext): Promise<Response | null> {
+  const p = url.pathname;
+  const noStore = { headers: { "cache-control": "no-store" } };
+  if (p === "/api/land/catalog" && request.method === "GET") return json(await landCatalog(env), noStore);
+  if (p === "/api/land/orders" && request.method === "POST") {
+    const raw = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const result = await createOrder(env, raw, request, log);
+    if (!result.ok) return json({ error: result.error }, { status: result.status });
+    return json({ id: result.id, key: result.key, statusUrl: `/land?order=${result.id}&key=${result.key}` });
+  }
+  const om = /^\/api\/land\/orders\/([a-z0-9]{8,20})$/.exec(p);
+  if (om && request.method === "GET") {
+    const status = await orderStatus(env, om[1], url.searchParams.get("key"));
+    if (!status) return json({ error: "申込が見つかりませんでした" }, { status: 404 });
+    return json(status, noStore);
+  }
+  if (p === "/api/meta-ad-event" && request.method === "POST") {
+    const raw = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    return json({ ok: await recordAdEvent(env, raw.key, raw.type) });
+  }
+  if (p === "/api/apply/settings" && request.method === "GET") {
+    const s = await getApplicationSettings(env);
+    return json({ open: s.open, autoApprove: s.autoApprove, note: s.note, inviteText: INVITE_FAIL_TEXT }, noStore);
+  }
+  if (p === "/api/apply" && request.method === "POST") {
+    const raw = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const result = await createApplication(env, raw, request);
+    if (!result.ok) return json({ error: result.error }, { status: result.status });
+    return json({ id: result.id, key: result.key, approved: result.approved, statusUrl: `/apply?id=${result.id}&key=${result.key}` });
+  }
+  const am = /^\/api\/apply\/([a-z0-9]{8,20})$/.exec(p);
+  if (am && request.method === "GET") {
+    const status = await applicationStatus(env, am[1], url.searchParams.get("key"), url.origin);
+    if (!status) return json({ error: "申し込みが見つかりませんでした" }, { status: 404 });
+    return json(status, noStore);
   }
   return null;
 }

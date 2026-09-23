@@ -430,6 +430,15 @@ check("確かめていないことも書いてある", bizHtml.includes("モデ�
   check("センサーのミニゲームが全部、画面側に実装されている", sensorIds.every((id) => new RegExp(`\\b${id}: [A-Z][A-Za-z]+Game`).test(sensorJs)));
   check("ロビーの一覧に、状態（公開中・近日開放）が付いている", rooms.rooms.every((r) => r.state === "open" || r.state === "soon"));
   const metaRes = await fetch(`${BASE}/meta`);
+  // 和風を中心に足した10エリア・広告の申込ページ・Web申し込み・会話の吹き出し
+  check("最初からあるエリアが12か所ある（和風・神社を含む）", ["sakura-jinja", "wa-teien", "natsu-matsuri"].every((id) => rooms.rooms.some((r) => r.id === id)));
+  check("メタバースに会話の吹き出しと広告の詳細がある", metaHtml.includes('id="talkBox"') && metaHtml.includes('id="adSheet"') && metaHtml.includes("/vendor/qrcode.js"));
+  const landHtml = await (await fetch(`${BASE}/land`)).text();
+  check("広告・ランドマークの申込ページが配信される", landHtml.includes("/api/land/catalog"));
+  const applyHtml = await (await fetch(`${BASE}/apply`)).text();
+  check("Web申し込みのページが配信される", applyHtml.includes("/api/apply"));
+  const badInvite = await fetch(`${BASE}/i/nosuchcode123`, { redirect: "manual" });
+  check("使えない招待リンクは、申し込みページで理由を伝える", (badInvite.headers.get("location") || "").includes("/apply?invite="));
   check("メタバースの画面で、傾き・動き・ARを自分のページに許している", /gyroscope=\(self\)/.test(metaRes.headers.get("permissions-policy") || "") && /xr-spatial-tracking=\(self\)/.test(metaRes.headers.get("permissions-policy") || ""));
 }
 check("料金の節があり、ヘッダーから飛べる", bizHtml.includes('id="pricing"') && bizHtml.includes('href="#pricing"'));

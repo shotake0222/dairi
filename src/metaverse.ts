@@ -35,6 +35,17 @@ export const PLACES = [
   { id: "shrine", label: "境内" },
   { id: "beach", label: "海辺" },
   { id: "hill", label: "夜空の丘" },
+  // 2026-09-23 追加（和風を中心に10か所）
+  { id: "sakura", label: "桜の神社" },
+  { id: "garden", label: "和の庭園" },
+  { id: "onsen", label: "温泉街" },
+  { id: "bamboo", label: "竹林の小径" },
+  { id: "momiji", label: "紅葉の山寺" },
+  { id: "matsuri", label: "夏祭りの参道" },
+  { id: "snow", label: "雪の里" },
+  { id: "lake", label: "星降る湖" },
+  { id: "forest", label: "森のひろば" },
+  { id: "flower", label: "花畑" },
 ] as const;
 
 export const TIMES = [
@@ -171,6 +182,39 @@ export const SLOTS = [
   { id: "front-right", label: "右手前", x: 5.4, z: 5.6 },
 ] as const;
 
+/** 区画の場所（エリアの外周。置く物の7か所とは重ならない） */
+export const LAND_SPOTS = [
+  { id: "nw", label: "左奥の角", x: -8.0, z: -7.6 },
+  { id: "ne", label: "右奥の角", x: 8.0, z: -7.6 },
+  { id: "bl", label: "奥の左", x: -2.9, z: -8.3 },
+  { id: "br", label: "奥の右", x: 2.9, z: -8.3 },
+  { id: "lb", label: "左の奥", x: -8.4, z: -3.1 },
+  { id: "rb", label: "右の奥", x: 8.4, z: -3.1 },
+  { id: "sw", label: "左手前の角", x: -8.0, z: 8.0 },
+  { id: "se", label: "右手前の角", x: 8.0, z: 8.0 },
+] as const;
+
+/** デジタルランドマークの形（画面側 public/meta/land.mjs で組み立てる） */
+export const LANDMARK_MODELS = [
+  { id: "tower", label: "時計塔" },
+  { id: "torii", label: "鳥居" },
+  { id: "tree", label: "大きな木" },
+  { id: "fountain", label: "噴水" },
+  { id: "balloon", label: "気球" },
+  { id: "monument", label: "記念碑" },
+  { id: "lantern", label: "大灯籠" },
+  { id: "statue", label: "たまごの像" },
+] as const;
+
+export const LANDMARK_COLORS = [
+  { id: "gold", label: "金", hex: "#e8b93a" },
+  { id: "red", label: "朱", hex: "#d8443a" },
+  { id: "blue", label: "青", hex: "#4f8fe0" },
+  { id: "green", label: "緑", hex: "#4fb36a" },
+  { id: "pink", label: "桃", hex: "#f28fb8" },
+  { id: "white", label: "白", hex: "#f4f1ea" },
+] as const;
+
 /** 挨拶で分身が口にする台詞。**利用者が自由に書いた文字は、他人の画面で喋らせない。** */
 export const GREETING_LINES = ["こんにちは！", "やっほー", "はじめまして", "いい天気だね", "また会えたね", "よろしくね"] as const;
 
@@ -214,6 +258,14 @@ export interface RoomObject {
   linkUrl?: string;
   /** 広告なら true。看板に「広告」の表示が付く */
   ad?: boolean;
+  /** 看板の詳しい説明（タップで開く詳細画面に出す。200文字まで） */
+  detail?: string;
+  /** 特別クーポン（詳細画面に出す）。コード・説明・期限 */
+  couponCode?: string;
+  couponNote?: string;
+  couponUntil?: number | null;
+  /** 詳細画面のQRコードが指す先（https）。空ならリンク先 */
+  qrUrl?: string;
   /** 動画 */
   videoUrl?: string;
   /** 宝さがし: 星の数と制限時間[秒] */
@@ -244,6 +296,13 @@ export interface RoomConfig {
   closesAt: number | null;
   mergedInto: string | null;
   sortOrder: number;
+  /**
+   * 部屋に入った人へ渡すときだけ付く（src/metaRoomView.ts が組み立てる）。
+   * npcs の cid（分身の識別子）は部屋の中だけで使い、画面へは渡さない（metaverseRoom.ts の publicConfig）。
+   */
+  npcs?: Array<{ aid: string; cid: string } & Record<string, unknown>>;
+  placements?: Array<Record<string, unknown>>;
+  plotsForSale?: Array<Record<string, unknown>>;
 }
 
 /** 入れるかどうか（状態と日時から、いま決まるもの） */
@@ -311,6 +370,181 @@ export const BUILTIN_ROOMS: RoomConfig[] = [
       { id: "hotcold", type: "hotcold", slot: "back-left", title: "ホット＆コールド", text: "月の宝の方角をさがそう", goal: 3, seconds: 90, level: 2, clearMessage: "宝を見つけた！" },
     ],
   },
+  // ---- 2026-09-23 追加の10エリア（和風・神社を中心に） ----
+  {
+    id: "sakura-jinja",
+    name: "桜の神社",
+    place: "sakura",
+    time: "day",
+    camera: "overview",
+    listed: true,
+    builtin: true,
+    ...AREA_DEFAULTS,
+    sortOrder: 30,
+    objects: [
+      { id: "omairi", type: "board", slot: "back", title: "ようこそ桜の神社へ", text: "鳥居をくぐって、分身といっしょにお参りしよう。", ad: false },
+      { id: "omikuji", type: "quiz", slot: "back-left", title: "おみくじ○×", text: "神社の豆知識クイズ", questions: [
+        { q: "鳥居は、神様の場所への入口のしるし。", a: "o", note: "鳥居の内側は神様の場所とされます" },
+        { q: "参道の真ん中は、神様の通り道といわれる。", a: "o", note: "端を歩くのが丁寧とされます" },
+        { q: "お賽銭は、投げ入れるほど願いが叶う。", a: "x", note: "静かに入れるのが丁寧です" },
+      ], clearMessage: "大吉！" },
+      { id: "hanabira", type: "skycatch", slot: "back-right", title: "花びらキャッチ", text: "舞う花びらを見回してつかまえよう", goal: 10, seconds: 45, level: 1, clearMessage: "春をつかまえた！" },
+      { id: "sando", type: "rally", slot: "left", title: "参道めぐり", text: "境内の灯籠をめぐろう", points: 5, clearMessage: "お参り完了！" },
+      { id: "members", type: "members", slot: "right", title: "お参り中の子", text: "" },
+    ],
+  },
+  {
+    id: "wa-teien",
+    name: "和の庭園",
+    place: "garden",
+    time: "morning",
+    camera: "front",
+    listed: true,
+    builtin: true,
+    ...AREA_DEFAULTS,
+    sortOrder: 40,
+    objects: [
+      { id: "welcome", type: "board", slot: "back", title: "和の庭園", text: "池のまわりを、ゆっくり歩いてみよう。", ad: false },
+      { id: "balance", type: "balance", slot: "left", title: "飛び石わたり", text: "丸太の橋をわたろう", seconds: 25, level: 1, clearMessage: "おみごと！" },
+      { id: "hotcold", type: "hotcold", slot: "right", title: "かくれ石さがし", text: "庭のどこかの宝の方角をさがそう", goal: 2, seconds: 90, level: 1, clearMessage: "見つけた！" },
+      { id: "members", type: "members", slot: "front-left", title: "庭にいる子", text: "" },
+    ],
+  },
+  {
+    id: "onsen-gai",
+    name: "ゆけむり温泉街",
+    place: "onsen",
+    time: "evening",
+    camera: "overview",
+    listed: true,
+    builtin: true,
+    ...AREA_DEFAULTS,
+    sortOrder: 50,
+    objects: [
+      { id: "welcome", type: "board", slot: "back", title: "ゆけむり温泉街", text: "湯けむりの町を、分身とおさんぽ。", ad: false },
+      { id: "tilt", type: "tilt", slot: "back-left", title: "温泉たまごコロコロ", text: "かたむけてたまごを集めよう", goal: 8, seconds: 45, level: 2, clearMessage: "ほかほか！" },
+      { id: "treasure", type: "treasure", slot: "back-right", title: "湯のはな集め", text: "町に落ちている湯のはなを集めよう", count: 8, seconds: 60, clearMessage: "いい湯だな！" },
+      { id: "members", type: "members", slot: "front-right", title: "湯上がりの子", text: "" },
+    ],
+  },
+  {
+    id: "chikurin",
+    name: "竹林の小径",
+    place: "bamboo",
+    time: "day",
+    camera: "follow",
+    listed: true,
+    builtin: true,
+    ...AREA_DEFAULTS,
+    sortOrder: 60,
+    objects: [
+      { id: "daruma", type: "daruma", slot: "back", title: "竹林のだるまさん", text: "鬼がふり向いたら止まって！", seconds: 90, level: 2, clearMessage: "タッチ！" },
+      { id: "voice", type: "voice", slot: "left", title: "こだまジャンプ", text: "声でジャンプして進もう", goal: 8, seconds: 60, level: 1, clearMessage: "こだまが返ってきた！" },
+      { id: "members", type: "members", slot: "right", title: "小径の子", text: "" },
+    ],
+  },
+  {
+    id: "momiji-dera",
+    name: "紅葉の山寺",
+    place: "momiji",
+    time: "evening",
+    camera: "overview",
+    listed: true,
+    builtin: true,
+    ...AREA_DEFAULTS,
+    sortOrder: 70,
+    objects: [
+      { id: "welcome", type: "board", slot: "back", title: "紅葉の山寺", text: "赤と黄色の葉っぱが、ひらひら。", ad: false },
+      { id: "rally", type: "rally", slot: "back-left", title: "もみじ狩り", text: "山寺の紅葉スポットをめぐろう", points: 5, clearMessage: "秋を満喫！" },
+      { id: "rhythm", type: "rhythm", slot: "back-right", title: "鐘つきリズム", text: "鐘の音に合わせてふろう", goal: 12, level: 1, clearMessage: "ごーん！" },
+      { id: "members", type: "members", slot: "front-left", title: "山寺の子", text: "" },
+    ],
+  },
+  {
+    id: "natsu-matsuri",
+    name: "夏祭りの参道",
+    place: "matsuri",
+    time: "night",
+    camera: "overview",
+    listed: true,
+    builtin: true,
+    ...AREA_DEFAULTS,
+    sortOrder: 80,
+    objects: [
+      { id: "welcome", type: "board", slot: "back", title: "夏祭り", text: "提灯のあかりの下で、屋台めぐり！", ad: false },
+      { id: "shake", type: "shake", slot: "back-left", title: "おみこしダッシュ", text: "ふって、おみこしを運ぼう", goal: 30, seconds: 25, level: 2, clearMessage: "わっしょい！" },
+      { id: "treasure", type: "treasure", slot: "back-right", title: "金魚すくい", text: "逃げる金魚（星）を集めよう", count: 10, seconds: 60, clearMessage: "大漁！" },
+      { id: "skycatch", type: "skycatch", slot: "left", title: "花火キャッチ", text: "夜空の花火を見回してキャッチ", goal: 8, seconds: 45, level: 2, clearMessage: "たまや〜！" },
+      { id: "members", type: "members", slot: "right", title: "お祭りの子", text: "" },
+    ],
+  },
+  {
+    id: "yuki-no-sato",
+    name: "雪の里",
+    place: "snow",
+    time: "morning",
+    camera: "overview",
+    listed: true,
+    builtin: true,
+    ...AREA_DEFAULTS,
+    sortOrder: 90,
+    objects: [
+      { id: "welcome", type: "board", slot: "back", title: "雪の里", text: "まっしろな雪の上を歩いてみよう。", ad: false },
+      { id: "tilt", type: "tilt", slot: "left", title: "雪玉コロコロ", text: "かたむけて雪玉を大きく", goal: 10, seconds: 50, level: 2, clearMessage: "大きな雪だるま！" },
+      { id: "arhunt", type: "arhunt", slot: "right", title: "雪の結晶さがし", text: "カメラで結晶をさがそう", goal: 8, seconds: 45, level: 1, clearMessage: "きらきら！" },
+      { id: "members", type: "members", slot: "front-left", title: "雪あそびの子", text: "" },
+    ],
+  },
+  {
+    id: "hoshi-mizuumi",
+    name: "星降る湖",
+    place: "lake",
+    time: "night",
+    camera: "front",
+    listed: true,
+    builtin: true,
+    ...AREA_DEFAULTS,
+    sortOrder: 100,
+    objects: [
+      { id: "skycatch", type: "skycatch", slot: "back", title: "流れ星キャッチ", text: "湖に映る流れ星をつかまえよう", goal: 10, seconds: 45, level: 2, clearMessage: "願いごと、とどいたかな" },
+      { id: "xr", type: "xr", slot: "left", title: "ARシャボン玉", text: "現実の床でシャボン玉割り", goal: 10, seconds: 60, level: 1, clearMessage: "パチパチ！" },
+      { id: "members", type: "members", slot: "right", title: "湖のほとりの子", text: "" },
+    ],
+  },
+  {
+    id: "mori-hiroba",
+    name: "森のひろば",
+    place: "forest",
+    time: "day",
+    camera: "overview",
+    listed: true,
+    builtin: true,
+    ...AREA_DEFAULTS,
+    sortOrder: 110,
+    objects: [
+      { id: "welcome", type: "board", slot: "back", title: "森のひろば", text: "木もれびの中で、みんなとあそぼう。", ad: false },
+      { id: "treasure", type: "treasure", slot: "back-left", title: "どんぐり拾い", text: "森のどんぐりを集めよう", count: 12, seconds: 60, clearMessage: "どんぐりいっぱい！" },
+      { id: "balance", type: "balance", slot: "back-right", title: "丸太わたり", text: "丸太の上でバランス", seconds: 30, level: 2, clearMessage: "わたりきった！" },
+      { id: "members", type: "members", slot: "front-right", title: "森の子", text: "" },
+    ],
+  },
+  {
+    id: "hanabatake",
+    name: "花畑",
+    place: "flower",
+    time: "day",
+    camera: "overview",
+    listed: true,
+    builtin: true,
+    ...AREA_DEFAULTS,
+    sortOrder: 120,
+    objects: [
+      { id: "welcome", type: "board", slot: "back", title: "花畑", text: "色とりどりの花のあいだを、おさんぽ。", ad: false },
+      { id: "rally", type: "rally", slot: "left", title: "花めぐり", text: "花畑の旗をまわろう", points: 6, clearMessage: "いい香り！" },
+      { id: "rhythm", type: "rhythm", slot: "right", title: "ちょうちょリズム", text: "ちょうちょに合わせてふろう", goal: 16, level: 2, clearMessage: "ひらひら！" },
+      { id: "members", type: "members", slot: "front-left", title: "花畑の子", text: "" },
+    ],
+  },
 ];
 
 const ROOM_ID_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789";
@@ -327,17 +561,24 @@ export function isValidRoomId(id: unknown): id is string {
 }
 
 /** 1行の文字にする（改行・制御文字を落とし、長さを切る）。 */
-function cleanText(value: unknown, max: number): string {
+export function cleanText(value: unknown, max: number): string {
   if (typeof value !== "string") return "";
   // eslint-disable-next-line no-control-regex
   return value.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, max);
+}
+
+/** 複数行を許す文字（詳細の説明など）。改行は2つまでに詰める */
+export function cleanLong(value: unknown, max: number): string {
+  if (typeof value !== "string") return "";
+  // eslint-disable-next-line no-control-regex
+  return value.replace(/[\u0000-\u0009\u000b-\u001f\u007f]/g, " ").replace(/\n{3,}/g, "\n\n").trim().slice(0, max);
 }
 
 function pick<T extends { id: string }>(list: readonly T[], value: unknown, fallback: T["id"]): T["id"] {
   return list.some((x) => x.id === value) ? (value as T["id"]) : fallback;
 }
 
-function cleanUrl(value: unknown): string {
+export function cleanUrl(value: unknown): string {
   if (typeof value !== "string" || !value.trim()) return "";
   try {
     const u = new URL(value.trim());
@@ -347,12 +588,12 @@ function cleanUrl(value: unknown): string {
   }
 }
 
-function intIn(value: unknown, min: number, max: number, fallback: number): number {
+export function intIn(value: unknown, min: number, max: number, fallback: number): number {
   const n = Math.round(Number(value));
   return Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : fallback;
 }
 
-function timeOrNull(value: unknown): number | null {
+export function timeOrNull(value: unknown): number | null {
   if (value === null || value === undefined || value === "") return null;
   const n = typeof value === "number" ? value : Date.parse(String(value));
   return Number.isFinite(n) && n > 0 ? Math.round(n) : null;
@@ -387,6 +628,11 @@ export function sanitizeObjects(raw: unknown): { ok: true; value: RoomObject[] }
       base.imageUrl = cleanUrl(o.imageUrl);
       base.linkUrl = cleanUrl(o.linkUrl);
       base.ad = o.ad === true;
+      base.detail = cleanLong(o.detail, 200);
+      base.couponCode = cleanText(o.couponCode, 24);
+      base.couponNote = cleanText(o.couponNote, 60);
+      base.couponUntil = timeOrNull(o.couponUntil);
+      base.qrUrl = cleanUrl(o.qrUrl);
       if (!base.text && !base.imageUrl) return { ok: false, error: `${n}つ目（看板）: 文字か画像のURLを入れてください` };
       if (typeof o.linkUrl === "string" && o.linkUrl.trim() && !base.linkUrl) {
         return { ok: false, error: `${n}つ目（看板）: リンクは https:// で始まるURLにしてください` };
@@ -741,5 +987,8 @@ export function metaverseCatalog() {
     maxObjects: MAX_OBJECTS,
     maxQuizQuestions: MAX_QUIZ_QUESTIONS,
     worldHalf: WORLD_HALF,
+    landSpots: LAND_SPOTS,
+    landmarkModels: LANDMARK_MODELS,
+    landmarkColors: LANDMARK_COLORS,
   };
 }

@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>わけたま｜メタバースの広告・ランドマークの申し込み</title>
+<meta name="description" content="わけたまのメタバースに、広告の看板やデジタルランドマーク（記念の塔・鳥居・像など）を置く申し込み。" />
+<meta name="theme-color" content="#7c5cff" />
+<link rel="icon" href="/icons/favicon-64.png" sizes="64x64" type="image/png" />
+<style>
+  :root { color-scheme: light; --brand:#7c5cff; --ink:#1c1630; --muted:#6f668f; --line:#e9e5f7; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #f7f5ff; color: var(--ink); line-height: 1.8; font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif; }
+  header { background: #fff; border-bottom: 1px solid var(--line); padding: 18px 16px; }
+  header h1 { margin: 4px 0; font-size: 19px; }
+  header p { margin: 0; font-size: 12.5px; color: var(--muted); }
+  main { max-width: 680px; margin: 0 auto; padding: 18px 16px 72px; }
+  section { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 18px; margin-bottom: 14px; }
+  h2 { margin: 0 0 8px; font-size: 15px; }
+  p, li { font-size: 13.5px; color: #4a4266; }
+  label { display: block; font-size: 12.5px; color: var(--muted); margin: 10px 0 0; }
+  input, select, textarea { width: 100%; margin-top: 4px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 10px; font: inherit; font-size: 14px; background: #fff; color: var(--ink); }
+  textarea { resize: vertical; min-height: 70px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  @media (max-width: 520px) { .row { grid-template-columns: 1fr; } }
+  .plots { display: grid; gap: 8px; }
+  .plot { border: 2px solid var(--line); border-radius: 12px; padding: 10px 12px; cursor: pointer; background: #fcfbff; text-align: left; font: inherit; font-size: 13px; }
+  .plot.on { border-color: var(--brand); background: #f3efff; }
+  .plot[disabled] { opacity: .5; cursor: not-allowed; }
+  .plot b { font-size: 14px; }
+  .kinds { display: flex; gap: 8px; margin-top: 8px; }
+  .kinds label { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; margin: 0; color: var(--ink); font-size: 13px; }
+  .kinds input { width: auto; margin: 0; }
+  .primary { width: 100%; background: var(--brand); color: #fff; border: none; border-radius: 999px; padding: 13px; font-size: 15px; font-weight: 700; margin-top: 14px; cursor: pointer; }
+  .primary:disabled { opacity: .5; }
+  .note { font-size: 12px; color: var(--muted); background: #f7f5ff; border-radius: 10px; padding: 10px 12px; }
+  .err { color: #c0392b; font-size: 13px; min-height: 1em; }
+  .status { font-size: 15px; font-weight: 700; }
+  .pay { display: block; text-align: center; background: #ff6f91; color: #fff; text-decoration: none; border-radius: 999px; padding: 12px; font-weight: 700; margin-top: 10px; }
+  .keep { word-break: break-all; font-size: 12.5px; background: #fffbea; border: 1px solid #f2e2a0; border-radius: 10px; padding: 10px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1>メタバースの広告・ランドマーク</h1>
+  <p>わけたまのメタバース（分身が集まる3Dの空間）の区画に、広告の看板やデジタルランドマークを置けます。</p>
+</header>
+<main>
+  <section id="statusView" hidden>
+    <h2>申し込みの状況</h2>
+    <p class="status" id="stLabel"></p>
+    <p id="stBody"></p>
+    <a class="pay" id="stPay" href="#" target="_blank" rel="noopener" hidden>お支払いへ進む ↗</a>
+    <p class="note" id="stNote"></p>
+    <p><a href="/land">新しく申し込む</a></p>
+  </section>
+
+  <div id="formView">
+    <section>
+      <h2>しくみ</h2>
+      <ol>
+        <li>エリアと区画、置く物（広告の看板／ランドマーク）と中身を決めて申し込みます</li>
+        <li>運営が中身を確かめます（子どもも使う空間なので、掲載できないものはお断りします）</li>
+        <li>承認されると、この申し込みの状況ページに金額とお支払いの案内が出ます</li>
+        <li>お支払いを確認したら、その日から期間ぶんメタバースに表示されます</li>
+      </ol>
+      <p class="note">広告には「広告」、ランドマークには「提供: お名前」が必ず表示されます。見た人の情報がお客様に渡ることはありません（日ごとの表示・クリック・クーポン表示の回数だけお伝えできます）。</p>
+    </section>
+
+    <section id="closedBox" hidden>
+      <h2>いまは受け付けていません</h2>
+      <p>申し込みの受付を止めています。再開までお待ちください。</p>
+    </section>
+
+    <form id="orderForm" hidden>
+      <section>
+        <h2>1. 区画をえらぶ</h2>
+        <label>エリア<select id="area"></select></label>
+        <div class="plots" id="plots" style="margin-top:10px"></div>
+        <div class="kinds" id="kinds">
+          <label><input type="radio" name="kind" value="ad" checked /> 広告の看板</label>
+          <label><input type="radio" name="kind" value="landmark" /> ランドマーク</label>
+        </div>
+        <label>期間<select id="quantity"></select></label>
+        <p class="note" id="priceNote"></p>
+      </section>
+
+      <section>
+        <h2>2. 中身</h2>
+        <label>提供者の表示名（必須。看板・銘板に出ます）<input id="sponsor" maxlength="30" required /></label>
+        <div id="adFields">
+          <label>見出し<input id="title" maxlength="24" /></label>
+          <label>本文（80文字まで）<input id="text" maxlength="80" /></label>
+          <label>画像のURL（https://、任意）<input id="imageUrl" placeholder="https://…" /></label>
+        </div>
+        <div id="lmFields" hidden>
+          <div class="row">
+            <label>形<select id="model"></select></label>
+            <label>色<select id="color"></select></label>
+          </div>
+          <label>銘板の名前（20文字まで）<input id="plaque" maxlength="20" /></label>
+        </div>
+        <label>詳しい説明（タップで開く詳細画面に出ます。300文字まで）<textarea id="detail" maxlength="300"></textarea></label>
+        <label>リンク先（https://、任意）<input id="linkUrl" placeholder="https://…" /></label>
+        <label>QRコードの行き先（空ならリンク先）<input id="qrUrl" placeholder="https://…" /></label>
+        <div class="row">
+          <label>特別クーポンのコード（任意）<input id="couponCode" maxlength="24" /></label>
+          <label>クーポンの有効期限（任意）<input id="couponUntil" type="date" /></label>
+        </div>
+        <label>クーポンの説明（任意）<input id="couponNote" maxlength="60" placeholder="例: 会計時にこの画面を見せると10%引き" /></label>
+      </section>
+
+      <section>
+        <h2>3. ご連絡先</h2>
+        <label>お名前（必須）<input id="contactName" maxlength="40" required /></label>
+        <label>メールアドレス（必須。申し込みの連絡だけに使います）<input id="contactEmail" type="email" maxlength="120" required /></label>
+        <label>会社・団体名（任意）<input id="company" maxlength="80" /></label>
+        <label>ご要望（任意）<textarea id="note" maxlength="500"></textarea></label>
+        <label style="display:flex;gap:8px;align-items:flex-start;color:var(--ink)"><input type="checkbox" id="agree" style="width:auto;margin-top:5px" />
+          <span><a href="/terms" target="_blank">利用規約</a>（10-4 広告・デジタルランドマークの掲載）と <a href="/privacy" target="_blank">プライバシーポリシー</a> に同意します</span></label>
+        <p class="err" id="err"></p>
+        <button class="primary" id="submitBtn" type="submit">申し込む</button>
+      </section>
+    </form>
+  </div>
+</main>
+<script>
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  var params = new URLSearchParams(location.search);
+  var catalog = null;
+  var chosenSpot = params.get("spot") || "";
+
+  function yen(n) { return n == null ? "要相談" : Number(n).toLocaleString() + "円"; }
+  function kind() { var r = document.querySelector('input[name="kind"]:checked'); return r ? r.value : "ad"; }
+  function area() { return (catalog.areas || []).find(function (a) { return a.id === $("area").value; }); }
+  function plot() { var a = area(); return a && a.plots.find(function (p) { return p.spot === chosenSpot; }); }
+  function allows(p, k) { return p && (p.sale === "both" || p.sale === k); }
+
+  async function showStatus(id, key) {
+    $("formView").hidden = true;
+    $("statusView").hidden = false;
+    var res = await fetch("/api/land/orders/" + encodeURIComponent(id) + "?key=" + encodeURIComponent(key));
+    if (!res.ok) { $("stLabel").textContent = "申し込みが見つかりませんでした"; return; }
+    var s = await res.json();
+    $("stLabel").textContent = s.statusLabel;
+    var lines = [s.areaName + "・" + s.spotLabel + "（" + (s.kind === "landmark" ? "ランドマーク" : "広告の看板") + "）", "期間: " + s.unitDays * s.quantity + "日"];
+    if (s.price != null) lines.push("金額: " + yen(s.price));
+    if (s.period) lines.push("掲載: " + new Date(s.period.startsAt).toLocaleDateString("ja-JP") + " 〜 " + (s.period.endsAt ? new Date(s.period.endsAt).toLocaleDateString("ja-JP") : ""));
+    if (s.rejectReason) lines.push("理由: " + s.rejectReason);
+    $("stBody").textContent = lines.join("\n");
+    $("stBody").style.whiteSpace = "pre-line";
+    $("stPay").hidden = !s.paymentUrl;
+    if (s.paymentUrl) $("stPay").href = s.paymentUrl;
+    $("stNote").textContent = s.status === "pending" || s.status === "approved" ? s.paymentNote : "";
+  }
+
+  function renderPlots() {
+    var a = area();
+    var box = $("plots");
+    box.innerHTML = "";
+    if (!a) return;
+    a.plots.forEach(function (p) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "plot" + (p.spot === chosenSpot ? " on" : "");
+      var kinds = [];
+      if (p.sale === "ad" || p.sale === "both") kinds.push("広告 " + yen(p.adPrice) + "/" + catalog.adUnitDays + "日");
+      if (p.sale === "landmark" || p.sale === "both") kinds.push("ランドマーク " + yen(p.landmarkPrice) + "/" + catalog.landmarkUnitDays + "日");
+      b.innerHTML = "<b></b><br><span></span>";
+      b.querySelector("b").textContent = p.label + (p.busy ? "（掲載中" + (p.busyUntil ? "・" + new Date(p.busyUntil).toLocaleDateString("ja-JP") + "まで" : "") + "）" : "");
+      b.querySelector("span").textContent = kinds.join("／") + (p.note ? "　" + p.note : "");
+      b.disabled = p.busy;
+      b.addEventListener("click", function () { chosenSpot = p.spot; renderPlots(); renderKind(); });
+      box.appendChild(b);
+    });
+  }
+
+  function renderKind() {
+    var p = plot();
+    document.querySelectorAll('input[name="kind"]').forEach(function (r) {
+      r.disabled = !!p && !allows(p, r.value);
+      if (r.disabled && r.checked) { var other = document.querySelector('input[name="kind"]:not(:disabled)'); if (other) other.checked = true; }
+    });
+    var k = kind();
+    $("adFields").hidden = k !== "ad";
+    $("lmFields").hidden = k !== "landmark";
+    var unit = k === "landmark" ? catalog.landmarkUnitDays : catalog.adUnitDays;
+    var q = $("quantity");
+    var prev = q.value;
+    q.innerHTML = "";
+    for (var i = 1; i <= catalog.maxUnits; i++) {
+      var o = document.createElement("option");
+      o.value = String(i);
+      o.textContent = unit * i + "日（" + i + "単位）";
+      q.appendChild(o);
+    }
+    if (prev) q.value = prev;
+    var price = p ? (k === "landmark" ? p.landmarkPrice : p.adPrice) : null;
+    $("priceNote").textContent = p
+      ? "目安: " + (price == null ? "要相談" : yen(price * Number(q.value || 1))) + "（税・最終の金額は承認時にご案内します）"
+      : "区画をえらんでください";
+  }
+
+  async function init() {
+    if (params.get("order") && params.get("key")) return showStatus(params.get("order"), params.get("key"));
+    catalog = await (await fetch("/api/land/catalog")).json();
+    if (!catalog.salesOpen || !catalog.areas.length) { $("closedBox").hidden = false; return; }
+    $("orderForm").hidden = false;
+    catalog.areas.forEach(function (a) {
+      var o = document.createElement("option");
+      o.value = a.id;
+      o.textContent = a.name;
+      $("area").appendChild(o);
+    });
+    if (params.get("area")) $("area").value = params.get("area");
+    catalog.models.forEach(function (m) { var o = document.createElement("option"); o.value = m.id; o.textContent = m.label; $("model").appendChild(o); });
+    catalog.colors.forEach(function (c) { var o = document.createElement("option"); o.value = c.id; o.textContent = c.label; $("color").appendChild(o); });
+    $("area").addEventListener("change", function () { chosenSpot = ""; renderPlots(); renderKind(); });
+    document.querySelectorAll('input[name="kind"]').forEach(function (r) { r.addEventListener("change", renderKind); });
+    $("quantity").addEventListener("change", renderKind);
+    renderPlots();
+    renderKind();
+  }
+
+  $("orderForm").addEventListener("submit", async function (e) {
+    e.preventDefault();
+    $("err").textContent = "";
+    if (!chosenSpot) { $("err").textContent = "区画をえらんでください"; return; }
+    var until = $("couponUntil").value ? new Date($("couponUntil").value + "T23:59:59").getTime() : null;
+    var body = {
+      areaId: $("area").value, spot: chosenSpot, kind: kind(), quantity: Number($("quantity").value || 1), agree: $("agree").checked,
+      contactName: $("contactName").value, contactEmail: $("contactEmail").value, company: $("company").value, note: $("note").value,
+      content: {
+        sponsor: $("sponsor").value, title: $("title").value, text: $("text").value, imageUrl: $("imageUrl").value,
+        model: $("model").value, color: $("color").value, plaque: $("plaque").value, detail: $("detail").value,
+        linkUrl: $("linkUrl").value, qrUrl: $("qrUrl").value, couponCode: $("couponCode").value, couponNote: $("couponNote").value, couponUntil: until,
+      },
+    };
+    $("submitBtn").disabled = true;
+    try {
+      var res = await fetch("/api/land/orders", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+      var data = await res.json();
+      if (!res.ok) { $("err").textContent = data.error || "送れませんでした"; return; }
+      history.replaceState(null, "", data.statusUrl);
+      await showStatus(data.id, data.key);
+      var keep = document.createElement("p");
+      keep.className = "keep";
+      keep.textContent = "このページのURLが、申し込みの状況を見るための鍵です。ブックマークしておいてください: " + location.href;
+      $("statusView").insertBefore(keep, $("stNote"));
+    } finally {
+      $("submitBtn").disabled = false;
+    }
+  });
+
+  init();
+})();
+</script>
+</body>
+</html>

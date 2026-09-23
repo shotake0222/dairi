@@ -16,7 +16,7 @@
 
 import { Driver, Persona, dispatch } from "./wt_core.mjs";
 import { loadCharacter } from "./glb.mjs";
-import { textCanvas } from "./world.mjs";
+import { textCanvas, wrapText } from "./world.mjs";
 
 const TAU = Math.PI * 2;
 
@@ -125,6 +125,8 @@ export class Actor {
     this.color = data.color;
     this.voice = data.voice;
     this.mine = !!opts.mine;
+    /** 運営が置いた NPC（役目・メッセージつき） */
+    this.npc = opts.npc || null;
     this.persona = null;
     try {
       this.persona = new Persona(data.compact);
@@ -167,7 +169,9 @@ export class Actor {
     this.group.add(shadow);
 
     // 名札
-    this.label = this.makeSprite([this.name], { width: 512, height: 112, fontSize: 46, bg: this.mine ? "rgba(139,108,255,0.92)" : "rgba(255,255,255,0.9)", color: this.mine ? "#ffffff" : "#1c1630" }, 1.5);
+    const labelText = this.npc && this.npc.role ? `${this.name}（${this.npc.role}）` : this.name;
+    const labelBg = this.mine ? "rgba(139,108,255,0.92)" : this.npc ? "rgba(255,196,64,0.95)" : "rgba(255,255,255,0.9)";
+    this.label = this.makeSprite([labelText], { width: 512, height: 112, fontSize: 46, bg: labelBg, color: this.mine ? "#ffffff" : "#1c1630" }, 1.5);
     this.label.position.y = 1.55;
     this.group.add(this.label);
 
@@ -217,8 +221,11 @@ export class Actor {
       this.bubbleSprite.material.map.dispose();
       this.bubbleSprite.material.dispose();
     }
-    const spr = this.makeSprite([text], { width: 512, height: 150, fontSize: kind === "stamp" ? 78 : 48, bg: "rgba(255,255,255,0.96)", color: kind === "stamp" ? "#e8457a" : "#1c1630", radius: 60 }, 1.7);
-    spr.position.y = 2.2;
+    // 長い言葉（分身どうしの会話）は折り返して、吹き出しを縦に伸ばす
+    const lines = kind === "stamp" || String(text).length <= 12 ? [text] : wrapText(String(text), 13, 4);
+    const height = 150 + (lines.length - 1) * 62;
+    const spr = this.makeSprite(lines, { width: 512, height, fontSize: kind === "stamp" ? 78 : 44, bg: kind === "talk" ? "rgba(255,248,214,0.97)" : "rgba(255,255,255,0.96)", color: kind === "stamp" ? "#e8457a" : "#1c1630", radius: 60 }, 1.7);
+    spr.position.y = 2.2 + (lines.length - 1) * 0.1;
     this.bubbleSprite = spr;
     this.group.add(spr);
     const mine = spr;
