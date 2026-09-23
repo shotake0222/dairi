@@ -154,6 +154,7 @@
     <button class="tab" data-panel="npc" type="button">NPC・運営の分身</button>
     <button class="tab" data-panel="land" type="button">広告・ランドマーク <span class="badge" id="badgeOrders" hidden></span></button>
     <button class="tab" data-panel="entry" type="button">招待・申し込み <span class="badge" id="badgeApps" hidden></span></button>
+    <button class="tab" data-panel="economy" type="button">通貨・お店</button>
   </div>
 
   <div class="panel" id="panel-overview">
@@ -795,6 +796,88 @@
       <div class="cardList" id="appList" style="margin-top:10px"></div>
     </section>
   </div>
+
+  <div class="panel" id="panel-economy" hidden>
+    <section>
+      <h2>メタバースの通貨</h2>
+      <p class="lead">
+        遊ぶと貯まるポイントです（毎日の入室・ミニゲームのクリア・分身どうしのおしゃべり）。
+        <strong>お金で売らない・お金に戻さない・利用者どうしで渡せない</strong>、の3つを守っています。
+        お金で売ると「前払式支払手段」（資金決済法）になり、提携店で使えるなら第三者型として登録が要ります。
+        リアルで使うときは、<b>提携店の引換券</b>（特典・割引）にかえます。提携店の特典は景品表示法の上限に収まるよう決めてください。
+      </p>
+      <div class="formGrid">
+        <label>通貨の名前<input id="ecName" maxlength="16" /></label>
+        <label>単位<input id="ecUnit" maxlength="8" /></label>
+        <label>記号<input id="ecSymbol" maxlength="4" /></label>
+        <label>毎日の入室で<input id="ecLogin" type="number" min="0" max="1000" /></label>
+        <label>ミニゲームのクリアで（同じ屋台は1日1回）<input id="ecClear" type="number" min="0" max="1000" /></label>
+        <label>おしゃべりで（1回）<input id="ecTalk" type="number" min="0" max="1000" /></label>
+        <label>おしゃべりで貯まる回数（1日）<input id="ecTalkMax" type="number" min="0" max="100" /></label>
+        <label>遊んで貯まる上限（1日）<input id="ecCap" type="number" min="0" max="100000" /></label>
+        <label>残高の上限<input id="ecMax" type="number" min="100" max="10000000" /></label>
+        <label>引換券の枚数の上限（1体・1か月）<input id="ecVoucherMax" type="number" min="0" max="100" /></label>
+      </div>
+      <label class="wide" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="ecEnabled" style="width:auto;margin:0" /> 通貨とお店を使う（止めると、貯まらず・買えなくなる。残高は残る）</label>
+      <label class="wide" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="ecReal" style="width:auto;margin:0" /> 提携店の引換券への引き換えを受け付ける</label>
+      <div class="row"><button type="button" id="ecSave">保存する</button><span id="ecStatus" style="font-size:12px;color:var(--muted)"></span></div>
+    </section>
+
+    <section>
+      <h2>集計</h2>
+      <div id="ecStats" class="cardList"></div>
+    </section>
+
+    <section>
+      <h2>商品</h2>
+      <p class="lead">身につける物（頭のかざり）・演出（使うと消える）・リアル引換券（提携店で使う）。最初からある商品も直せます（消すと「出さない」になり、持っている人の持ち物は残ります）。</p>
+      <div class="row"><button type="button" id="ecNewItem">商品を足す</button></div>
+      <div id="ecItemForm" hidden style="margin:10px 0"></div>
+      <div class="scroll"><table id="ecItems"></table></div>
+    </section>
+
+    <section>
+      <h2>お店</h2>
+      <p class="lead">どの商品を、どのお店で売るか。エリアに置くには「メタバース管理」の置く物で「お店」を選びます。</p>
+      <div class="row"><button type="button" id="ecNewShop">お店を足す</button></div>
+      <div id="ecShopForm" hidden style="margin:10px 0"></div>
+      <div class="scroll"><table id="ecShops"></table></div>
+    </section>
+
+    <section>
+      <h2>提携店（リアルのお店）</h2>
+      <p class="lead">
+        引換券を使えるお店です。作ると<b>お店の暗証番号（8けた）</b>を1回だけ表示します（保存していないので、なくしたら作り直します）。
+        お店の人は <code>/redeem</code> を開き、お客さまの引換券の番号（またはQR）と暗証番号で「使った」にします。
+      </p>
+      <div class="row"><button type="button" id="ecNewPartner">提携店を足す</button></div>
+      <div id="ecPartnerForm" hidden style="margin:10px 0"></div>
+      <div id="ecPin" class="mono" style="margin:8px 0" hidden></div>
+      <div class="scroll"><table id="ecPartners"></table></div>
+    </section>
+
+    <section>
+      <h2>引換券</h2>
+      <div class="row">
+        <select id="ecVPartner"><option value="">すべての提携店</option></select>
+        <select id="ecVStatus"><option value="">すべて</option><option value="issued">未使用</option><option value="used">使用済み</option><option value="cancelled">取り消し</option></select>
+        <button type="button" id="ecVLoad">表示</button>
+      </div>
+      <div class="scroll" style="margin-top:8px"><table id="ecVouchers"></table></div>
+    </section>
+
+    <section>
+      <h2>付与・回収と、財布の確認</h2>
+      <p class="lead">キャンペーンの付与や、問い合わせへの対応に。理由は出入りの記録に残り、利用者の財布にも「運営: 理由」と出ます。</p>
+      <div class="formGrid">
+        <label>分身のID<input id="ecGCid" class="mono" /></label>
+        <label>額（マイナスで回収）<input id="ecGAmount" type="number" /></label>
+        <label>理由<input id="ecGNote" maxlength="60" placeholder="例: 10月のイベント参加" /></label>
+      </div>
+      <div class="row"><button type="button" id="ecGrant">付与・回収する</button><button type="button" id="ecLookup">財布を見る</button><span id="ecGStatus" style="font-size:12px;color:var(--muted)"></span></div>
+      <div id="ecWallet" style="margin-top:8px"></div>
+    </section>
+  </div>
 </main>
 
 <script src="/vendor/qrcode.js"></script>
@@ -870,6 +953,7 @@
       if (tab.dataset.panel === "npc" && typeof loadNpcPanel === "function") loadNpcPanel();
       if (tab.dataset.panel === "land" && typeof loadLandPanel === "function") loadLandPanel();
       if (tab.dataset.panel === "entry" && typeof loadEntryPanel === "function") loadEntryPanel();
+      if (tab.dataset.panel === "economy" && typeof loadEconomyPanel === "function") loadEconomyPanel();
     });
   });
 
@@ -1745,5 +1829,6 @@
 </script>
 <script src="/admin-meta.js"></script>
 <script src="/admin-extra.js"></script>
+<script src="/admin-economy.js"></script>
 </body>
 </html>

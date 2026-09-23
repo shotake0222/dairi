@@ -22,6 +22,8 @@ import { buildObjects } from "./objects.mjs";
 import { GameRunner } from "./games.mjs";
 import { buildPlacements } from "./land.mjs";
 import { openGazePicker } from "./gaze.mjs";
+import { createWallet } from "./wallet.mjs";
+import { spawnEffect } from "./wear.mjs";
 
 const MY_CHARACTERS_KEY = "sodatsukake_myCharacters";
 const SOUND_KEY = "sodatsukake_metaSound";
@@ -388,6 +390,9 @@ function enterRoom(room, catalog, chosen) {
       $("quitGame").hidden = !text;
     },
     dialog,
+    onClear: (o) => {
+      if (selected) send({ t: "clear", aid: selected.aid, objectId: o.id });
+    },
     celebrate: () => {
       if (!selected) return;
       selected.bubble("やったね！", 2400);
@@ -399,6 +404,22 @@ function enterRoom(room, catalog, chosen) {
   });
   $("quitGame").addEventListener("click", () => games.stop());
   $("quitGame2").addEventListener("click", () => games.stop());
+
+  // --- 通貨・お店（wallet.mjs）と、演出（wear.mjs） ---
+  const wallet = createWallet({
+    $,
+    dialog,
+    toast,
+    hint,
+    selected: () => selected,
+    creds: (aid) => {
+      const cid = mineCid.get(aid);
+      const c = cid ? chosen.find((x) => x.cid === cid) : null;
+      return c && c.token ? { cid, token: c.token } : null;
+    },
+    send: (m) => send(m),
+  });
+  const effects = [];
 
   // --- カメラ ---
   const CAMERA_MODES = catalog.cameras.map((c) => c.id);
@@ -539,6 +560,7 @@ function enterRoom(room, catalog, chosen) {
         selected = a;
         setTalkTarget(talkTarget);
         renderMine();
+        wallet.refresh();
       });
       bar.appendChild(b);
     }
@@ -600,8 +622,31 @@ function enterRoom(room, catalog, chosen) {
         }
         renderMine();
         refreshPeople();
+        wallet.refresh();
         break;
       }
+      case "coins":
+        wallet.onCoins(msg);
+        break;
+      case "wear": {
+        const a = actors.get(msg.aid);
+        if (a) a.setWear(msg.wear);
+        break;
+      }
+      case "effect": {
+        const a = actors.get(msg.aid);
+        if (a) {
+          effects.push(spawnEffect(THREE, scene, a.position.clone(), msg.effect));
+          if (a.persona) a.act("greet");
+        }
+        break;
+      }
+      case "effect_left":
+        wallet.onEffectLeft(msg);
+        break;
+      case "effect_failed":
+        toast(msg.message || "使えませんでした");
+        break;
       case "joined":
         for (const a of msg.actors || []) {
           const actor = addActor(a);
@@ -734,6 +779,10 @@ function enterRoom(room, catalog, chosen) {
   // --- 看板・屋台をタップしたとき ---
   function onObjectTap(item) {
     const o = item.obj;
+    if (o.type === "shop") {
+      wallet.openShop(o.shopId, o.title);
+      return;
+    }
     if (isGame(catalog, o.type)) {
       if (!games.running) games.offer(item);
       return;
@@ -1337,7 +1386,7 @@ function enterRoom(room, catalog, chosen) {
       const hit = things.items.find(
         (i) => i.startPoint && Math.hypot(selected.position.x - i.startPoint.x, selected.position.z - i.startPoint.z) < 0.9
       );
-      if (hit && insideStart !== hit) games.offer(hit);
+      if (hit && insideStart !== hit && $("shopSheet").hidden) hit.shop ? wallet.openShop(hit.obj.shopId, hit.obj.title) : games.offer(hit);
       insideStart = hit || null;
     }
   }, 500);
@@ -1378,6 +1427,12 @@ function enterRoom(room, catalog, chosen) {
     world?.update(t);
     things?.update(t);
     land?.update(t);
+    for (let i = effects.length - 1; i >= 0; i--) {
+      if (!effects[i].update(dt)) {
+        effects[i].dispose();
+        effects.splice(i, 1);
+      }
+    }
     placeCamera(dt);
     placeTalkBox();
     renderer.render(scene, camera);
@@ -1408,6 +1463,7 @@ function enterRoom(room, catalog, chosen) {
       get selected() {
         return selected;
       },
+      wallet,
     };
   }
 }

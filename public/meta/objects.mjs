@@ -6,6 +6,7 @@
  *   members  いまいる子の紹介
  *   treasure / quiz / rally  ミニゲームの屋台。タップするか、前の光る輪に分身が入ると始まる
  *   tilt / shake / … / nenne  センサー・XRのミニゲームの屋台（遊ぶ画面は sensorgames.mjs / sensorgames2.mjs）
+ *   shop     お店（通貨で買い物。中身は wallet.mjs が開く）
  *
  * 置き場所は決まった7か所（src/metaverse.ts の SLOTS）で、どれも空間の真ん中を向く。
  */
@@ -182,6 +183,55 @@ export function buildObjects(THREE, scene, objects, catalog, hooks) {
           group.add(title);
         }
       }
+    } else if (obj.type === "shop") {
+      // お店: カウンター・しまの日よけ・看板・前の輪（入るかタップすると、お店が開く）
+      const wood = new THREE.MeshLambertMaterial({ color: 0xc98f5a });
+      const counter = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.9, 0.8), wood);
+      counter.position.y = 0.45;
+      const top = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.08, 0.95), new THREE.MeshLambertMaterial({ color: 0xf6e6c8 }));
+      top.position.y = 0.94;
+      root.add(counter, top);
+      for (const sx of [-1, 1]) {
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.2, 8), wood);
+        pole.position.set(sx * 1.1, 1.1, -0.3);
+        root.add(pole);
+      }
+      const c = document.createElement("canvas");
+      c.width = 256;
+      c.height = 64;
+      const g2 = c.getContext("2d");
+      for (let i = 0; i < 8; i++) {
+        g2.fillStyle = i % 2 ? "#ffffff" : "#ff6f91";
+        g2.fillRect(i * 32, 0, 32, 64);
+      }
+      const awning = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 0.9), new THREE.MeshLambertMaterial({ map: canvasTexture(THREE, c), side: THREE.DoubleSide }));
+      awning.position.set(0, 2.1, 0.05);
+      awning.rotation.x = -0.6;
+      root.add(awning);
+      const icon = sprite(THREE, ["🛍"], { width: 256, height: 256, fontSize: 130, bg: "rgba(255,255,255,0.96)", color: "#2a2440", radius: 128 }, 0.8);
+      icon.position.y = 2.95;
+      const label = sprite(THREE, [obj.title], { width: 768, height: 120, fontSize: 58, bg: "rgba(255,111,145,0.95)", color: "#ffffff", radius: 40 }, 2.3);
+      label.position.y = 2.55;
+      label.position.z = 0.5;
+      root.add(icon, label);
+      for (const m of [counter, top, icon, label, awning]) {
+        m.userData.item = item;
+        item.hits.push(m);
+      }
+      const start = new THREE.Mesh(
+        new THREE.RingGeometry(0.55, 0.75, 36),
+        new THREE.MeshBasicMaterial({ color: 0xff6f91, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false })
+      );
+      start.rotation.x = -Math.PI / 2;
+      start.position.set(0, 0.02, 1.7);
+      root.add(start);
+      const ry = root.rotation.y;
+      item.startPoint = new THREE.Vector3(slot.x + Math.sin(ry) * 1.7, 0, slot.z + Math.cos(ry) * 1.7);
+      item.shop = true;
+      item.update = (t) => {
+        icon.position.y = 2.95 + Math.sin(t * 2 + slot.x) * 0.06;
+        start.material.opacity = 0.55 + Math.sin(t * 3) * 0.25;
+      };
     } else {
       // ミニゲームの屋台: 丸い台・アーチ・名前・前の光る輪
       const color = GAME_COLORS[obj.type] || 0xffffff;

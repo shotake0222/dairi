@@ -222,6 +222,50 @@
   #adQrCap { font-size: 12px; color: var(--muted); }
   #adLink { display: block; width: 100%; text-align: center; background: var(--brand); color: #fff; border: none; border-radius: 999px; padding: 11px; font-weight: 700; margin-bottom: 8px; }
 
+
+  /* ---- 通貨・お店（wallet.mjs） ---- */
+  #walletBtn { background: #fff4c8; color: #6a4a00; font-weight: 800; }
+  #walletSheet, #shopSheet, #voucherSheet { position: fixed; inset: 0; z-index: 19; background: rgba(20,16,42,.5); display: flex; align-items: flex-end; justify-content: center; padding: 16px 16px calc(16px + var(--safe-b)); }
+  #voucherSheet { z-index: 22; }
+  #walletSheet .sheet, #shopSheet .sheet, #voucherSheet .sheet { max-height: 86vh; overflow-y: auto; }
+  .wHead { display: flex; align-items: baseline; gap: 8px; }
+  .wHead h3 { flex: 1; margin: 0; }
+  #walletBalance, #shopBalance { font-size: 26px; font-weight: 800; color: #6a4a00; margin: 4px 0 0; }
+  #shopBalance { font-size: 14px; margin: 0 0 8px; }
+  #walletToday { font-size: 12px; color: var(--muted); margin: 0 0 10px; }
+  #walletTabs { display: flex; gap: 6px; margin-bottom: 10px; overflow-x: auto; }
+  #walletTabs button { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 6px 12px; font-size: 13px; white-space: nowrap; }
+  #walletTabs button.on { background: var(--brand); color: #fff; border-color: var(--brand); }
+  .wRow { display: flex; gap: 10px; align-items: center; padding: 10px 4px; border-bottom: 1px solid var(--line); width: 100%; background: none; border-left: 0; border-right: 0; border-top: 0; text-align: left; font: inherit; color: inherit; }
+  .wIcon { font-size: 26px; width: 36px; text-align: center; flex: 0 0 auto; }
+  .wMain { flex: 1; min-width: 0; display: grid; gap: 2px; }
+  .wMain b { font-size: 14px; }
+  .wMain small { font-size: 12px; color: var(--muted); }
+  .wMain small.real { color: #b8456a; }
+  .wRow > button, .wPrice button { border: none; background: var(--brand); color: #fff; border-radius: 999px; padding: 8px 14px; font-size: 13px; font-weight: 700; white-space: nowrap; }
+  .wRow > button.on { background: #fff; color: var(--brand); border: 1px solid var(--brand); }
+  .wPrice { display: grid; gap: 4px; justify-items: end; font-weight: 800; color: #6a4a00; font-size: 13px; flex: 0 0 auto; }
+  .wPrice button:disabled, .wRow > button:disabled { background: #ddd; color: #777; }
+  .wVoucher em { font-style: normal; font-size: 12px; font-weight: 700; color: var(--brand); }
+  .wVoucher.used em, .wVoucher.cancelled em, .wVoucher.expired em { color: var(--muted); }
+  .wEmpty { text-align: center; color: var(--muted); font-size: 13px; padding: 18px 0; }
+  .wHist div { display: flex; gap: 8px; font-size: 12.5px; padding: 6px 2px; border-bottom: 1px solid var(--line); }
+  .wHist span:first-child { color: var(--muted); flex: 0 0 auto; }
+  .wHist .n { flex: 1; min-width: 0; }
+  .wHist b.plus { color: #2f9a5a; }
+  .wHist b.minus { color: #d8456a; }
+  .wRules { font-size: 13px; color: var(--ink); }
+  .wRules ul { padding-left: 18px; margin: 6px 0 10px; }
+  .wNote { color: var(--muted) !important; font-size: 12px !important; margin: 0 0 6px !important; }
+  #shopKeeper { font-size: 13px; color: var(--ink); background: #fff6f8; border-radius: 12px; padding: 8px 10px; margin: 6px 0 8px; }
+  #shopKeeper:empty { display: none; }
+  .wFoot { display: flex; justify-content: space-between; gap: 8px; margin-top: 10px; }
+  #voucherCode { font-size: 26px; font-weight: 800; letter-spacing: .08em; text-align: center; background: #fff6f8; border: 2px dashed #ff6f91; border-radius: 14px; padding: 10px; margin: 8px 0; color: #2a2440; }
+  #voucherQr { display: flex; justify-content: center; }
+  #voucherQr svg { width: 180px; height: 180px; background: #fff; }
+  #voucherStatus { text-align: center; font-weight: 700; margin: 0 0 6px; color: #2f9a5a; }
+  #voucherStatus.used, #voucherStatus.cancelled, #voucherStatus.expired { color: var(--muted); }
+  #voucherPartner { font-size: 13px; color: var(--ink); margin: 0 !important; }
   /* ---- 重なるもの ---- */
   #dialog, #lost, #noWebgl {
     position: fixed; inset: 0; background: rgba(20,16,42,.45); display: flex; align-items: flex-end; justify-content: center; z-index: 20;
@@ -296,6 +340,7 @@
     <span class="pill" id="hudCount">0体</span>
     <span class="pill" id="hudStatus"></span>
     <span class="spacer"></span>
+    <button class="pill" id="walletBtn" type="button" title="財布（メタバースの通貨）" hidden>🪙 0</button>
     <button class="pill" id="modeBtn" type="button" title="自動と手動を切り替え">✋ 手動</button>
     <button class="pill" id="friendsBtn" type="button" title="出会った子との交流の記録">📖 記録</button>
     <button class="pill" id="camBtn" type="button">視点</button>
@@ -341,6 +386,42 @@
     <div id="adQr" hidden><div id="adQrImg"></div><span id="adQrCap"></span></div>
     <button type="button" id="adLink" hidden></button>
     <div style="display:flex;justify-content:flex-end"><button type="button" class="pill" id="adClose">とじる</button></div>
+  </div>
+</div>
+
+<div id="walletSheet" hidden>
+  <div class="sheet">
+    <div class="wHead"><h3 id="walletTitle">財布</h3><button type="button" class="pill" id="walletClose">とじる</button></div>
+    <p id="walletBalance"></p>
+    <p id="walletToday"></p>
+    <div id="walletTabs">
+      <button type="button" data-tab="items" class="on">持ち物</button>
+      <button type="button" data-tab="vouchers">引換券</button>
+      <button type="button" data-tab="history">出入り</button>
+      <button type="button" data-tab="rules">ルール</button>
+    </div>
+    <div id="walletBody"></div>
+  </div>
+</div>
+
+<div id="shopSheet" hidden>
+  <div class="sheet">
+    <div class="wHead"><h3 id="shopName">お店</h3><button type="button" class="pill" id="shopClose">とじる</button></div>
+    <p id="shopKeeper"></p>
+    <p id="shopBalance"></p>
+    <div id="shopItems"></div>
+    <div class="wFoot"><button type="button" class="pill" id="shopWallet">財布を見る</button></div>
+  </div>
+</div>
+
+<div id="voucherSheet" hidden>
+  <div class="sheet">
+    <div class="wHead"><h3 id="voucherTitle">引換券</h3><button type="button" class="pill" id="voucherClose">とじる</button></div>
+    <p id="voucherPartner"></p>
+    <div id="voucherCode"></div>
+    <p id="voucherStatus"></p>
+    <div id="voucherQr"></div>
+    <p id="voucherNote"></p>
   </div>
 </div>
 

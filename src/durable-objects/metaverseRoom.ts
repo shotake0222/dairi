@@ -27,11 +27,16 @@
 import { DurableObject } from "cloudflare:workers";
 import { SPECIES_LABELS, type CharacterState, type SpeciesKey } from "./characterState";
 import { partnerKeyOf, sanitizeHint } from "../metaText";
-import { GREETING_LINES, MAX_ACTORS_PER_PERSON, MAX_PEOPLE, STAMPS, TEST_AREA_ID, WORLD_HALF, type AreaState, type RoomConfig } from "../metaverse";
+import { GREETING_LINES, MAX_ACTORS_PER_PERSON, MAX_PEOPLE, OBJECT_TYPES, STAMPS, TEST_AREA_ID, WORLD_HALF, type AreaState, type RoomConfig } from "../metaverse";
+import { consumeEffect, earn, equippedWear, type EarnKind } from "../economy";
 
 export interface MetaRoomEnv {
   CHARACTER: DurableObjectNamespace<CharacterState>;
+  /** 通貨（財布・持ち物）。src/economy.ts */
+  DB: D1Database;
 }
+
+type Wear = { shape: string; color: string } | null;
 
 /** 部屋の中で配る、分身1体ぶんの公開情報 */
 export interface PublicActor {
@@ -43,6 +48,8 @@ export interface PublicActor {
   compact: unknown;
   x: number;
   z: number;
+  /** 身につけている頭のかざり（お店で買った物） */
+  wear?: Wear;
 }
 
 interface Attachment {
@@ -57,6 +64,9 @@ interface Attachment {
   lastTalkAt?: number;
   talkCount?: number;
   lastTypingAt?: number;
+  lastClearAt?: number;
+  lastEffectAt?: number;
+  lastWearAt?: number;
 }
 
 const MAX_MESSAGE_BYTES = 4096;
@@ -191,6 +201,15 @@ export class MetaverseRoom extends DurableObject<MetaRoomEnv> {
       case "typing":
         this.onTyping(ws, att, msg);
         return;
+      case "clear":
+        await this.onClear(ws, att, msg);
+        return;
+      case "wear":
+        await this.onWear(ws, att, msg);
+        return;
+      case "effect":
+        await this.onEffect(ws, att, msg);
+        return;
       case "ping":
         this.send(ws, { t: "pong" });
         return;
@@ -257,6 +276,7 @@ export class MetaverseRoom extends DurableObject<MetaRoomEnv> {
         continue;
       }
       const aid = randomToken(8);
+      const wear = await equippedWear(this.env, cid);
       // 入ってきた位置は、中央付近のばらけた場所
       const angle = Math.random() * Math.PI * 2;
       const radius = 1.5 + Math.random() * 2.5;
@@ -269,6 +289,7 @@ export class MetaverseRoom extends DurableObject<MetaRoomEnv> {
         compact: { ...result.compact, id: aid },
         x: Math.round(Math.cos(angle) * radius * 100) / 100,
         z: Math.round(Math.sin(angle) * radius * 100) / 100,
+        wear,
       };
       await this.ctx.storage.put(`actor:${aid}`, actor);
       att.actors.push({ aid, x: actor.x, z: actor.z, cidHash, cid });
@@ -294,6 +315,72 @@ export class MetaverseRoom extends DurableObject<MetaRoomEnv> {
       notices: rejected,
     });
     this.broadcast({ t: "joined", actors: joined }, ws);
+
+    // その日はじめての入室なら、通貨が貯まる（分身ごと1日1回。本人にだけ知らせる）
+    for (const a of att.actors) await this.reward(ws, a.aid, a.cid, "login", "");
+  }
+
+  /** 通貨が貯まったら、本人にだけ知らせる（貯まらなかったときは何も送らない） */
+  private async reward(ws: WebSocket, aid: string, cid: string, kind: EarnKind, ref: string) {
+    try {
+      const r = await earn(this.env, cid, kind, ref);
+      if (r.ok) this.send(ws, { t: "coins", aid, amount: r.amount, balance: r.balance, reason: kind });
+    } catch {
+      // 通貨の表がまだ無い（移行前）など。遊ぶことは止めない
+    }
+  }
+
+  /**
+   * ミニゲームをクリアした（端末から）。点数は受け取らない。「この部屋の、この屋台をクリアした」ことだけ。
+   * 同じ屋台は1日1回、1日の上限つき（src/economy.ts）。屋台が本当にこの部屋にあるゲームかは、ここで確かめる。
+   */
+  private async onClear(ws: WebSocket, att: Attachment, msg: Record<string, unknown>) {
+    if (!att.joined) return;
+    const now = Date.now();
+    if (now - (att.lastClearAt ?? 0) < 8000) return;
+    const actor = att.actors.find((a) => a.aid === msg.aid);
+    const config = await this.ctx.storage.get<RoomConfig>("config");
+    const objectId = typeof msg.objectId === "string" ? msg.objectId.slice(0, 40) : "";
+    const obj = config?.objects.find((o) => o.id === objectId);
+    const isGame = !!obj && !!OBJECT_TYPES.find((t) => t.id === obj.type && t.game);
+    if (!actor || !config || !isGame || config.id === TEST_AREA_ID) return;
+    att.lastClearAt = now;
+    ws.serializeAttachment(att);
+    await this.reward(ws, actor.aid, actor.cid, "clear", `${config.id}:${objectId}`);
+  }
+
+  /** 頭のかざりを付け替えた（財布の API で付け替えたあと、端末が知らせてくる）。財布を読み直して、みんなに配る */
+  private async onWear(ws: WebSocket, att: Attachment, msg: Record<string, unknown>) {
+    if (!att.joined) return;
+    const now = Date.now();
+    if (now - (att.lastWearAt ?? 0) < 1000) return;
+    const actor = att.actors.find((a) => a.aid === msg.aid);
+    if (!actor) return;
+    att.lastWearAt = now;
+    ws.serializeAttachment(att);
+    const wear = await equippedWear(this.env, actor.cid);
+    const pub = await this.ctx.storage.get<PublicActor>(`actor:${actor.aid}`);
+    if (pub) await this.ctx.storage.put(`actor:${actor.aid}`, { ...pub, wear });
+    this.broadcast({ t: "wear", aid: actor.aid, wear });
+  }
+
+  /** 演出を使う（持ち物から1つ減らして、部屋のみんなに見せる） */
+  private async onEffect(ws: WebSocket, att: Attachment, msg: Record<string, unknown>) {
+    if (!att.joined) return;
+    const now = Date.now();
+    if (now - (att.lastEffectAt ?? 0) < 2500) return;
+    const actor = att.actors.find((a) => a.aid === msg.aid);
+    const itemId = typeof msg.itemId === "string" ? msg.itemId.slice(0, 30) : "";
+    if (!actor || !itemId) return;
+    att.lastEffectAt = now;
+    ws.serializeAttachment(att);
+    const r = await consumeEffect(this.env, actor.cid, itemId).catch(() => ({ ok: false as const, error: "unavailable" }));
+    if (!r.ok) {
+      this.send(ws, { t: "effect_failed", message: r.error });
+      return;
+    }
+    this.send(ws, { t: "effect_left", itemId, left: r.left });
+    this.broadcast({ t: "effect", aid: actor.aid, effect: r.effect });
   }
 
   private onMove(ws: WebSocket, att: Attachment, msg: Record<string, unknown>) {
@@ -432,6 +519,8 @@ export class MetaverseRoom extends DurableObject<MetaRoomEnv> {
         return;
       }
       this.broadcast({ t: "say", aid: mine.aid, to: toAid, line: first.line });
+      // 話しかけた側に、通貨が少し貯まる（1日の回数の上限つき）
+      if (round === 0) await this.reward(ws, mine.aid, me.cid, "talk", "");
       // 前にも会ったことがある相手なら、話しかけた本人にだけ知らせる（交流の記録とつながっている）
       if (round === 0 && first.metBefore > 0) this.send(ws, { t: "met_before", aid: toAid, count: first.metBefore + 1 });
       const reply = await say(target, toAid, me, first.line);

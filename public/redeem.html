@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>わけたま｜引換券の確認（提携店の方へ）</title>
+<meta name="robots" content="noindex" />
+<meta name="theme-color" content="#7c5cff" />
+<link rel="icon" href="/icons/favicon-64.png" sizes="64x64" type="image/png" />
+<style>
+  :root { color-scheme: light; --brand:#7c5cff; --ink:#1c1630; --muted:#6f668f; --line:#e9e5f7; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #f7f5ff; color: var(--ink); line-height: 1.8; font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif; }
+  header { background: #fff; border-bottom: 1px solid var(--line); padding: 18px 16px; }
+  header h1 { margin: 4px 0; font-size: 19px; }
+  header p { margin: 0; font-size: 12.5px; color: var(--muted); }
+  main { max-width: 560px; margin: 0 auto; padding: 18px 16px 72px; }
+  section { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 18px; margin-bottom: 14px; }
+  h2 { margin: 0 0 8px; font-size: 15px; }
+  p, li { font-size: 13.5px; color: #4a4266; }
+  label { display: block; font-size: 12.5px; color: var(--muted); margin: 10px 0 0; }
+  input { width: 100%; margin-top: 4px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; font: inherit; font-size: 18px; letter-spacing: .06em; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .row label { flex: 1; margin: 0; font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .row input[type=checkbox] { width: auto; margin: 0; }
+  .primary { display: block; width: 100%; text-align: center; background: var(--brand); color: #fff; border: none; border-radius: 999px; padding: 13px; font-size: 15px; font-weight: 700; margin-top: 14px; cursor: pointer; }
+  .primary.use { background: #e8457a; }
+  .primary:disabled { background: #ccc; }
+  .note { font-size: 12px; color: var(--muted); background: #f7f5ff; border-radius: 10px; padding: 10px 12px; }
+  .err { color: #c0392b; font-size: 13.5px; min-height: 1em; margin: 8px 0 0; }
+  .card { border: 2px dashed #ff6f91; border-radius: 14px; padding: 14px; background: #fff6f8; }
+  .card b { font-size: 17px; display: block; }
+  .state { display: inline-block; border-radius: 999px; padding: 2px 12px; font-size: 13px; font-weight: 700; color: #fff; background: #2f9a5a; margin: 6px 0; }
+  .state.used, .state.cancelled, .state.expired { background: #8a8aa0; }
+  .done { text-align: center; font-size: 22px; font-weight: 800; color: #2f9a5a; margin: 10px 0 0; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1>引換券の確認</h1>
+  <p>わけたまの提携店の方へ。お客さまの画面の引換券を確かめて、「使った」にします。</p>
+</header>
+<main>
+  <section>
+    <h2>番号と暗証番号</h2>
+    <form id="form" autocomplete="off">
+      <label>引換券の番号（10けた・お客さまの画面に表示）
+        <input id="code" inputmode="latin" autocapitalize="characters" maxlength="14" placeholder="ABCD-EFGH-JK" required />
+      </label>
+      <label>お店の暗証番号（運営からお知らせした8けた）
+        <input id="pin" type="password" inputmode="numeric" maxlength="12" placeholder="••••••••" required />
+      </label>
+      <div class="row" style="margin-top:8px"><label><input type="checkbox" id="remember" /> この端末に暗証番号を覚えておく（お店の端末だけにしてください）</label></div>
+      <button class="primary" type="submit" id="checkBtn">確かめる</button>
+      <p class="err" id="err"></p>
+    </form>
+  </section>
+
+  <section id="result" hidden>
+    <h2>引換券</h2>
+    <div class="card">
+      <b id="rTitle"></b>
+      <span class="state" id="rState"></span>
+      <p id="rPartner" style="margin:0"></p>
+      <p id="rDates" style="margin:0;font-size:12.5px;color:var(--muted)"></p>
+      <p id="rNote" style="margin:6px 0 0"></p>
+    </div>
+    <button class="primary use" type="button" id="useBtn" hidden>使ったにする（取り消せません）</button>
+    <p class="done" id="done" hidden>✔ 使用済みにしました</p>
+  </section>
+
+  <p class="note">
+    ・この画面では、引換券の中身（特典の名前・期限）だけが見えます。お客さまの名前や連絡先は表示されません。<br />
+    ・暗証番号がほかのお店のものだと、引換券は「見つからない」と表示されます。<br />
+    ・まちがいが続くと、その日は確かめられなくなります。暗証番号を忘れたときは運営にご連絡ください。
+  </p>
+</main>
+<script>
+(function () {
+  "use strict";
+  var PIN_KEY = "waketama_partnerPin";
+  var $ = function (id) { return document.getElementById(id); };
+  var STATUS = { issued: "使えます", used: "使用済み", cancelled: "取り消し済み", expired: "期限切れ" };
+  var fmt = function (ms) { return ms ? new Date(ms).toLocaleString("ja-JP", { year: "numeric", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : ""; };
+
+  var params = new URLSearchParams(location.search);
+  if (params.get("code")) $("code").value = params.get("code");
+  try {
+    var saved = localStorage.getItem(PIN_KEY);
+    if (saved) { $("pin").value = saved; $("remember").checked = true; }
+  } catch (e) { /* noop */ }
+
+  function body() {
+    return JSON.stringify({ code: $("code").value, pin: $("pin").value });
+  }
+  function remember() {
+    try {
+      if ($("remember").checked) localStorage.setItem(PIN_KEY, $("pin").value);
+      else localStorage.removeItem(PIN_KEY);
+    } catch (e) { /* noop */ }
+  }
+  function show(v) {
+    $("result").hidden = false;
+    $("rTitle").textContent = v.title;
+    $("rState").textContent = STATUS[v.status] || v.status;
+    $("rState").className = "state " + v.status;
+    $("rPartner").textContent = v.partnerName ? "使えるお店: " + v.partnerName : "";
+    $("rDates").textContent = "発行: " + fmt(v.issuedAt) + (v.expiresAt ? "／期限: " + fmt(v.expiresAt) : "") + (v.usedAt ? "／使用: " + fmt(v.usedAt) : "");
+    $("rNote").textContent = v.note || "";
+    $("useBtn").hidden = v.status !== "issued";
+  }
+  async function call(path) {
+    var res = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: body() });
+    var json = await res.json().catch(function () { return {}; });
+    if (!res.ok) throw new Error(json.error || "確かめられませんでした");
+    return json;
+  }
+  $("form").addEventListener("submit", async function (e) {
+    e.preventDefault();
+    $("err").textContent = "";
+    $("done").hidden = true;
+    $("result").hidden = true;
+    $("checkBtn").disabled = true;
+    try {
+      var r = await call("/api/redeem/check");
+      remember();
+      show(r.voucher);
+    } catch (err) {
+      $("err").textContent = err.message;
+    } finally {
+      $("checkBtn").disabled = false;
+    }
+  });
+  $("useBtn").addEventListener("click", async function () {
+    $("useBtn").disabled = true;
+    try {
+      var r = await call("/api/redeem/use");
+      show(r.voucher);
+      $("done").hidden = false;
+    } catch (err) {
+      $("err").textContent = err.message;
+    } finally {
+      $("useBtn").disabled = false;
+    }
+  });
+})();
+</script>
+</body>
+</html>

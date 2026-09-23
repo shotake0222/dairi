@@ -49,6 +49,8 @@ async function connect(room: string, headers: Record<string, string> = {}) {
   const waiters: Array<(m: Record<string, unknown>) => void> = [];
   ws.addEventListener("message", (e) => {
     const m = JSON.parse(String(e.data));
+    // 通貨が貯まった知らせ（本人にだけ届く。src/economy.ts）は、中継の確かめには関係ないので読み飛ばす
+    if (m.t === "coins") return;
     const w = waiters.shift();
     if (w) w(m);
     else inbox.push(m);
@@ -80,8 +82,8 @@ describe("部屋の設定（何を映すか・何で遊ぶか）", () => {
     }>();
     const hiroba = data.rooms.find((r) => r.id === "hiroba")!;
     expect(hiroba).toBeTruthy();
-    // 見本として、看板・紹介・3つのミニゲームと、センサーのミニゲームが置いてある
-    expect(new Set(hiroba.objects.map((o) => o.type))).toEqual(new Set(["board", "treasure", "quiz", "members", "rally", "tilt", "shake"]));
+    // 見本として、看板・紹介・3つのミニゲームと、お店（雑貨屋・引き換え所）が置いてある
+    expect(new Set(hiroba.objects.map((o) => o.type))).toEqual(new Set(["board", "treasure", "quiz", "members", "rally", "shop"]));
     expect(data.catalog.cameras.length).toBe(4);
     expect(data.catalog.slots.length).toBe(7);
   });
@@ -248,7 +250,7 @@ describe("ミニゲームの管理", () => {
     const types = got.room.objects.map((o) => o.type);
     expect(types).not.toContain("tilt");
     expect(types).not.toContain("treasure");
-    expect(types).toContain("shake");
+    expect(types).toContain("quiz");
   });
 
   it("管理のAPIは管理者だけ", async () => {

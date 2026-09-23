@@ -418,6 +418,12 @@ check("確かめていないことも書いてある", bizHtml.includes("モデ�
   check("最初からある部屋（ひろば）に入れる", rooms.rooms.some((r) => r.id === "hiroba"));
   const chatHtml = await (await fetch(`${BASE}/chat`)).text();
   check("キャラクター画面からメタバースへ行ける", chatHtml.includes('id="metaLink"'));
+  check("キャラクター画面のメタバースの項目が、ほかの項目と同じ見た目", /#eyesLink, #metaLink \{/.test(chatHtml));
+  const eco = await (await fetch(`${BASE}/api/meta/economy/info`)).json();
+  check("メタバースの通貨の案内が出る（お金で買えない・戻せない・渡せない）", !!eco.settings?.name && eco.rules.some((r) => r.includes("お金で買うことはできません")));
+  const redeemHtml = await (await fetch(`${BASE}/redeem`)).text();
+  check("提携店の引換券の確認ページが配信される", redeemHtml.includes("/api/redeem/check"));
+  check("最初のひろばに、お店（雑貨屋・引き換え所）がある", rooms.rooms.find((r) => r.id === "hiroba")?.objects.some((o) => o.type === "shop" && o.shopId === "zakka"));
   const served = await (await fetch(`${BASE}/meta/wt_core.mjs`)).text();
   const { readFileSync } = await import("node:fs");
   const local = readFileSync(new URL("./device/web/wt_core.mjs", import.meta.url), "utf8");
@@ -437,6 +443,7 @@ check("確かめていないことも書いてある", bizHtml.includes("モデ�
   check("メタバースで自動と手動を選べ、交流の記録へ行ける", metaHtml.includes('id="modeBtn"') && metaHtml.includes('id="friendsBtn"'));
   const friendsHtml = await (await fetch(`${BASE}/friends`)).text();
   check("交流の記録（図鑑）で、メタバースとお散歩を絞り込める", friendsHtml.includes('data-f="meta"') && friendsHtml.includes('data-f="walk"'));
+  check("メタバースに財布・お店・引換券の画面がある", metaHtml.includes('id="walletBtn"') && metaHtml.includes('id="shopSheet"') && metaHtml.includes('id="voucherSheet"'));
   check("メタバースに会話の吹き出しと広告の詳細がある", metaHtml.includes('id="talkBox"') && metaHtml.includes('id="adSheet"') && metaHtml.includes("/vendor/qrcode.js"));
   const landHtml = await (await fetch(`${BASE}/land`)).text();
   check("広告・ランドマークの申込ページが配信される", landHtml.includes("/api/land/catalog"));

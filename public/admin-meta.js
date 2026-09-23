@@ -15,6 +15,8 @@
 
   var catalog = null;
   var settings = { disabled: [], defaults: {} };
+  /** お店（「通貨・お店」タブで作ったもの）。置く物の「お店」で選ぶ */
+  var shops = [];
   var rooms = [];
   var editing = null; // { id?, objects, merge?: {targetId, sourceIds}, builtin, mergedInto }
 
@@ -109,6 +111,7 @@
     if (type === "board") return Object.assign(base, { title: "お知らせ", text: "", imageUrl: "", linkUrl: "", ad: false });
     if (type === "video") return Object.assign(base, { title: "", videoUrl: "" });
     if (type === "members") return Object.assign(base, { title: "いまいる子" });
+    if (type === "shop") return Object.assign(base, { title: (shops[0] && shops[0].label) || "お店", text: "", shopId: shops[0] ? shops[0].id : "" });
     if (type === "treasure") return Object.assign(base, { title: "宝さがし", text: "星を集めよう", count: d.goal || 10, seconds: d.seconds || 60, clearMessage: d.clearMessage || "" });
     if (type === "rally") return Object.assign(base, { title: "スタンプラリー", text: "旗をぜんぶまわろう", points: d.goal || 4, clearMessage: d.clearMessage || "" });
     if (type === "quiz") return Object.assign(base, { title: "○×クイズ", text: "○か×の場所へ歩いてね", questions: [{ q: "", a: "o", note: "" }], clearMessage: d.clearMessage || "" });
@@ -131,6 +134,7 @@
     catalog = data.catalog;
     settings = data.settings || settings;
     rooms = data.rooms || [];
+    shops = data.shops || [];
     return data;
   }
 
@@ -391,6 +395,9 @@
         grid.appendChild(field("特別クーポンのコード（任意）", o.couponCode, function (v) { o.couponCode = v; }, { maxLength: 24, placeholder: "例: WAKE10" }));
         grid.appendChild(field("クーポンの説明（任意）", o.couponNote, function (v) { o.couponNote = v; }, { maxLength: 60, placeholder: "例: 会計時にこの画面を見せると10%引き" }));
         grid.appendChild(field("クーポンの有効期限（任意）", o.couponUntil ? toLocalInput(o.couponUntil).slice(0, 10) : "", function (v) { o.couponUntil = v ? new Date(v + "T23:59:59").getTime() : null; }, { type: "date" }));
+      } else if (o.type === "shop") {
+        grid.appendChild(selectField("どのお店を置くか（「通貨・お店」タブで作ったお店）", shops.map(function (x) { return { id: x.id, label: x.label + (x.active ? "" : "（休業中）") }; }), o.shopId, function (v) { o.shopId = v; }));
+        grid.appendChild(field("説明（任意）", o.text, function (v) { o.text = v; }, { maxLength: 80 }));
       } else if (o.type === "video") {
         grid.appendChild(field("動画のURL", o.videoUrl, function (v) { o.videoUrl = v; }, { placeholder: "https://…/movie.mp4" }));
       } else if (o.type === "treasure") {

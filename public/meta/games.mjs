@@ -5,7 +5,8 @@
  * どれも「分身を歩かせて遊ぶ」形にしてある。自分の分身が主役で、クリアするとその子が
  * 自分の声で喜ぶ（人格の数値どおりの身振りつき）。
  *
- * **この端末の中だけで遊ぶ。** 点数・結果はサーバーへ送らない（入退室の記録を持たない方針と同じ）。
+ * **この端末の中だけで遊ぶ。** 点数はサーバーへ送らない（入退室の記録を持たない方針と同じ）。
+ * 送るのは「この屋台をクリアした」ことだけ（通貨が貯まる。src/economy.ts。1日1回・上限つき）。
  * 自己ベストだけ、この端末に覚えておく。同じ部屋の他の子には、ゲームの星や旗は見えない。
  */
 
@@ -214,7 +215,11 @@ export class GameRunner {
         improved = best !== null;
       }
     }
-    if (result.clear) this.ctx.celebrate();
+    if (result.clear) {
+      this.ctx.celebrate();
+      // 部屋に「この屋台をクリアした」ことだけを知らせる（点数は送らない）。通貨が貯まる（1日1回・上限つき）
+      this.ctx.onClear?.(o);
+    }
     this.stop();
     const lines = [result.summary];
     if (result.clear && o.clearMessage) lines.push(o.clearMessage);

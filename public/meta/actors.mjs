@@ -17,6 +17,7 @@
 import { Driver, Persona, dispatch } from "./wt_core.mjs";
 import { loadCharacter } from "./glb.mjs";
 import { textCanvas, wrapText } from "./world.mjs";
+import { makeWear } from "./wear.mjs";
 
 const TAU = Math.PI * 2;
 
@@ -183,7 +184,32 @@ export class Actor {
     this.group.add(hit);
 
     opts.scene.add(this.group);
-    this.ready = this.loadModel();
+    /** 頭のてっぺんの高さ（モデルを読んでから決まる）と、身につけている物 */
+    this.headTop = 0.95;
+    this.wear = data.wear || null;
+    this.wearMesh = null;
+    this.ready = this.loadModel().then(() => this.setWear(this.wear));
+  }
+
+  /** 頭のかざりを付け替える（null で外す）。お店で買った物（wear.mjs） */
+  setWear(wear) {
+    this.wear = wear || null;
+    if (this.wearMesh) {
+      this.body.remove(this.wearMesh);
+      this.wearMesh.traverse((o) => {
+        o.geometry?.dispose?.();
+        o.material?.dispose?.();
+      });
+      this.wearMesh = null;
+    }
+    // 帽子をかぶると名札が隠れないよう、少し上げる
+    this.label.position.y = Math.max(1.55, this.headTop + (this.wear ? 0.62 : 0.4));
+    if (!this.wear || !this.alive) return;
+    const g = makeWear(this.THREE, this.wear);
+    // 形ごとに決めた位置（makeWear の中）に、頭のてっぺんの高さを足す
+    g.position.y += this.headTop - 0.06;
+    this.wearMesh = g;
+    this.body.add(g);
   }
 
   async loadModel() {
@@ -197,6 +223,7 @@ export class Actor {
       model.scale.setScalar(s);
       model.position.y = -box.min.y * s;
       this.body.add(model);
+      this.headTop = (box.max.y - box.min.y) * s;
     } else {
       const ball = new THREE.Mesh(new THREE.SphereGeometry(0.45, 20, 14), new THREE.MeshLambertMaterial({ color: 0xffb3d0 }));
       ball.position.y = 0.45;

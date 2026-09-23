@@ -1236,6 +1236,16 @@ export class CharacterState extends DurableObject<Env> {
   }
 
   /**
+   * メタバースの財布（通貨・持ち物・引換券）を使ってよいか（src/economy.ts）。
+   * 入室と同じ条件: 持ち主トークンが合い、利用規約に同意していること。
+   */
+  async canUseWallet(ownerToken?: string): Promise<boolean> {
+    const data = await this.ctx.storage.get<CharacterData>("data");
+    if (!data || !data.ownerToken) return false;
+    return isOwner(data, ownerToken) && hasConsent(data.consent, "terms");
+  }
+
+  /**
    * NPC として置くときの姿と動きの数値（持ち主トークンは要らない）。
    * **呼べるのは Worker の管理側だけ**で、運営が作った分身（admin_characters にある子）にしか使わない
    * （src/adminCharacters.ts）。利用者の分身を NPC にする口は作らない。

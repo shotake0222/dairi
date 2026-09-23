@@ -8,6 +8,8 @@ import { handleHealth } from "./health";
 import { handleTranscribe, handleSpeak } from "./voice";
 import { issueTransferCode, claimTransferCode } from "./transfer";
 import { stagingGate, applyStagingHeaders } from "./stagingGuard";
+import { handleEconomyAdmin, handleEconomyApi, handleRedeemApi } from "./economyRoutes";
+import { listShops } from "./economy";
 import { adminGate, applyAdminHeaders, handleAdminOverview, handleAdminPersonas, isAdminRequest } from "./admin";
 import {
   handleGetOwnerView,
@@ -328,6 +330,15 @@ export default {
     // 持ち主トークンで取り出す /api/persona/card とは経路を分けてある。
     // 同じ関数から本人向けと買い手向けを出すと、片方だけ範囲を変えたときに事故る。
     // --- メタバース（部屋の設定と、入室のWebSocket。src/metaverse.ts / metaverseRoom.ts） ---
+    // --- メタバースの通貨・お店（src/economy.ts）と、提携店の店頭での引き換え ---
+    if (url.pathname.startsWith("/api/meta/economy/")) {
+      const economyResponse = await handleEconomyApi(request, url, env);
+      if (economyResponse) return economyResponse;
+    }
+    if (url.pathname.startsWith("/api/redeem/")) {
+      const redeemResponse = await handleRedeemApi(request, url, env);
+      if (redeemResponse) return redeemResponse;
+    }
     if (url.pathname.startsWith("/api/meta/")) {
       const metaResponse = await handleMetaverseApi(request, url, env);
       if (metaResponse) return metaResponse;
@@ -396,6 +407,10 @@ export default {
     ) {
       const extra = await handleAdminExtra(request, url, env);
       if (extra) return extra;
+    }
+    if (url.pathname.startsWith("/api/admin/economy/")) {
+      const economyAdmin = await handleEconomyAdmin(request, url, env);
+      if (economyAdmin) return economyAdmin;
     }
     if (url.pathname.startsWith("/api/admin/meta/")) {
       const metaAdmin = await handleMetaverseAdmin(request, url, env);
@@ -1246,8 +1261,8 @@ async function pushAreaToRoom(env: Env, room: RoomConfig): Promise<void> {
 async function handleMetaverseAdmin(request: Request, url: URL, env: Env): Promise<Response | null> {
   const p = url.pathname;
   if (p === "/api/admin/meta/rooms" && request.method === "GET") {
-    const [rooms, settings] = await Promise.all([listAdminRooms(env), getGameSettings(env)]);
-    return json({ rooms, settings, catalog: metaverseCatalog(), now: Date.now() });
+    const [rooms, settings, shops] = await Promise.all([listAdminRooms(env), getGameSettings(env), listShops(env)]);
+    return json({ rooms, settings, catalog: metaverseCatalog(), shops: shops.map((s) => ({ id: s.id, label: s.name, active: s.active })), now: Date.now() });
   }
   if (p === "/api/admin/meta/rooms" && request.method === "POST") {
     const result = await saveRoom(env, await request.json<Record<string, unknown>>());

@@ -14,6 +14,7 @@
  *   - まとめる: 2つのエリアを1つにする。まとめた元（merged_into）へのリンクは、まとめた先へ案内する
  *   - 置く物（objects。最大7つ、決まった置き場所に1つずつ）:
  *       board / video / members         看板（広告・お知らせ）・動画・いまいる子の紹介
+ *       shop                            お店（メタバースの通貨で買い物・提携店の引換券へ。src/economy.ts）
  *       treasure / quiz / rally         歩いて遊ぶミニゲーム
  *       tilt / shake / balance / voice / arhunt / skycatch / rhythm / hotcold / daruma / xr
  *       fishing / pour / maze / balloon / tower / colorhunt / hanetsuki / taiko / sled / nenne
@@ -256,6 +257,7 @@ export const OBJECT_TYPES = [
   { id: "board", label: "看板（広告・お知らせ）", game: false },
   { id: "video", label: "動画スクリーン", game: false },
   { id: "members", label: "いまいる子の紹介", game: false },
+  { id: "shop", label: "お店（通貨で買い物・引き換え）", game: false },
   { id: "treasure", label: "ミニゲーム：宝さがし", game: true },
   { id: "quiz", label: "ミニゲーム：○×クイズ", game: true },
   { id: "rally", label: "ミニゲーム：スタンプラリー", game: true },
@@ -374,6 +376,8 @@ export interface RoomObject {
   level?: number;
   /** クリアしたときに出す言葉（クーポンの案内など） */
   clearMessage?: string;
+  /** お店: どのお店か（通貨・お店の管理で作ったお店の ID。src/economy.ts） */
+  shopId?: string;
 }
 
 export interface RoomConfig {
@@ -441,8 +445,8 @@ export const BUILTIN_ROOMS: RoomConfig[] = [
         ],
         clearMessage: "全問正解！",
       },
-      { id: "tilt", type: "tilt", slot: "left", title: "かたむけコロコロ", text: "端末をかたむけてコインを集めよう", goal: 8, seconds: 45, level: 2, clearMessage: "コロコロ名人！" },
-      { id: "shake", type: "shake", slot: "right", title: "ふりふりダッシュ", text: "端末をふって走ろう", goal: 30, seconds: 20, level: 2, clearMessage: "はやい！" },
+      { id: "zakka", type: "shop", slot: "left", title: "ひろばの雑貨屋", text: "遊んで貯めたコインで、おしゃれしよう", shopId: "zakka" },
+      { id: "koukan", type: "shop", slot: "right", title: "引き換え所", text: "コインを、町のお店の引換券にかえる", shopId: "koukan" },
       { id: "members", type: "members", slot: "front-left", title: "いまいる子", text: "" },
       { id: "rally", type: "rally", slot: "front-right", title: "スタンプラリー", text: "ひろばの旗を、ぜんぶまわろう", points: 4, clearMessage: "ひろばをひとまわりしたね！" },
     ],
@@ -572,6 +576,7 @@ export const BUILTIN_ROOMS: RoomConfig[] = [
       { id: "skycatch", type: "skycatch", slot: "left", title: "花火キャッチ", text: "夜空の花火を見回してキャッチ", goal: 8, seconds: 45, level: 2, clearMessage: "たまや〜！" },
       { id: "members", type: "members", slot: "right", title: "お祭りの子", text: "" },
       { id: "taiko", type: "taiko", slot: "front-left", title: "お祭り太鼓", text: "ドンとカッで、お祭りを盛り上げよう", goal: 20, level: 1, clearMessage: "よっ、名人！" },
+      { id: "hanabi", type: "shop", slot: "front-right", title: "花火屋", text: "みんなに見える花火や紙ふぶき", shopId: "hanabi" },
     ],
   },
   {
@@ -774,6 +779,7 @@ export const BUILTIN_ROOMS: RoomConfig[] = [
       { id: "pour", type: "pour", slot: "back-right", title: "ミルクをそそごう", text: "線にぴったり", goal: 3, seconds: 60, level: 2, clearMessage: "おいしそう！" },
       { id: "balloon", type: "balloon", slot: "left", title: "わたあめ風船", text: "ふーふー、ふくらませよう", goal: 3, seconds: 60, level: 1, clearMessage: "ふわふわ！" },
       { id: "members", type: "members", slot: "right", title: "おかしの国の子", text: "" },
+      { id: "boushi", type: "shop", slot: "front-left", title: "帽子屋", text: "とっておきの帽子と王冠", shopId: "boushi" },
     ],
   },
   {
@@ -828,6 +834,7 @@ export const BUILTIN_ROOMS: RoomConfig[] = [
       { id: "rhythm", type: "rhythm", slot: "back-right", title: "パレードリズム", text: "音楽に合わせてふろう", goal: 16, level: 2, clearMessage: "パレード大成功！" },
       { id: "shake", type: "shake", slot: "left", title: "ゴーカート", text: "ふって、ゴールまで走ろう", goal: 40, seconds: 25, level: 2, clearMessage: "一等賞！" },
       { id: "members", type: "members", slot: "right", title: "あそびに来た子", text: "" },
+      { id: "hanabi", type: "shop", slot: "front-left", title: "パレードの花火屋", text: "花火を打ち上げて、みんなでお祝い", shopId: "hanabi" },
     ],
   },
 ];
@@ -922,6 +929,9 @@ export function sanitizeObjects(raw: unknown): { ok: true; value: RoomObject[] }
       if (typeof o.linkUrl === "string" && o.linkUrl.trim() && !base.linkUrl) {
         return { ok: false, error: `${n}つ目（看板）: リンクは https:// で始まるURLにしてください` };
       }
+    } else if (type === "shop") {
+      base.shopId = typeof o.shopId === "string" && /^[a-z0-9-]{2,24}$/.test(o.shopId) ? o.shopId : "";
+      if (!base.shopId) return { ok: false, error: `${n}つ目（お店）: どのお店を置くか選んでください` };
     } else if (type === "video") {
       base.videoUrl = cleanUrl(o.videoUrl);
       if (!base.videoUrl) return { ok: false, error: `${n}つ目（動画）: 動画のURL（https://〜）を入れてください` };
