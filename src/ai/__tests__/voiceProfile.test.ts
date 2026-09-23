@@ -79,7 +79,7 @@ describe("種族・色ごとの声", () => {
   const SPECIES = [...SPECIES_KEYS];
   const COLORS = ["coral", "sky", "leaf", "sun", "lavender", "peach"];
 
-  it("15種族×6色の90通りが、すべて違う声になる", () => {
+  it("25種族×6色の150通りが、すべて違う声になる", () => {
     const seen = new Set<string>();
     for (const s of SPECIES) {
       for (const c of COLORS) {

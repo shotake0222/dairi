@@ -2,7 +2,8 @@
 """
 わけたまのキャラクター（種族×6色）を、画像（PNG）と3Dモデル（GLB）の両方で書き出す。
 
-    python3 tools/characters/make_characters.py            # 新しい10種族 × 6色 = 60組を作る
+    python3 tools/characters/make_characters.py            # 追加の2回目（10種族 × 6色 = 60組）を作る
+    python3 tools/characters/make_characters.py --all      # 1回目・2回目の20種族を作り直す（ふつうは使わない）
     python3 tools/characters/make_characters.py --sheet    # 一覧（contact sheet）も書き出す
     python3 tools/characters/make_characters.py --only hoshipo
 
@@ -511,6 +512,329 @@ def futatama_3d(p):
     return parts
 
 
+# ---- 2026-09-23 追加の10種族（2回目） ------------------------------------------------------
+
+WATER = (160, 215, 255)
+WATER_LINE = (60, 140, 210)
+NOSE = (70, 50, 60)
+
+
+def cone_dir(base, direction, radius, height, rgb):
+    """base から direction の向きへ伸びる円錐（とげ・角・耳など）。"""
+    m = trimesh.creation.cone(radius=radius, height=height, sections=20)
+    m.apply_transform(trimesh.transformations.rotation_matrix(-math.pi / 2, [1, 0, 0]))  # +Y 向きに
+    d = np.array(direction, dtype=float)
+    d = d / (np.linalg.norm(d) or 1)
+    m.apply_transform(trimesh.geometry.align_vectors([0, 1, 0], d))
+    m.apply_translation(base)
+    return colored(m, rgb)
+
+
+def feet2d(c, p, y=-0.47, dx=0.2, fill=None, line=None):
+    for sx in (-1, 1):
+        c.part(ell(sx * dx, y, 0.11, 0.06), fill or p["body"], line or p["line"])
+
+
+def feet3d(p, y=-0.47, dx=0.2, rgb=None):
+    return [ellipsoid((sx * dx, y, 0.08), (0.11, 0.06, 0.12), rgb or p["body"]) for sx in (-1, 1)]
+
+
+# とげまる: 背中にとげの冠。顔はクリーム色
+def togemaru_2d(c, p):
+    spikes = []
+    for k in range(9):
+        a = math.radians(15 + k * 18.75)
+        base_l = (0.36 * math.cos(a - 0.2), -0.04 + 0.36 * math.sin(a - 0.2))
+        base_r = (0.36 * math.cos(a + 0.2), -0.04 + 0.36 * math.sin(a + 0.2))
+        tip = (0.66 * math.cos(a), -0.04 + 0.62 * math.sin(a))
+        spikes.append(Polygon([base_l, tip, base_r]))
+    c.part(unary_union(spikes), p["deep"], p["line"])
+    c.part(ell(0, -0.06, 0.46, 0.42), p["body"], p["line"])
+    c.fill(ell(0, -0.12, 0.32, 0.26), CREAM)
+    highlight(c, -0.2, 0.14, 0.09, 0.06, p)
+    face2d(c, 0, -0.04, 0.88, "smile")
+    c.fill(ell(0, -0.1, 0.03, 0.022), NOSE)
+    feet2d(c, p)
+
+
+def togemaru_3d(p):
+    bc, br = (0, -0.06, 0), (0.46, 0.42, 0.42)
+    parts = [ellipsoid(bc, br, p["body"])]
+    parts.append(ellipsoid((0, -0.12, 0.22), (0.32, 0.26, 0.24), CREAM))
+    for i in range(7):
+        for j in range(4):
+            yaw = math.radians(-120 + i * 40)
+            pitch = math.radians(15 + j * 22)
+            d = (math.sin(yaw) * math.cos(pitch), math.sin(pitch), -math.cos(yaw) * math.cos(pitch))
+            if d[2] > 0.35:
+                continue
+            base = (bc[0] + d[0] * 0.36, bc[1] + d[1] * 0.34, bc[2] + d[2] * 0.34)
+            parts.append(cone_dir(base, d, 0.08, 0.24, p["deep"]))
+    parts.append(ellipsoid((0, -0.1, surface_z((0, -0.12, 0.22), (0.32, 0.26, 0.24), 0, -0.1)), (0.03, 0.022, 0.02), NOSE, sub=2))
+    parts += face3d((0, -0.12, 0.22), (0.32, 0.26, 0.24), -0.04, 0.88)
+    parts += feet3d(p)
+    return parts
+
+
+# ぺんたま: 白いおなかと、ぱたぱたの羽。くちばしは橙
+def pentama_2d(c, p):
+    for sx in (-1, 1):
+        c.part(ell(sx * 0.47, -0.08, 0.1, 0.26, sx * 30), p["body"], p["line"])
+    c.part(ell(0, -0.02, 0.46, 0.48), p["body"], p["line"])
+    c.fill(ell(0, -0.12, 0.32, 0.34), CREAM)
+    highlight(c, -0.2, 0.26, 0.09, 0.06, p)
+    face2d(c, 0, 0.12, 0.85, None)
+    c.part(ell(0, 0.02, 0.07, 0.04), BEAK, BEAK_LINE, 0.015)
+    feet2d(c, p, y=-0.5, dx=0.16, fill=BEAK, line=BEAK_LINE)
+
+
+def pentama_3d(p):
+    bc, br = (0, -0.02, 0), (0.46, 0.48, 0.42)
+    parts = [ellipsoid(bc, br, p["body"])]
+    parts.append(ellipsoid((0, -0.12, 0.2), (0.32, 0.34, 0.26), CREAM))
+    for sx in (-1, 1):
+        parts.append(ellipsoid((sx * 0.46, -0.08, 0), (0.08, 0.26, 0.16), p["body"], rot=[([0, 0, 1], sx * 30)]))
+    parts.append(cone((0, 0.02, surface_z(bc, br, 0, 0.02) - 0.03), 0.055, 0.12, BEAK, tilt=[([1, 0, 0], 90)]))
+    parts += [ellipsoid((sx * 0.16, -0.5, 0.12), (0.1, 0.04, 0.13), BEAK) for sx in (-1, 1)]
+    parts += face3d(bc, br, 0.12, 0.85)
+    return parts
+
+
+# くまるん: まるい耳と、クリーム色の口もと
+def kumarun_2d(c, p):
+    for sx in (-1, 1):
+        c.part(ell(sx * 0.34, 0.36, 0.14, 0.14), p["body"], p["line"])
+        c.fill(ell(sx * 0.34, 0.36, 0.07, 0.07), CREAM)
+    c.part(ell(0, -0.04, 0.48, 0.44), p["body"], p["line"])
+    c.fill(ell(0, -0.16, 0.18, 0.13), CREAM)
+    highlight(c, -0.2, 0.18, 0.1, 0.07, p)
+    face2d(c, 0, 0.04, 0.95, None)
+    c.fill(ell(0, -0.1, 0.045, 0.032), NOSE)
+    c.stroke([(-0.04, -0.2), (0, -0.17), (0.04, -0.2)], MOUTH, 0.016)
+    feet2d(c, p)
+
+
+def kumarun_3d(p):
+    bc, br = (0, -0.04, 0), (0.48, 0.44, 0.42)
+    parts = [ellipsoid(bc, br, p["body"])]
+    for sx in (-1, 1):
+        parts.append(ellipsoid((sx * 0.32, 0.34, 0), (0.14, 0.14, 0.08), p["body"]))
+        parts.append(ellipsoid((sx * 0.32, 0.34, 0.05), (0.07, 0.07, 0.04), CREAM))
+    mc, mr = (0, -0.15, 0.32), (0.18, 0.13, 0.12)
+    parts.append(ellipsoid(mc, mr, CREAM))
+    parts.append(ellipsoid((0, -0.09, surface_z(mc, mr, 0, -0.09)), (0.045, 0.032, 0.03), NOSE, sub=2))
+    parts += face3d(bc, br, 0.04, 0.95, blush=True)
+    parts += feet3d(p)
+    return parts
+
+
+# こんこん: 背の高いとがった耳と、大きなふさふさのしっぽ（先が白い）
+def konkon_2d(c, p):
+    tail = ell(0.44, -0.08, 0.2, 0.34, -35)
+    c.part(tail, p["body"], p["line"])
+    c.fill(ell(0.6, 0.14, 0.1, 0.12, -35), CREAM)
+    for sx in (-1, 1):
+        ear = Polygon([(sx * 0.1, 0.3), (sx * 0.36, 0.3), (sx * 0.26, 0.74)])
+        c.part(ear.buffer(0.025), p["body"], p["line"])
+        c.fill(Polygon([(sx * 0.17, 0.34), (sx * 0.3, 0.34), (sx * 0.25, 0.6)]), p["deep"])
+    c.part(ell(0, -0.04, 0.44, 0.42), p["body"], p["line"])
+    for sx in (-1, 1):
+        c.fill(ell(sx * 0.22, -0.16, 0.2, 0.14), CREAM)
+    highlight(c, -0.18, 0.16, 0.08, 0.06, p)
+    face2d(c, 0, 0.0, 0.9, "w")
+    c.fill(ell(0, -0.08, 0.03, 0.022), NOSE)
+    feet2d(c, p, dx=0.18)
+
+
+def konkon_3d(p):
+    bc, br = (0, -0.04, 0), (0.44, 0.42, 0.4)
+    parts = [ellipsoid(bc, br, p["body"])]
+    for sx in (-1, 1):
+        parts.append(cone_dir((sx * 0.23, 0.28, 0), (sx * 0.2, 1, 0), 0.13, 0.42, p["body"]))
+        parts.append(cone_dir((sx * 0.23, 0.3, 0.05), (sx * 0.2, 1, 0), 0.07, 0.3, p["deep"]))
+        parts.append(ellipsoid((sx * 0.2, -0.16, 0.28), (0.18, 0.13, 0.12), CREAM))
+    parts.append(ellipsoid((0.38, -0.08, -0.34), (0.2, 0.34, 0.2), p["body"], rot=[([0, 0, 1], -35)]))
+    parts.append(ellipsoid((0.55, 0.16, -0.38), (0.11, 0.13, 0.11), CREAM))
+    parts.append(ellipsoid((0, -0.08, surface_z(bc, br, 0, -0.08) + 0.01), (0.03, 0.022, 0.02), NOSE, sub=2))
+    parts += face3d(bc, br, 0.0, 0.9)
+    parts += feet3d(p, dx=0.18)
+    return parts
+
+
+# げこまる: 平たい体に、頭の上の目玉ふたつ。大きな口
+def gekomaru_2d(c, p):
+    c.part(ell(0, -0.12, 0.54, 0.36), p["body"], p["line"])
+    for sx in (-1, 1):
+        c.part(ell(sx * 0.22, 0.2, 0.15, 0.14), p["body"], p["line"])
+    c.fill(ell(0, -0.26, 0.34, 0.18), CREAM)
+    highlight(c, -0.26, 0.02, 0.1, 0.05, p)
+    for sx in (-1, 1):
+        ex = sx * 0.22
+        c.fill(ell(ex, 0.21, 0.085, 0.09), WHITE)
+        c.fill(ell(ex, 0.2, 0.06, 0.07), EYE)
+        c.fill(ell(ex + 0.02, 0.23, 0.018, 0.018), WHITE)
+        c.fill(ell(sx * 0.36, -0.1, 0.07, 0.035), BLUSH, alpha=150)
+    c.stroke([(-0.2, -0.06), (-0.1, -0.12), (0, -0.13), (0.1, -0.12), (0.2, -0.06)], MOUTH, 0.02)
+    for sx in (-1, 1):
+        c.part(ell(sx * 0.3, -0.48, 0.14, 0.05), p["body"], p["line"])
+
+
+def gekomaru_3d(p):
+    bc, br = (0, -0.12, 0), (0.54, 0.36, 0.46)
+    parts = [ellipsoid(bc, br, p["body"])]
+    parts.append(ellipsoid((0, -0.26, 0.26), (0.34, 0.18, 0.22), CREAM))
+    for sx in (-1, 1):
+        ec, er = (sx * 0.22, 0.18, 0.12), (0.15, 0.14, 0.14)
+        parts.append(ellipsoid(ec, er, p["body"]))
+        parts.append(ellipsoid((sx * 0.22, 0.2, 0.24), (0.075, 0.08, 0.04), WHITE, sub=2))
+        parts.append(ellipsoid((sx * 0.22, 0.2, 0.27), (0.055, 0.065, 0.03), EYE3D, sub=2))
+        parts.append(ellipsoid((sx * 0.3, -0.48, 0.12), (0.14, 0.05, 0.16), p["body"]))
+    for k in range(5):
+        x = -0.2 + k * 0.1
+        y = -0.06 - 0.07 * math.sin(math.pi * k / 4)
+        parts.append(ellipsoid((x, y, surface_z(bc, br, x, y)), (0.03, 0.012, 0.012), MOUTH, sub=2))
+    return parts
+
+
+# ぱおん: 大きなうちわの耳と、くるんと下がる鼻
+def paon_2d(c, p):
+    for sx in (-1, 1):
+        c.part(ell(sx * 0.46, 0.04, 0.24, 0.3, sx * 10), p["body"], p["line"])
+        c.fill(ell(sx * 0.48, 0.04, 0.15, 0.2, sx * 10), p["peach_inner"] if "peach_inner" in p else mix(p["body"], BLUSH, 0.45))
+    c.part(ell(0, 0.0, 0.42, 0.42), p["body"], p["line"])
+    highlight(c, -0.16, 0.2, 0.08, 0.06, p)
+    face2d(c, 0, 0.1, 0.85, None)
+    trunk = [(0, 0.0), (0.0, -0.14), (-0.02, -0.28), (0.06, -0.38), (0.14, -0.34)]
+    c.stroke(trunk, p["line"], 0.13)
+    c.stroke(trunk, p["body"], 0.09)
+    feet2d(c, p, y=-0.44)
+
+
+def paon_3d(p):
+    bc, br = (0, 0.0, 0), (0.42, 0.42, 0.4)
+    parts = [ellipsoid(bc, br, p["body"])]
+    inner = mix(p["body"], BLUSH, 0.45)
+    for sx in (-1, 1):
+        parts.append(ellipsoid((sx * 0.44, 0.04, -0.04), (0.22, 0.3, 0.05), p["body"], rot=[([0, 1, 0], -sx * 25)]))
+        parts.append(ellipsoid((sx * 0.45, 0.04, 0.0), (0.14, 0.2, 0.03), inner, rot=[([0, 1, 0], -sx * 25)]))
+    pts = [(0, -0.02, 0.36), (0, -0.14, 0.42), (-0.02, -0.26, 0.44), (0.05, -0.36, 0.42), (0.12, -0.33, 0.4)]
+    for a, b in zip(pts, pts[1:]):
+        parts.append(cylinder(a, b, 0.055, p["body"]))
+        parts.append(ellipsoid(b, (0.055, 0.055, 0.055), p["body"], sub=2))
+    parts += face3d(bc, br, 0.1, 0.85)
+    parts += feet3d(p, y=-0.44)
+    return parts
+
+
+# めるも: もこもこの毛（体より明るい色）に、体の色の顔。くるんとした角
+def merumo_2d(c, p):
+    wool = unary_union([ell(0.44 * math.cos(math.radians(a)), 0.02 + 0.42 * math.sin(math.radians(a)), 0.16, 0.16) for a in range(0, 360, 36)] + [ell(0, 0.02, 0.44, 0.42)])
+    c.part(wool, p["light"], p["line"])
+    for sx in (-1, 1):
+        c.stroke([(sx * 0.2, 0.2), (sx * 0.34, 0.26), (sx * 0.38, 0.14), (sx * 0.3, 0.1)], p["deep"], 0.05)
+    c.part(ell(0, -0.04, 0.26, 0.28), p["body"], p["line"])
+    face2d(c, 0, -0.02, 0.72, "smile")
+    feet2d(c, p, y=-0.5, dx=0.18, fill=p["body"])
+
+
+def merumo_3d(p):
+    bc, br = (0, 0.02, -0.04), (0.44, 0.42, 0.4)
+    parts = [ellipsoid(bc, br, p["light"])]
+    for a in range(0, 360, 36):
+        r = math.radians(a)
+        parts.append(ellipsoid((0.44 * math.cos(r), 0.02 + 0.42 * math.sin(r), -0.04), (0.16, 0.16, 0.16), p["light"], sub=2))
+    for x, y in ((-0.2, 0.3), (0.2, 0.3), (0, 0.38), (-0.3, -0.2), (0.3, -0.2)):
+        parts.append(ellipsoid((x, y, 0.22), (0.14, 0.14, 0.14), p["light"], sub=2))
+    fc, fr = (0, -0.04, 0.3), (0.26, 0.28, 0.16)
+    parts.append(ellipsoid(fc, fr, p["body"]))
+    for sx in (-1, 1):
+        parts.append(torus((sx * 0.3, 0.18, 0.2), 0.07, 0.03, p["deep"]))
+    parts += face3d(fc, fr, -0.02, 0.72)
+    parts += feet3d(p, y=-0.5, dx=0.18)
+    return parts
+
+
+# ぱたもり: ぎざぎざの羽と、とがった小さな耳。ちょこんと出た白い牙
+def patamori_2d(c, p):
+    for sx in (-1, 1):
+        wing = Polygon([(sx * 0.3, 0.12), (sx * 0.84, 0.26), (sx * 0.8, -0.02), (sx * 0.68, 0.04), (sx * 0.6, -0.12), (sx * 0.48, -0.04), (sx * 0.34, -0.16)])
+        c.part(wing, p["deep"], p["line"], 0.028)
+        ear = Polygon([(sx * 0.12, 0.36), (sx * 0.32, 0.34), (sx * 0.28, 0.58)])
+        c.part(ear.buffer(0.02), p["body"], p["line"])
+    c.part(ell(0, -0.02, 0.42, 0.42), p["body"], p["line"])
+    highlight(c, -0.17, 0.18, 0.08, 0.06, p)
+    face2d(c, 0, 0.02, 0.9, "smile")
+    for sx in (-1, 1):
+        c.fill(Polygon([(sx * 0.02, -0.12), (sx * 0.06, -0.12), (sx * 0.04, -0.17)]), WHITE)
+    feet2d(c, p, y=-0.44, dx=0.16)
+
+
+def patamori_3d(p):
+    bc, br = (0, -0.02, 0), (0.42, 0.42, 0.38)
+    parts = [ellipsoid(bc, br, p["body"])]
+    for sx in (-1, 1):
+        parts.append(ellipsoid((sx * 0.56, 0.06, -0.08), (0.3, 0.16, 0.03), p["deep"], rot=[([0, 0, 1], sx * 12), ([0, 1, 0], -sx * 20)]))
+        for k in range(3):
+            parts.append(ellipsoid((sx * (0.42 + k * 0.13), -0.08, -0.08), (0.07, 0.07, 0.025), p["deep"], sub=2))
+        parts.append(cone_dir((sx * 0.2, 0.32, 0), (sx * 0.3, 1, 0), 0.09, 0.22, p["body"]))
+        z = surface_z(bc, br, sx * 0.04, -0.14)
+        parts.append(cone_dir((sx * 0.04, -0.12, z), (0, -1, 0.3), 0.018, 0.05, WHITE))
+    parts += face3d(bc, br, 0.02, 0.9)
+    parts += feet3d(p, y=-0.44, dx=0.16)
+    return parts
+
+
+# しずくん: しずく形の体と、大きなきらめき
+def shizukun_2d(c, p):
+    drop = unary_union([ell(0, -0.12, 0.42, 0.4), Polygon([(-0.3, 0.1), (0.3, 0.1), (0, 0.66)]).buffer(0.04)])
+    c.part(drop, p["body"], p["line"])
+    highlight(c, -0.16, 0.14, 0.07, 0.14, p, rot=-15)
+    c.fill(ell(-0.22, -0.02, 0.04, 0.04), WHITE)
+    face2d(c, 0, -0.12, 0.88, "o")
+    feet2d(c, p, y=-0.52, dx=0.16)
+
+
+def shizukun_3d(p):
+    bc, br = (0, -0.12, 0), (0.42, 0.4, 0.4)
+    parts = [ellipsoid(bc, br, p["body"])]
+    parts.append(cone_dir((0, 0.12, 0), (0, 1, 0), 0.3, 0.52, p["body"]))
+    parts.append(ellipsoid((-0.16, 0.12, 0.26), (0.06, 0.12, 0.04), p["light"], sub=2))
+    parts += face3d(bc, br, -0.12, 0.88)
+    parts += feet3d(p, y=-0.52, dx=0.16)
+    return parts
+
+
+# くじらん: 横長の体、しっぽのひれ、頭の上の潮
+def kujiran_2d(c, p):
+    tail = unary_union([ell(0.62, 0.1, 0.1, 0.16, -30), ell(0.62, -0.06, 0.1, 0.16, 30)])
+    c.part(tail, p["body"], p["line"])
+    c.part(ell(0, -0.08, 0.58, 0.4), p["body"], p["line"])
+    belly = ell(0, -0.2, 0.42, 0.22).intersection(Polygon([(-1, -0.2), (1, -0.2), (1, -1), (-1, -1)]))
+    c.fill(unary_union([belly, ell(0, -0.24, 0.4, 0.2)]).intersection(ell(0, -0.08, 0.55, 0.37)), CREAM)
+    for k in range(3):
+        c.stroke([(-0.18 + k * 0.12, -0.3), (-0.18 + k * 0.12, -0.4)], mix(CREAM, p["line"], 0.35), 0.014)
+    highlight(c, -0.26, 0.14, 0.1, 0.06, p)
+    face2d(c, -0.12, -0.02, 0.85, "smile")
+    for dx, dy in ((0, 0.46), (-0.08, 0.54), (0.08, 0.54)):
+        c.part(ell(dx, dy, 0.04, 0.06), WATER, WATER_LINE, 0.015)
+    c.stroke([(0, 0.32), (0, 0.44)], WATER_LINE, 0.03)
+
+
+def kujiran_3d(p):
+    bc, br = (0, -0.08, 0), (0.58, 0.4, 0.44)
+    parts = [ellipsoid(bc, br, p["body"])]
+    parts.append(ellipsoid((0, -0.22, 0.14), (0.42, 0.22, 0.32), CREAM))
+    parts.append(ellipsoid((0.0, -0.06, -0.52), (0.12, 0.16, 0.08), p["body"]))
+    for sx in (-1, 1):
+        parts.append(ellipsoid((sx * 0.14, -0.02, -0.64), (0.16, 0.05, 0.1), p["body"], rot=[([0, 0, 1], sx * 20)]))
+        parts.append(ellipsoid((sx * 0.56, -0.18, 0.02), (0.1, 0.04, 0.16), p["body"], rot=[([0, 0, 1], -sx * 25)]))
+    parts.append(cylinder((0, 0.3, 0), (0, 0.44, 0), 0.03, WATER))
+    for dx in (-0.08, 0, 0.08):
+        parts.append(ellipsoid((dx, 0.5 + (0.04 if dx else 0), 0), (0.045, 0.06, 0.045), WATER, sub=2))
+    parts += face3d(bc, br, -0.02, 0.85)
+    return parts
+
+
 SPECIES = {
     "hoshipo": ("ほしぽ", hoshipo_2d, hoshipo_3d),
     "kinokon": ("きのこん", kinokon_2d, kinokon_3d),
@@ -522,7 +846,21 @@ SPECIES = {
     "kamenko": ("かめんこ", kamenko_2d, kamenko_3d),
     "ponpoko": ("ぽんぽこ", ponpoko_2d, ponpoko_3d),
     "futatama": ("ふたたま", futatama_2d, futatama_3d),
+    # 2026-09-23 追加（2回目）
+    "togemaru": ("とげまる", togemaru_2d, togemaru_3d),
+    "pentama": ("ぺんたま", pentama_2d, pentama_3d),
+    "kumarun": ("くまるん", kumarun_2d, kumarun_3d),
+    "konkon": ("こんこん", konkon_2d, konkon_3d),
+    "gekomaru": ("げこまる", gekomaru_2d, gekomaru_3d),
+    "paon": ("ぱおん", paon_2d, paon_3d),
+    "merumo": ("めるも", merumo_2d, merumo_3d),
+    "patamori": ("ぱたもり", patamori_2d, patamori_3d),
+    "shizukun": ("しずくん", shizukun_2d, shizukun_3d),
+    "kujiran": ("くじらん", kujiran_2d, kujiran_3d),
 }
+
+# 追加の2回目だけを作る（1回目の10種族を作り直すと、既存の子の見た目が変わるため）
+SECOND_BATCH = ["togemaru", "pentama", "kumarun", "konkon", "gekomaru", "paon", "merumo", "patamori", "shizukun", "kujiran"]
 
 
 # ---- 書き出し ----------------------------------------------------------------------------
@@ -583,8 +921,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", help="この種族だけ作る")
     ap.add_argument("--sheet", help="一覧画像の書き出し先")
+    ap.add_argument("--all", action="store_true", help="1回目の10種族も作り直す（既存の子の見た目が変わるので、ふつうは使わない）")
     args = ap.parse_args()
-    names = [args.only] if args.only else list(SPECIES)
+    names = [args.only] if args.only else (list(SPECIES) if args.all else SECOND_BATCH)
     OUT.mkdir(parents=True, exist_ok=True)
     for sp in names:
         for co in COLORS:

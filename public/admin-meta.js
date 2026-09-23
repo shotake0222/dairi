@@ -414,7 +414,7 @@
         }
         if (spec.seconds) {
           grid.appendChild(
-            field("制限時間（秒・" + spec.seconds.min + "〜" + spec.seconds.max + "）", o.seconds, function (v) { o.seconds = v; }, { type: "number", min: spec.seconds.min, max: spec.seconds.max })
+            field((spec.seconds.label ? spec.seconds.label + "の時間" : "制限時間") + "（秒・" + spec.seconds.min + "〜" + spec.seconds.max + "）", o.seconds, function (v) { o.seconds = v; }, { type: "number", min: spec.seconds.min, max: spec.seconds.max })
           );
         }
         grid.appendChild(selectField("むずかしさ", LEVELS, o.level || 2, function (v) { o.level = Number(v); }));

@@ -363,13 +363,13 @@
       <p class="lead">
         分身が宿るもの。<strong>NFCタグ</strong>でも<strong>QR</strong>でも、仕組みはまったく同じです。
         <br />・<strong>1つの依代からは1体だけ</strong>（2回目以降の読み取りは、同じ子に会いに行く）
-        <br />・<strong>姿は引くもの</strong>。既定では90種類（15種族×6色）から等確率で、運営でも個体は指定できません
+        <br />・<strong>姿は引くもの</strong>。既定では150種類（25種族×6色）から等確率で、運営でも個体は指定できません
         <br />・<strong>人が持てる数に上限はありません</strong>。依代を3つ持てば3体育ちます
         <br />・<strong>依代が無くても始められます</strong>（<code>/w</code>）。タグを刷る前でもサービスを出せます
         <br />「その場所でしか手に入らない」は、まず<strong>そのコードをその場所にしか置かないこと</strong>で作ります。
         それでも足りないときだけ、配布元ごとに<strong>出る姿の範囲</strong>を絞れます（下の「配布元」）。
         ※ 限定の姿が効くのは<strong>1枚ずつコードを振って発行した依代（主にQR）だけ</strong>です。
-        共通URLのNFCタグは、どこで配ったかを台帳に持っていないので、いつもどおり90種類から引きます。
+        共通URLのNFCタグは、どこで配ったかを台帳に持っていないので、いつもどおり150種類から引きます。
         <br />絞れるのは範囲までで、<strong>どの子が出るかは決められません</strong>——
         ここを崩すと「引き当てた」が「配られた」になり、集める理由が消えます。
       </p>
@@ -477,7 +477,7 @@
       <details class="poolBox" id="poolBox">
         <summary>ここでしか出ない姿にする（ふだんは開かなくて構いません）</summary>
         <div class="poolWarn">
-          <strong>何も選ばなければ、これまでどおり90種類から等確率です。</strong>
+          <strong>何も選ばなければ、これまでどおり150種類から等確率です。</strong>
           選ぶと、この配布元で発行した依代からは<strong>選んだ範囲の中だけ</strong>から出るようになります。
           <br />範囲を狭めることはできますが、<strong>どの子が出るかは指定できません</strong>。
           抽選そのものはこちらでも動かせない作りにしてあります。
@@ -1330,7 +1330,7 @@
     const co = readPool("color");
     const out = document.getElementById("poolSummary");
     if (sp.length === 0 && co.length === 0) {
-      out.textContent = "制限なし（90種類から等確率）";
+      out.textContent = "制限なし（150種類から等確率）";
       return;
     }
     const n = (sp.length || SPECIES.length) * (co.length || COLORS.length);

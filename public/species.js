@@ -30,12 +30,25 @@
     kamenko: "かめんこ",
     ponpoko: "ぽんぽこ",
     futatama: "ふたたま",
+    // 2026-09-23 にさらに足した10種族（25種族×6色=150通り）
+    togemaru: "とげまる",
+    pentama: "ぺんたま",
+    kumarun: "くまるん",
+    konkon: "こんこん",
+    gekomaru: "げこまる",
+    paon: "ぱおん",
+    merumo: "めるも",
+    patamori: "ぱたもり",
+    shizukun: "しずくん",
+    kujiran: "くじらん",
   };
 
   var ORDER = [
     "punikoro", "mofukuru", "tsunomaru", "howahowa", "kiratsubu",
     "hoshipo", "kinokon", "tamatori", "mimipyon", "futabaru",
     "kuragekko", "nyamaru", "kamenko", "ponpoko", "futatama",
+    "togemaru", "pentama", "kumarun", "konkon", "gekomaru",
+    "paon", "merumo", "patamori", "shizukun", "kujiran",
   ];
 
   var COLORS = ["coral", "sky", "leaf", "sun", "lavender", "peach"];

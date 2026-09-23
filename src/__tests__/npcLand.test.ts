@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import { env, SELF } from "cloudflare:test";
 import { partnerKeyOf, sanitizeMetaLine } from "../metaText";
-import { BUILTIN_ROOMS, PLACES } from "../metaverse";
+import { BUILTIN_ROOMS, PLACES, SENSOR_GAMES, sanitizeObjects } from "../metaverse";
 
 /**
  * 運営の分身（NPC）・区画（広告・ランドマーク・申込）・招待リンクとWeb申し込み・分身どうしの会話。
@@ -320,12 +320,37 @@ describe("依代を使わない入口（招待リンク・Web申し込み・引�
 });
 
 describe("エリアの追加", () => {
-  it("和風を中心に10か所の場所と、最初からあるエリアが足されている", () => {
-    expect(PLACES.length).toBe(15);
+  it("和風を中心に10か所の場所と、最初からあるエリアが足されている（その後さらに10か所）", () => {
+    expect(PLACES.length).toBeGreaterThanOrEqual(15);
     for (const id of ["sakura", "garden", "onsen", "bamboo", "momiji", "matsuri", "snow", "lake", "forest", "flower"]) {
       expect(PLACES.some((p) => p.id === id)).toBe(true);
       expect(BUILTIN_ROOMS.some((r) => r.place === id)).toBe(true);
     }
-    expect(BUILTIN_ROOMS.length).toBe(12);
+    expect(BUILTIN_ROOMS.length).toBe(22);
+  });
+
+  it("さらに10か所（和風4か所を含む）が足され、どのエリアの置く物も管理画面の決まりに合っている", () => {
+    expect(PLACES.length).toBe(25);
+    for (const id of ["castle", "tanabata", "paddy", "inari", "harbor", "desert", "candy", "moon", "undersea", "park"]) {
+      expect(PLACES.some((p) => p.id === id)).toBe(true);
+      expect(BUILTIN_ROOMS.some((r) => r.place === id)).toBe(true);
+    }
+    const ids = new Set<string>();
+    for (const room of BUILTIN_ROOMS) {
+      expect(ids.has(room.id), room.id).toBe(false);
+      ids.add(room.id);
+      // 最初からあるエリアも、管理画面で保存し直したときに同じ中身で通ること
+      const r = sanitizeObjects(room.objects);
+      expect(r.ok, room.id).toBe(true);
+      if (r.ok) expect(r.value.length).toBe(room.objects.length);
+    }
+  });
+
+  it("あとから足したミニゲーム10種類は、どれもどこかのエリアで遊べる", () => {
+    const placed = new Set(BUILTIN_ROOMS.flatMap((r) => r.objects.map((o) => o.type)));
+    for (const id of ["fishing", "pour", "maze", "balloon", "tower", "colorhunt", "hanetsuki", "taiko", "sled", "nenne"]) {
+      expect(id in SENSOR_GAMES).toBe(true);
+      expect(placed.has(id as never), id).toBe(true);
+    }
   });
 });

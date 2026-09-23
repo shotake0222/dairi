@@ -221,8 +221,8 @@ describe("エリアの管理（開放予約・閉鎖・まとめる）", () => {
 });
 
 describe("ミニゲームの管理", () => {
-  it("センサーのミニゲームは10種類あり、目標と時間は決めた範囲に収める", () => {
-    expect(Object.keys(SENSOR_GAMES).length).toBe(10);
+  it("センサーのミニゲームは20種類あり、目標と時間は決めた範囲に収める", () => {
+    expect(Object.keys(SENSOR_GAMES).length).toBe(20);
     for (const [type, spec] of Object.entries(SENSOR_GAMES)) {
       const r = sanitizeObjects([{ type, slot: "back", goal: 99999, seconds: 99999, level: 9 }]);
       expect(r.ok).toBe(true);

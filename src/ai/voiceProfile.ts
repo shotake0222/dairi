@@ -7,7 +7,7 @@
  *
  * **3階建てで決める。**
  *   1. 種族  … 声の家系。ぷにころは高くて弾む、つのまるは低めで落ち着く、といった大枠
- *   2. 色    … 同じ種族の中での枝分かれ。ここで90通り（15種族 × 6色）に分かれる
+ *   2. 色    … 同じ種族の中での枝分かれ。ここで150通り（25種族 × 6色）に分かれる
  *   3. 個体  … characterId のハッシュによる細かいゆらぎ。同じ種族・同じ色でも同じ声にならない
  * さらに、性格によって**話し方**（速さ）が育つにつれて変わる。
  *
@@ -59,7 +59,7 @@ const SPECIES_VOICE: Record<string, { pitch: number; rate: number; voiceBias: nu
   howahowa: { pitch: 1.48, rate: 0.92, voiceBias: 3, label: "ふわふわした柔らかい声" },
   kiratsubu: { pitch: 1.74, rate: 1.12, voiceBias: 0, label: "きらきら澄んだ声" },
   // 2026-09-23 に足した10種族。**既存の5種族と、高さ・速さの組がぶつからないように**置いてある
-  // （90通りすべてが違う声になることを src/ai/__tests__/voiceProfile.test.ts が確かめる）。
+  // （150通りすべてが違う声になることを src/ai/__tests__/voiceProfile.test.ts が確かめる）。
   // 見た目の印象に寄せた: 星は高く速く、亀は低めでゆっくり、くらげは漂うようにゆっくり。
   hoshipo: { pitch: 1.8, rate: 1.13, voiceBias: 1, label: "ちかちか瞬く声" },
   kinokon: { pitch: 1.3, rate: 0.9, voiceBias: 2, label: "ぽこぽこした素朴な声" },
@@ -71,6 +71,17 @@ const SPECIES_VOICE: Record<string, { pitch: number; rate: number; voiceBias: nu
   kamenko: { pitch: 1.2, rate: 0.84, voiceBias: 1, label: "のんびりした声" },
   ponpoko: { pitch: 1.28, rate: 0.99, voiceBias: 0, label: "ぽんぽん陽気な声" },
   futatama: { pitch: 1.36, rate: 0.94, voiceBias: 3, label: "まるまる穏やかな声" },
+  // さらに足した10種族（25種族×6色=150通り）。同じく既存の組とぶつからない位置に置く。
+  togemaru: { pitch: 1.58, rate: 1.1, voiceBias: 2, label: "ちくちく元気な声" },
+  pentama: { pitch: 1.47, rate: 0.95, voiceBias: 1, label: "よちよち歩く声" },
+  kumarun: { pitch: 1.24, rate: 0.93, voiceBias: 3, label: "どっしり優しい声" },
+  konkon: { pitch: 1.64, rate: 1.04, voiceBias: 0, label: "こんこん澄ました声" },
+  gekomaru: { pitch: 1.26, rate: 1.08, voiceBias: 2, label: "けろけろ跳ねる声" },
+  paon: { pitch: 1.19, rate: 0.97, voiceBias: 1, label: "ぱおんと響く声" },
+  merumo: { pitch: 1.5, rate: 0.9, voiceBias: 3, label: "めえめえ眠たげな声" },
+  patamori: { pitch: 1.71, rate: 1.07, voiceBias: 0, label: "ぱたぱた羽ばたく声" },
+  shizukun: { pitch: 1.76, rate: 0.95, voiceBias: 2, label: "ぽたぽた澄んだ声" },
+  kujiran: { pitch: 1.32, rate: 0.88, voiceBias: 1, label: "ゆったり深い声" },
 };
 
 const DEFAULT_SPECIES_VOICE = { pitch: 1.44, rate: 1.0, voiceBias: 0, label: "やわらかい声" };

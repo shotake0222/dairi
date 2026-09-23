@@ -191,7 +191,7 @@
     return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
 
-  // 姿は 15種族 × 6色 = 90通り（public/species.js）。
+  // 姿は 25種族 × 6色 = 150通り（public/species.js）。
   const SPECIES_ORDER = window.WaketamaSpecies.order;
   const COLOR_ORDER = window.WaketamaSpecies.colors;
 

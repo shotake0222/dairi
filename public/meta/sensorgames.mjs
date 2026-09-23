@@ -1,5 +1,6 @@
 /**
- * センサー・XRを使うミニゲーム（10種類）。定義（名前・使うセンサー・設定の範囲）は src/metaverse.ts の SENSOR_GAMES。
+ * センサー・XRを使うミニゲーム（最初の10種類。あとから足した10種類は sensorgames2.mjs）。
+ * 定義（名前・使うセンサー・設定の範囲）は src/metaverse.ts の SENSOR_GAMES。
  *
  *   tilt      かたむけコロコロ      ジャイロ        端末をかたむけて分身を転がし、コインを集める
  *   shake     ふりふりダッシュ      加速度          ふるほど速く走る。制限時間内にゴール
@@ -43,7 +44,7 @@ export const SENSOR_BEST = {
 
 // ---------------------------------------------------------------- 共通
 
-class SensorGame {
+export class SensorGame {
   /**
    * @param {object} api GameRunner から渡される口
    *   THREE, me{species,color,name,voice}, layer{root,touch,ctrl,meter,center,video,info},
@@ -148,8 +149,11 @@ class SensorGame {
     this.scene.add(sun);
   }
 
-  /** 自分の分身のモデル（読み込みは後から差し込む。待たずに遊び始められる） */
-  avatar(scale = 0.78) {
+  /**
+   * 自分の分身のモデル（読み込みは後から差し込む。待たずに遊び始められる）。
+   * species / color を渡すと、別の子（はねつきのお相手など）になる。
+   */
+  avatar(scale = 0.78, species, color) {
     const THREE = this.THREE;
     const group = new THREE.Group();
     const body = new THREE.Group();
@@ -163,7 +167,7 @@ class SensorGame {
     group.add(shadow);
     group.userData.body = body;
     const me = this.api.me;
-    loadCharacter(THREE, me.species, me.color).then((model) => {
+    loadCharacter(THREE, species || me.species, color || me.color).then((model) => {
       if (this.ended) return;
       if (model) {
         const box = new THREE.Box3().setFromObject(model);
@@ -272,7 +276,7 @@ class SensorGame {
 }
 
 /** 空間のあちこちに散らす（真ん中と、互いに近すぎる所を避ける） */
-function scatter(count, half, minCenter = 1.4, minGap = 1.2) {
+export function scatter(count, half, minCenter = 1.4, minGap = 1.2) {
   const out = [];
   let guard = 0;
   while (out.length < count && guard++ < count * 80) {
@@ -286,7 +290,7 @@ function scatter(count, half, minCenter = 1.4, minGap = 1.2) {
 }
 
 /** 空の丸天井（上から下へのグラデーション） */
-function skyDome(THREE, top, bottom) {
+export function skyDome(THREE, top, bottom) {
   const c = document.createElement("canvas");
   c.width = 4;
   c.height = 256;

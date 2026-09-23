@@ -5,7 +5,7 @@
  *   video    動画スクリーン（音なし・くり返し）
  *   members  いまいる子の紹介
  *   treasure / quiz / rally  ミニゲームの屋台。タップするか、前の光る輪に分身が入ると始まる
- *   tilt / shake / … / xr     センサー・XRのミニゲームの屋台（遊ぶ画面は sensorgames.mjs）
+ *   tilt / shake / … / nenne  センサー・XRのミニゲームの屋台（遊ぶ画面は sensorgames.mjs / sensorgames2.mjs）
  *
  * 置き場所は決まった7か所（src/metaverse.ts の SLOTS）で、どれも空間の真ん中を向く。
  */
@@ -27,6 +27,17 @@ const GAME_COLORS = {
   hotcold: 0xff5a4f,
   daruma: 0xe8a33d,
   xr: 0x39c0ff,
+  // あとから足した10種類（sensorgames2.mjs）
+  fishing: 0x3f9fd8,
+  pour: 0xff9f40,
+  maze: 0x8bd450,
+  balloon: 0xff5a7a,
+  tower: 0xffb13d,
+  colorhunt: 0xa45cff,
+  hanetsuki: 0xd9434b,
+  taiko: 0xa8432a,
+  sled: 0x7fb8e8,
+  nenne: 0x6a7bd8,
 };
 const GAME_ICON = {
   treasure: "★",
@@ -42,9 +53,22 @@ const GAME_ICON = {
   hotcold: "熱",
   daruma: "鬼",
   xr: "XR",
+  fishing: "釣",
+  pour: "注",
+  maze: "迷",
+  balloon: "風",
+  tower: "積",
+  colorhunt: "色",
+  hanetsuki: "羽",
+  taiko: "鼓",
+  sled: "橇",
+  nenne: "眠",
 };
 /** センサーを使うゲームか（屋台に「スマホを動かす」の札を付ける） */
-const SENSOR_TYPES = new Set(["tilt", "shake", "balance", "voice", "arhunt", "skycatch", "rhythm", "hotcold", "daruma", "xr"]);
+const SENSOR_TYPES = new Set([
+  "tilt", "shake", "balance", "voice", "arhunt", "skycatch", "rhythm", "hotcold", "daruma", "xr",
+  "fishing", "pour", "maze", "balloon", "tower", "colorhunt", "hanetsuki", "taiko", "sled", "nenne",
+]);
 
 function canvasTexture(THREE, canvas) {
   const tex = new THREE.CanvasTexture(canvas);

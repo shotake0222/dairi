@@ -1,5 +1,5 @@
 /**
- * メタバースのミニゲーム（宝さがし・○×クイズ・スタンプラリー）と、センサー・XRのミニゲーム10種の進行役。
+ * メタバースのミニゲーム（宝さがし・○×クイズ・スタンプラリー）と、センサー・XRのミニゲーム20種の進行役。
  * センサーのゲームの中身は sensorgames.mjs（部屋とは別の場面で遊び、終わったら部屋に戻る）。
  *
  * どれも「分身を歩かせて遊ぶ」形にしてある。自分の分身が主役で、クリアするとその子が
@@ -10,7 +10,12 @@
  */
 
 import { textCanvas } from "./world.mjs";
-import { SENSOR_BEST, SENSOR_GAME_CLASSES } from "./sensorgames.mjs";
+import { SENSOR_BEST as BEST_1, SENSOR_GAME_CLASSES as CLASSES_1 } from "./sensorgames.mjs";
+import { SENSOR_BEST_2, SENSOR_GAME_CLASSES_2 } from "./sensorgames2.mjs";
+
+// センサーのゲームは2つのファイルに分けてある（最初の10種類と、あとから足した10種類）
+const SENSOR_BEST = { ...BEST_1, ...SENSOR_BEST_2 };
+const SENSOR_GAME_CLASSES = { ...CLASSES_1, ...SENSOR_GAME_CLASSES_2 };
 
 const BEST_KEY = (roomId, objId) => `sodatsukake_metaBest_${roomId}_${objId}`;
 
@@ -79,7 +84,7 @@ export class GameRunner {
     const spec = this.ctx.catalog.sensorGames?.[o.type];
     if (spec) {
       const lines = [spec.how];
-      const rule = [spec.goal && o.goal ? `${spec.goal.label}: ${o.goal}` : "", spec.seconds && o.seconds ? `制限 ${o.seconds}秒` : "", `むずかしさ ${"★".repeat(o.level || 2)}`];
+      const rule = [spec.goal && o.goal ? `${spec.goal.label}: ${o.goal}` : "", spec.seconds && o.seconds ? `${spec.seconds.label || "制限"} ${o.seconds}秒` : "", `むずかしさ ${"★".repeat(o.level || 2)}`];
       lines.push(rule.filter(Boolean).join("／"));
       lines.push(`使うもの: ${spec.sensors.join("・")}（使えないときは${spec.fallback}）`);
       // 端末をふる・映すゲームは、周りの安全をひとこと

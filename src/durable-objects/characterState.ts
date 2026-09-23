@@ -59,7 +59,7 @@ export interface Env {
   CHAT_MODEL?: string;
 }
 
-// 15種族×6色=90種類。実ファイルは public/characters/{species}_{color}.png / .glb
+// 25種族×6色=150種類。実ファイルは public/characters/{species}_{color}.png / .glb
 // 後半の10種族（hoshipo 以降）は 2026-09-23 に追加。tools/characters/make_characters.py が作る。
 // **並びを変えない・消さない。** 既存の分身は種族のキーで姿を引いているので、消すと姿が出なくなる。
 // 画面側の一覧（public/species.js）と、声の家系（src/ai/voiceProfile.ts）も同じ並びで持つ。
@@ -67,6 +67,8 @@ export const SPECIES_KEYS = [
   "punikoro", "mofukuru", "tsunomaru", "howahowa", "kiratsubu",
   "hoshipo", "kinokon", "tamatori", "mimipyon", "futabaru",
   "kuragekko", "nyamaru", "kamenko", "ponpoko", "futatama",
+  "togemaru", "pentama", "kumarun", "konkon", "gekomaru",
+  "paon", "merumo", "patamori", "shizukun", "kujiran",
 ] as const;
 export const COLOR_KEYS = ["coral", "sky", "leaf", "sun", "lavender", "peach"] as const;
 export type SpeciesKey = (typeof SPECIES_KEYS)[number];
@@ -89,6 +91,16 @@ export const SPECIES_LABELS: Record<SpeciesKey, string> = {
   kamenko: "かめんこ",
   ponpoko: "ぽんぽこ",
   futatama: "ふたたま",
+  togemaru: "とげまる",
+  pentama: "ぺんたま",
+  kumarun: "くまるん",
+  konkon: "こんこん",
+  gekomaru: "げこまる",
+  paon: "ぱおん",
+  merumo: "めるも",
+  patamori: "ぱたもり",
+  shizukun: "しずくん",
+  kujiran: "くじらん",
 };
 
 /** 分身同士の交流ログの1発言。roleはこのキャラクター視点での自分/相手。 */
@@ -476,7 +488,7 @@ export class CharacterState extends DurableObject<Env> {
    * 運営が姿を決められる口を1つでも開けると「引き当てた」が「配られた」に変わる。
    */
   /**
-   * @param pool 引く範囲。省略すれば90種類から等確率（ほとんどの依代はこちら）。
+   * @param pool 引く範囲。省略すれば150種類から等確率（ほとんどの依代はこちら）。
    *   **姿そのものを指定する引数ではない。** 詳しくは BirthPool のコメントと migration 0011。
    */
   async init(name: string, pool?: BirthPool): Promise<CharacterData> {

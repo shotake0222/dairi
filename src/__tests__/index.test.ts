@@ -708,7 +708,7 @@ describe("種族と姿の実ファイル", () => {
     }
   });
 
-  it("15種族×6色のすべてに、画像と3Dモデルがある", async () => {
+  it("25種族×6色のすべてに、画像と3Dモデルがある", async () => {
     const missing: string[] = [];
     for (const s of SPECIES_KEYS) {
       for (const c of COLOR_KEYS) {

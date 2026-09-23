@@ -423,15 +423,17 @@ check("確かめていないことも書いてある", bizHtml.includes("モデ�
   const local = readFileSync(new URL("./device/web/wt_core.mjs", import.meta.url), "utf8");
   // 振る舞いエンジンの写しがずれると、メタバースと実機で同じ子が違う動きをする
   check("メタバースの振る舞いエンジンが、実機の検証機と同じ", served === local);
-  // センサー・XRのミニゲーム10種が、定義（サーバー）と画面（sensorgames.mjs）の両方にそろっている
+  // センサー・XRのミニゲーム20種が、定義（サーバー）と画面（sensorgames.mjs / sensorgames2.mjs）の両方にそろっている
   const sensorIds = Object.keys(rooms.catalog.sensorGames || {});
-  const sensorJs = await (await fetch(`${BASE}/meta/sensorgames.mjs`)).text();
-  check("センサーのミニゲームが10種ある", sensorIds.length === 10);
+  const sensorJs =
+    (await (await fetch(`${BASE}/meta/sensorgames.mjs`)).text()) + (await (await fetch(`${BASE}/meta/sensorgames2.mjs`)).text());
+  check("センサーのミニゲームが20種ある", sensorIds.length === 20);
   check("センサーのミニゲームが全部、画面側に実装されている", sensorIds.every((id) => new RegExp(`\\b${id}: [A-Z][A-Za-z]+Game`).test(sensorJs)));
   check("ロビーの一覧に、状態（公開中・近日開放）が付いている", rooms.rooms.every((r) => r.state === "open" || r.state === "soon"));
   const metaRes = await fetch(`${BASE}/meta`);
   // 和風を中心に足した10エリア・広告の申込ページ・Web申し込み・会話の吹き出し
   check("最初からあるエリアが12か所ある（和風・神社を含む）", ["sakura-jinja", "wa-teien", "natsu-matsuri"].every((id) => rooms.rooms.some((r) => r.id === id)));
+  check("さらに足した10エリア（お城・千本鳥居・海の底など）に入れる", ["oshiro", "tanabata", "tanbo", "senbon-torii", "minato", "oasis", "okashi", "tsuki", "umi-no-soko", "yuenchi"].every((id) => rooms.rooms.some((r) => r.id === id)));
   check("メタバースで自動と手動を選べ、交流の記録へ行ける", metaHtml.includes('id="modeBtn"') && metaHtml.includes('id="friendsBtn"'));
   const friendsHtml = await (await fetch(`${BASE}/friends`)).text();
   check("交流の記録（図鑑）で、メタバースとお散歩を絞り込める", friendsHtml.includes('data-f="meta"') && friendsHtml.includes('data-f="walk"'));
@@ -1044,7 +1046,7 @@ console.log("\n[32] 依代を何個でも持てること、書き込むURLの案
   const dex = await page.evaluate(() => {
     const card = document.getElementById("dexCard");
     // 一覧は開いたときにサーバーの姿で上書きされる。**2体が同じ姿を引くこともある**
-    // （90通りなので1%ほど）。数え方を固定値で書くと、たまに落ちるテストになる。
+    // （150通りなので1%未満）。数え方を固定値で書くと、たまに落ちるテストになる。
     let list = [];
     try { list = JSON.parse(localStorage.getItem("sodatsukake_myCharacters") || "[]"); } catch (e) { /* noop */ }
     const distinct = new Set(list.filter((c) => c.species && c.color).map((c) => `${c.species}_${c.color}`));
@@ -1056,9 +1058,9 @@ console.log("\n[32] 依代を何個でも持てること、書き込むURLの案
       distinct: distinct.size,
     };
   });
-  check("集めた姿の図鑑が出る", dex.shown === true && dex.cells === 90, JSON.stringify(dex));
+  check("集めた姿の図鑑が出る", dex.shown === true && dex.cells === 150, JSON.stringify(dex));
   check("持っている姿だけが開いている",
-    dex.distinct > 0 && dex.owned === dex.distinct && dex.count.includes(`${dex.distinct} / 90`),
+    dex.distinct > 0 && dex.owned === dex.distinct && dex.count.includes(`${dex.distinct} / 150`),
     JSON.stringify(dex));
 
   // 1体も居ない端末では図鑑を出さない（集める前に空の棚を見せない）

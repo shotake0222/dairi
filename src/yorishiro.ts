@@ -121,7 +121,7 @@ export interface Spot {
   active: boolean;
   createdAt: number;
   /**
-   * そこでしか出ない姿の範囲。空なら制限なし（＝90種類から等確率。ほとんどの配布元はこちら）。
+   * そこでしか出ない姿の範囲。空なら制限なし（＝150種類から等確率。ほとんどの配布元はこちら）。
    * **どの子が出るかは指定できない。範囲を狭めるだけ**（migration 0011 の説明を参照）。
    */
   speciesPool: string[];
