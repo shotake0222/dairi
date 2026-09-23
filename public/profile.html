@@ -128,8 +128,9 @@
   <section id="consentSection">
     <h2>データの使い道</h2>
     <p class="lead">
-      はじめるときの同意で、下の2つは有効になっています。
+      はじめるときの同意で、「覚えさせる」と「統計」の2つは有効になっています。
       <strong>気に入らないものは、ここでいつでも止められます。</strong>止めても、分身とはこれまでどおり話せます。
+      「法人へ渡す」だけは、あなたが入れない限りオフのままです。
     </p>
     <div id="consentList"></div>
     <div id="status"></div>
@@ -341,7 +342,8 @@
         item.querySelector(".tag").textContent = on ? "同意済み" : "未同意";
         item.querySelector(".body").textContent = texts.body.replace(/\*\*/g, "");
         item.querySelector(".note").textContent =
-          texts.note + "　やめるときは、チャット画面の設定から分身を削除してください（すべて消えます）。";
+          String(texts.note || "").replace(/\*\*/g, "") +
+          "　やめるときは、チャット画面の設定から分身を削除してください（すべて消えます）。";
         consentList.appendChild(item);
         continue;
       }
@@ -354,8 +356,20 @@
         <p class="body"></p>
         <p class="note"></p>`;
       item.querySelector("h3").textContent = texts.title;
-      item.querySelector(".body").textContent = texts.body;
-      item.querySelector(".note").textContent = texts.note;
+      // ** の強調は、この画面では記号ごと落とす（本文は短いので太字にしなくても読める）
+      item.querySelector(".body").textContent = String(texts.body || "").replace(/\*\*/g, "");
+      item.querySelector(".note").textContent = String(texts.note || "").replace(/\*\*/g, "");
+      // 法人への個別提供を入れているときは、いま何社が受け取れる状態かを見せる。
+      // 許可したきり中身が見えないと、取り消すかどうかを判断できない。
+      if (key === "individual" && on && typeof state.activeGrants === "number") {
+        const grants = document.createElement("p");
+        grants.className = "note";
+        grants.textContent =
+          state.activeGrants > 0
+            ? `いまこの子の写しを受け取れる法人: ${state.activeGrants}件（どれも期限つき）。オフにすると、すべて失効します。`
+            : "いまこの子の写しを受け取れる法人はありません。";
+        item.appendChild(grants);
+      }
       consentList.appendChild(item);
     }
 

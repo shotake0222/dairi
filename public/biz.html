@@ -392,6 +392,11 @@
             <li>本人が申告した値と、会話からの推定の<strong>区別</strong>（確からしさを受け取り側で判断できます）</li>
           </ul>
           <p>
+            <strong>ただし、他の方が育てた分身をお渡しする場合は、「覚えていること」「記憶」「応答例」は空になります。</strong>
+            どれも会話から生まれたもので、会話の本文を第三者へ渡さないことを育てた方と約束しているためです。
+            これらまで入るのは、<strong>御社がご自身で育てた分身を書き出す場合</strong>だけです（無料）。
+          </p>
+          <p>
             人格の多くは、言葉ではなく<strong>間・距離・目線</strong>に出ます。
             そこを数値で渡せないと、身体を持たせた瞬間に別人になります。
             人格カードには、性格と価値観から導いたこれらのパラメータが入っています。
@@ -802,7 +807,7 @@ ollama run    waketama-persona</pre>
         <ul>
           <li>分身 <strong>5体まで</strong></li>
           <li>MCP接続</li>
-          <li><strong>全形式の再発行し放題</strong>（カード・振る舞い・SLM一式・判断・持ち出し一式）</li>
+          <li><strong>全形式の再発行し放題</strong>（カード・振る舞い・判断・持ち出し一式）</li>
           <li>メールでの技術相談</li>
         </ul>
         <a class="pick" href="#contact" data-topic="plan" data-plan="スタンダード">スタンダードで相談する</a>
@@ -835,21 +840,21 @@ ollama run    waketama-persona</pre>
       <tr><td><strong>振る舞いプロファイル</strong></td><td>LLMを積まない機器（ロボット・玩具・サイネージ）。約250バイト＋参照実装</td><td class="yen">20,000円</td></tr>
       <tr><td><strong>判断プロファイル</strong></td><td>判断特化モデルや、自前の分岐ロジックに「誰の判断か」を与えたい</td><td class="yen">20,000円</td></tr>
       <tr><td><strong>人格カード</strong>（4形式）</td><td>自前のLLM基盤（クラウドでもローカルでも）で動かしたい</td><td class="yen">30,000円</td></tr>
-      <tr><td><strong>SLM一式</strong></td><td>手元の小さなモデルで喋らせたい。Modelfile＋口調を寄せるLoRA学習データ</td><td class="yen">50,000円</td></tr>
-      <tr><td><strong>持ち出し一式</strong></td><td>ネットに繋がない現場。MCP以外のすべてを1つにまとめたもの</td><td class="yen">80,000円</td></tr>
+      <tr><td><strong>持ち出し一式</strong></td><td>ネットに繋がない現場。人格カードと振る舞いプロファイル、オフラインでの動かし方を1つにまとめたもの</td><td class="yen">45,000円</td></tr>
     </table></div>
     <ul class="priceNote">
       <li>取り出し用の引換券は<strong>90日間</strong>有効です</li>
       <li>ご利用の範囲は、開発・検証・社内での利用までです。製品に焼いて出荷する場合は、下の「量産搭載」をご相談ください</li>
-      <li>他の方が育てた分身は、<strong>持ち主ご本人から個別に同意をいただけたものに限ります</strong>。ご用意できる数は、お問い合わせの時点でお伝えします</li>
-      <li>御社がご自身で育てた分身の人格カードは、個人の方と同じく<strong>無料で</strong>書き出せます</li>
+      <li>他の方が育てた分身は、<strong>持ち主ご本人が「法人へ渡すことを許可する」を入れたものに限ります</strong>（既定はオフです）。ご用意できる数は、お問い合わせの時点でお伝えします</li>
+      <li>お渡しする写しには、<strong>会話の本文・覚え書き・記憶・世帯年収は含まれません</strong>。持ち主が許可を外した時点で、引換券は失効します</li>
+      <li>御社がご自身で育てた分身なら、人格カード（覚え書き・応答例まで入ったもの）と、口調を寄せる学習データつきの<strong>SLM一式</strong>を、個人の方と同じく<strong>無料で</strong>書き出せます</li>
     </ul>
 
     <h3 style="font-size:15.5px;margin:30px 0 12px">データ・統計</h3>
     <div class="scroll"><table class="wide priceTable">
       <tr><th style="width:30%">商品</th><th>内容</th><th style="width:18%">価格</th></tr>
       <tr><td><strong>セグメント統計レポート</strong></td><td>性格6軸・価値観8軸の分布、話題の構成比、7つの人物像セグメント別の内訳。会話の本文は含みません</td><td class="yen">100,000円<br /><small style="font-weight:400;color:var(--muted)">1回</small></td></tr>
-      <tr><td><strong>マスキング済みの人格データ</strong></td><td>ご本人の同意を得た分身の人格データ。20体から</td><td class="yen">3,000円<br /><small style="font-weight:400;color:var(--muted)">1体</small></td></tr>
+      <tr><td><strong>マスキング済みの人格データ</strong></td><td>「法人へ渡すことを許可する」を入れた分身の人格データ（会話の本文・覚え書きは含みません）。20体から</td><td class="yen">3,000円<br /><small style="font-weight:400;color:var(--muted)">1体</small></td></tr>
     </table></div>
     <ul class="priceNote">
       <li>データの母数を積み上げている段階のため、この価格にしています。母数が増えた時点で改定することがあります</li>

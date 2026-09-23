@@ -499,6 +499,17 @@ describe("静的ファイル配信とPWA/OGP", () => {
     expect(csp).not.toContain("unsafe-inline");
     expect(csp).toContain("object-src 'none'");
     expect(csp).toContain("base-uri 'none'");
+    // JavaScript の eval は許さない（WASMのコンパイルだけを許す 'wasm-unsafe-eval' とは別物）
+    expect(csp).not.toMatch(/'unsafe-eval'/);
+  });
+
+  it("CSPが、Service Worker の登録と視線入力の後読みを塞いでいない", async () => {
+    // nonce だけのCSPだと、sw.js の登録（worker-src の代わりに script-src が使われる）と、
+    // eyes.html の import()（MediaPipe）が実ブラウザで拒否される。テストでは通るのに本番で黙って壊れる種類
+    const csp = (await SELF.fetch(`${BASE}/home`)).headers.get("content-security-policy") || "";
+    expect(csp).toContain("worker-src 'self'");
+    expect(csp).toContain("'strict-dynamic'");
+    expect(csp).toContain("'wasm-unsafe-eval'");
   });
 
   it("HTML中のすべての<script>タグに、ヘッダと同じnonceが振られている", async () => {
@@ -523,6 +534,25 @@ describe("静的ファイル配信とPWA/OGP", () => {
     expect(nonceA).toBeTruthy();
     expect(nonceB).toBeTruthy();
     expect(nonceA).not.toBe(nonceB);
+  });
+
+  it("2回目の訪問（条件付きリクエスト）でも304を返さず、本文とヘッダのnonceが揃う", async () => {
+    // 304 を返すと、ブラウザは古い本文（古いnonce）に新しいヘッダ（新しいnonce）を重ね、
+    // そのページのスクリプトが全部拒否される。実ブラウザでしか起きないので、ここで形を縛る
+    const first = await SELF.fetch(`${BASE}/home`);
+    expect(first.headers.get("etag")).toBeNull();
+    expect(first.headers.get("last-modified")).toBeNull();
+    await first.text();
+
+    const assetEtag = (await env.ASSETS.fetch(`${BASE}/home.html`)).headers.get("etag") || '"x"';
+    const again = await SELF.fetch(`${BASE}/home`, {
+      headers: { "if-none-match": assetEtag, "if-modified-since": new Date().toUTCString() },
+    });
+    expect(again.status).toBe(200);
+    const nonce = /script-src 'nonce-([^']+)'/.exec(again.headers.get("content-security-policy") || "")?.[1];
+    const body = await again.text();
+    expect(nonce).toBeTruthy();
+    expect(body).toContain(`nonce="${nonce}"`);
   });
 
   it("外部スクリプト（model-viewer）を読み込むページでも、そのタグにnonceが振られる", async () => {

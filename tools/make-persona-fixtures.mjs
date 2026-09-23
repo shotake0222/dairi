@@ -158,7 +158,13 @@ for (const persona of PERSONAS) {
       meta: { generator: "waketama", note: "検証用の固定データ" },
     },
   });
-  await post("/api/consent", { characterId: cid, token, consent: { terms: true, profile: true, aggregate: true } });
+  // 検査用の架空の2体は、サンプルとして法人へ渡すことがあるので individual も入れておく
+  // （実在の方の分身ではないので、本人の判断を待つ必要が無い）
+  await post("/api/consent", {
+    characterId: cid,
+    token,
+    consent: { terms: true, profile: true, aggregate: true, individual: true },
+  });
   await post("/api/profile", { characterId: cid, token, answers: persona.profile });
 
   for (const [id, value] of Object.entries(persona.psycho)) {

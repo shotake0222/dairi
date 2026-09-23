@@ -92,6 +92,14 @@ function grantTokenOf(request: Request, url: URL): string {
   return url.searchParams.get("token") || "";
 }
 
+/** 買い手向けの写しが作れなかったときの返し方。同意が無いのか、分身が無いのかを分けて伝える。 */
+function buyerCardError(id: string | number | null | undefined, error: string): Response {
+  if (error === "no_consent") {
+    return rpcError(id, -32004, "この分身の持ち主は、法人への個別提供を許可していません（または取り消しました）");
+  }
+  return rpcError(id, -32002, "この分身は見つかりませんでした");
+}
+
 export async function handleMcp(env: McpEnv, request: Request, url: URL): Promise<Response> {
   if (request.method !== "POST") {
     // GETで開いた人に、何が要るかだけは伝える（黙って405だと繋ぎ方が分からない）
@@ -150,18 +158,14 @@ export async function handleMcp(env: McpEnv, request: Request, url: URL): Promis
   const stub = env.CHARACTER.getByName(grant.characterId);
 
   if (toolName === "persona_behavior") {
-    const state = await stub.getState();
-    if (!state) return rpcError(id, -32002, "この分身は見つかりませんでした");
-    const card = await stub.buildCard(state.ownerToken);
-    if (!card.ok) return rpcError(id, -32002, card.error);
+    const card = await stub.buildBuyerCard();
+    if (!card.ok) return buyerCardError(id, card.error);
     return rpcResult(id, textContent(toCompact(card.card)));
   }
 
   if (toolName === "persona_profile") {
-    const state = await stub.getState();
-    if (!state) return rpcError(id, -32002, "この分身は見つかりませんでした");
-    const card = await stub.buildCard(state.ownerToken);
-    if (!card.ok) return rpcError(id, -32002, card.error);
+    const card = await stub.buildBuyerCard();
+    if (!card.ok) return buyerCardError(id, card.error);
     // 買い手に渡すのは人物像まで。覚え書きと会話の抜粋はここでは出さない
     // （必要なら card スコープの引換券で、ファイルとして納品する）。
     return rpcResult(
@@ -187,12 +191,14 @@ export async function handleMcp(env: McpEnv, request: Request, url: URL): Promis
 
     // 何も保存しない経路を使う。買い手との会話で持ち主の分身が育ってはいけない。
     // 回数制限もこの中で効くので、MCP経由で無制限に叩かれることはない。
-    const turn = await stub.beginEphemeralTurn(message);
+    // 回数は持ち主の会話とは別の入れ物で数える（買い手が使い切っても、本人は話せる）
+    const turn = await stub.beginEphemeralTurn(message, "buyer");
     if (!turn.ok) return rpcError(id, -32003, turn.error);
 
-    const state = await stub.getState();
-    const card = state ? await stub.buildCard(state.ownerToken) : null;
-    if (!card || !card.ok) return rpcError(id, -32002, "この分身は見つかりませんでした");
+    // 返す systemPrompt は買い手向けの写しから作る。本人向けのカードから作ると、
+    // プロンプトの中に覚え書き・記憶・会話の抜粋がそのまま入ってしまう。
+    const card = await stub.buildBuyerCard();
+    if (!card.ok) return buyerCardError(id, card.error);
 
     // 返すのは「この子として答えるための材料一式」。
     // 発話そのものをこちらで生成しないのは、買い手が自分のモデル・自分の温度で

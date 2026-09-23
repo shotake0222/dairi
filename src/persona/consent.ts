@@ -38,6 +38,17 @@
 export const CONSENT_VERSION = 4;
 
 /**
+ * 版を上げずに `individual` を足した理由（2026-09-23）:
+ * - 冒頭の方針「用途を増やしたら版を上げる」は、**過去の同意を新しい用途に流用しない**ためにある。
+ * - `individual` は既定オフで、terms にも束ねず、**本人がトグルを入れたときにしか true にならない**
+ *   （normalizeConsent で、過去の記録や terms から推定する道を作っていない）。流用が起きる余地が無い。
+ * - ここで版を上げると、全員が次に開いたとき同意画面に戻される。守るものが増えないのに、
+ *   その往復だけが発生する。
+ * **束ねる用途・既定オンの用途を足すときは、これまでどおり必ず版を上げること。**
+ * 例外はこの「既定オフ・本人が入れたときだけ有効」の形に限る（`OPT_IN_ONLY`）。
+ */
+
+/**
  * 4 で何が変わったか:
  * - **入口の同意画面（gate.js が出す terms.note）に、未成年の方への注記を足した。**
  *   「未成年の方は、保護者の方の同意を得たうえでご利用ください」は以前から `public/terms.html` の
@@ -60,7 +71,7 @@ export const CONSENT_VERSION = 4;
  *   運営が引換券で個別に行う形（src/delivery.ts）へ一本化した。
  * - **terms を足した。** 始める前に、規約とプライバシーポリシーへの同意を取る。
  */
-export type ConsentPurpose = "terms" | "profile" | "aggregate";
+export type ConsentPurpose = "terms" | "profile" | "aggregate" | "individual";
 
 export interface ConsentState {
   version: number;
@@ -71,6 +82,12 @@ export interface ConsentState {
   profile: boolean;
   /** 匿名化・集約したうえで、統計や第三者提供に含めてよい */
   aggregate: boolean;
+  /**
+   * この分身の写しを、運営が選んだ特定の法人へ、期限つきで渡してよい（**既定オフ・本人が入れたときだけ**）。
+   * aggregate は「個人が特定されない形にまとめた統計」までで、1体の写しを渡すことまでは含まない。
+   * 引換券の発行（src/delivery.ts）は、これが true の分身にしか通さない。
+   */
+  individual: boolean;
 }
 
 export const EMPTY_CONSENT: ConsentState = {
@@ -79,6 +96,7 @@ export const EMPTY_CONSENT: ConsentState = {
   terms: false,
   profile: false,
   aggregate: false,
+  individual: false,
 };
 
 /** 画面と同意記録で同じ文面を使うための定義（説明を2箇所に書くと必ずズレるため）。 */
@@ -110,6 +128,19 @@ export const CONSENT_TEXTS: Record<ConsentPurpose, { title: string; body: string
       "会話の本文そのものが渡ることはありません。",
     note: "一定人数に満たないグループは、そもそも統計として出しません。いつでも取り消せます。",
   },
+  // 既定オフ（OPT_IN_ONLY）。入れたときに何が渡り、何が渡らないかを、ここで全部言い切る。
+  // 渡す範囲は CharacterState.buildBuyerCard が実装している。**文面と実装を必ず一緒に直すこと。**
+  individual: {
+    title: "この分身の写しを、法人へ渡すことを許可する",
+    body:
+      "ロボットやアバターなどにこの子の人格を載せたい法人へ、運営（Straid）が個別にお取引をしたうえで、" +
+      "この分身の写しを期限つきで渡すことがあります。渡すのは、性格・口調・声・価値観の傾向・身体の動かし方の数値と、" +
+      "選択肢で答えた属性（年収を除く）です。",
+    note:
+      "会話の本文・分身が覚えていること（覚え書き・記憶）・年収・入力方法などの設定は、入れても渡りません。" +
+      "写しを受け取った相手と話しても、この子は育ちません。**既定はオフです。**" +
+      "オフに戻すと、その時点で発行済みの受け取りの権利もすべて失効します。",
+  },
 };
 
 /**
@@ -130,6 +161,12 @@ export const REQUIRED_CONSENT: ConsentPurpose[] = ["terms"];
  */
 export const BUNDLED_WITH_TERMS: ConsentPurpose[] = ["profile", "aggregate"];
 
+/**
+ * **本人がはっきり入れたときだけ有効になる**使い道。terms に束ねず、既定はオフ。
+ * 入口の同意画面（gate.js）には出さない。/profile のトグルで、本人が選ぶ。
+ */
+export const OPT_IN_ONLY: ConsentPurpose[] = ["individual"];
+
 /** 保存されている同意が「いま有効か」を判定する。版が古ければ同意していない扱いにする。 */
 export function hasConsent(consent: ConsentState | undefined, purpose: ConsentPurpose): boolean {
   if (!consent) return false;
@@ -149,6 +186,14 @@ export function normalizeConsent(raw: unknown, previous?: ConsentState): Consent
   };
 
   const terms = pick("terms");
+  // 既定オフの使い道。**画面がはっきり true を送ったときと、いまの版でそう記録されているときだけ**有効。
+  // terms からも、この項目が無かった頃の記録（undefined）からも推定しない。
+  // terms を持たない分身では有効にしない（始めてもいない人の写しを渡す理由が無い）。
+  const optIn = (key: ConsentPurpose): boolean => {
+    if (!terms) return false;
+    if (typeof input[key] === "boolean") return input[key] as boolean;
+    return current ? current[key] === true : false;
+  };
   const bundled = (key: ConsentPurpose): boolean => {
     // 1. 画面がはっきり指定した値がいちばん強い（設定で止めた／戻した）
     if (typeof input[key] === "boolean") return input[key] as boolean;
@@ -164,5 +209,6 @@ export function normalizeConsent(raw: unknown, previous?: ConsentState): Consent
     terms,
     profile: BUNDLED_WITH_TERMS.includes("profile") ? bundled("profile") : pick("profile"),
     aggregate: BUNDLED_WITH_TERMS.includes("aggregate") ? bundled("aggregate") : pick("aggregate"),
+    individual: optIn("individual"),
   };
 }

@@ -24,7 +24,7 @@ import { deriveSpeechStyle } from "../ai/speechStyle";
 import { deriveVoiceProfile, VoiceProfile } from "../ai/voiceProfile";
 import { Psychographics, VALUE_LABELS as VALUE_LABEL_BY_AXIS, topInterests } from "../analysis/psychographics";
 import { SegmentResult } from "../analysis/segments";
-import { ProfileAnswers, describeProfile } from "./profile";
+import { PROFILE_FIELDS, ProfileAnswers, describeProfile } from "./profile";
 import { AccessibilityPrefs } from "./accessibility";
 
 export const PERSONA_CARD_FORMAT = "waketama.persona-card";
@@ -98,6 +98,34 @@ export interface PersonaCard {
 
   /** 本人の手元に戻すときのため。販売・集約の対象には含めない */
   accessibility?: AccessibilityPrefs;
+
+  /**
+   * 誰に渡す写しか。"buyer"（法人）のときは、会話の本文・覚え書き・記憶・年収・
+   * アクセシビリティ設定が**空になっている**（CharacterState.buildBuyerCard が作る）。
+   * 受け取った側が「中身が薄い」のか「渡されていない」のかを区別できるように、印として残す。
+   */
+  audience?: "owner" | "buyer";
+}
+
+/**
+ * 法人（買い手）へ渡さない属性。本人の書き出しには含める。
+ * 年収は「統計としてのみ使う」と本人に説明しているため、1体の写しには載せない。
+ */
+export const BUYER_EXCLUDED_PROFILE_KEYS = ["income"];
+
+/**
+ * 買い手へ渡してよい属性だけに絞る。
+ * 管理画面から後で足した設問は、何を聞いたかがこの時点で保証できないので含めない
+ * （既定の設問＝PROFILE_FIELDS だけを通す）。
+ */
+export function buyerProfileAnswers(answers: ProfileAnswers): ProfileAnswers {
+  const out: ProfileAnswers = {};
+  for (const field of PROFILE_FIELDS) {
+    if (BUYER_EXCLUDED_PROFILE_KEYS.includes(field.key)) continue;
+    const values = answers[field.key];
+    if (values && values.length > 0) out[field.key] = [...values];
+  }
+  return out;
 }
 
 export interface BuildPersonaCardInput {
@@ -118,6 +146,8 @@ export interface BuildPersonaCardInput {
   accessibility?: AccessibilityPrefs;
   /** 属性・価値観を含めてよいか（同意が無ければ人物像を落として、分身の振る舞いだけを渡す） */
   includeOwnerProfile: boolean;
+  /** 誰に渡す写しか（既定は本人）。中身の絞り込みは呼び出し側で済ませてから渡すこと */
+  audience?: "owner" | "buyer";
 }
 
 /** 直近のやり取りから、往復になっている組だけを取り出して応答例にする。 */
@@ -333,6 +363,7 @@ export function buildPersonaCard(input: BuildPersonaCardInput): PersonaCard {
       ),
     },
     accessibility: input.accessibility,
+    audience: input.audience ?? "owner",
   };
 
   card.runtime.systemPrompt = renderSystemPrompt(card);
@@ -371,7 +402,14 @@ Ollama で常駐させたい場合は、同じ内容を Modelfile 形式でも�
 
 ## 注意
 
-記憶には、育てた人の生活に関わる内容が含まれていることがあります。
-第三者へ渡す前に、中身を確認してください。
+${
+  card.audience === "buyer"
+    ? `これは、育てた方の許可を得てお渡ししている写しです。
+育てた方との約束により、**会話の本文・覚え書き・記憶・年収・入力方法などの設定は含めていません**
+（上の件数が0なのは、そのためです）。性格・口調・価値観・身体のパラメータは、そのまま使えます。
+第三者への再配布はできません。`
+    : `記憶には、育てた人の生活に関わる内容が含まれていることがあります。
+第三者へ渡す前に、中身を確認してください。`
+}
 `;
 }

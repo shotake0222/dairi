@@ -151,6 +151,15 @@ function randomNonce(): string {
  *   攻撃者がどこかから文字列を注入できても（XSS）、nonce を知らなければスクリプトとしては動かない。
  *   全ページのインラインスクリプトに serveAsset() 側で同じ nonce を振っているので、
  *   'unsafe-inline' を許可する必要がない（詳しくは serveAsset の HTMLRewriter 部分）。
+ * - 'strict-dynamic': nonce を持つスクリプトが**自分で読み込んだ**スクリプトも実行を許す。
+ *   視線入力（eyes.html）は MediaPipe を import() で後から読むので、これが無いと
+ *   nonce だけのCSPでは読み込みが拒否されて、視線入力が黙って動かなくなる。
+ *   'strict-dynamic' を付けても、攻撃者が注入した（nonce を持たない）タグは動かないのは同じ。
+ * - 'wasm-unsafe-eval': MediaPipe は WebAssembly を使う。WASMのコンパイルだけを許す指定で、
+ *   JavaScript の eval は許さない（'unsafe-eval' とは別物）。
+ * - worker-src 'self': Service Worker（/sw.js）の登録。worker-src を書かないと script-src が
+ *   代わりに使われ、nonce を付けられない sw.js が拒否される（オフライン対応が消える）。
+ *   2026-09-23、実ブラウザで確かめて見つけた。nonce 化（10-8）のときはブラウザで確認できていなかった。
  * - object-src / base-uri: <object>/<embed>や<base>タグの差し替えでCSPを迂回されないための保険。
  *   このサービスはどちらも使っていないので、閉じてしまって実害が無い。
  * - nosniff: content-typeを無視した解釈をさせない。
@@ -161,7 +170,8 @@ function randomNonce(): string {
 function securityHeaders(nonce: string): Record<string, string> {
   return {
     "content-security-policy":
-      `frame-ancestors 'none'; script-src 'nonce-${nonce}'; object-src 'none'; base-uri 'none'`,
+      `frame-ancestors 'none'; script-src 'nonce-${nonce}' 'strict-dynamic' 'wasm-unsafe-eval'; ` +
+      `worker-src 'self'; object-src 'none'; base-uri 'none'`,
     "x-frame-options": "DENY",
     "x-content-type-options": "nosniff",
     "referrer-policy": "strict-origin-when-cross-origin",
@@ -256,7 +266,13 @@ export default {
       if (!grant.ok) return json({ error: grant.error }, { status: grant.status });
 
       const payload = await buildDelivery(env, grant.characterId, scope, url.searchParams.get("format") || "json");
-      if (!payload) return json({ error: "取り出せませんでした" }, { status: 404 });
+      // 下見も買い手向けの写しで出す。持ち主が個別提供を許可していない分身は、商談の場にも出さない
+      if (!payload) {
+        return json(
+          { error: "取り出せませんでした（分身が無いか、持ち主が法人への個別提供を許可していません）" },
+          { status: 404 }
+        );
+      }
 
       return new Response(payload.body, {
         headers: {
@@ -330,7 +346,13 @@ export default {
       const cid = url.searchParams.get("cid") || "";
       if (!scope || !cid) return json({ error: "cid と scope が要ります" }, { status: 400 });
       const payload = await buildDelivery(env, cid, scope, url.searchParams.get("format") || "json");
-      if (!payload) return json({ error: "取り出せませんでした" }, { status: 404 });
+      // 下見も買い手向けの写しで出す。持ち主が個別提供を許可していない分身は、商談の場にも出さない
+      if (!payload) {
+        return json(
+          { error: "取り出せませんでした（分身が無いか、持ち主が法人への個別提供を許可していません）" },
+          { status: 404 }
+        );
+      }
       return new Response(payload.body, {
         headers: { "content-type": payload.contentType, "cache-control": "no-store" },
       });
@@ -873,7 +895,16 @@ export default {
  * 常に正しい絶対URLになり、HTML側はドメインを知らなくて済む。
  */
 async function serveAsset(request: Request, url: URL, env: Env, hostEnv: Env = env): Promise<Response> {
-  let assetResponse = await env.ASSETS.fetch(request);
+  // **条件付きリクエスト（If-None-Match など）をアセット層へ渡さない。**
+  // HTMLには毎回ちがう nonce を振っているので、304 で返すとブラウザは
+  // 「手元のキャッシュの本文（古い nonce）」に「新しいヘッダ（新しい nonce）」を重ねてしまい、
+  // **2回目以降の訪問で、そのページのスクリプトが全部拒否される**（2026-09-23、実ブラウザで確認）。
+  // ここを通るのは run_worker_first のページと sw.js・robots.txt・sitemap.xml だけなので、
+  // 304 を諦めても転送量はほとんど増えない。
+  const unconditional = new Headers(request.headers);
+  unconditional.delete("if-none-match");
+  unconditional.delete("if-modified-since");
+  let assetResponse = await env.ASSETS.fetch(new Request(request, { headers: unconditional }));
 
   // 存在しないパスには案内のあるページを返す。
   //
@@ -903,6 +934,14 @@ async function serveAsset(request: Request, url: URL, env: Env, hostEnv: Env = e
   const nonce = randomNonce();
   for (const [key, value] of Object.entries(securityHeaders(nonce))) {
     withVersion.headers.set(key, value);
+  }
+  // 検証子（ETag / Last-Modified）を付けたままにすると、次の訪問でブラウザが条件付きで聞きに来る。
+  // 本文は nonce を振った時点でアセットとは別物なので、検証子ごと外し、毎回取り直してもらう。
+  withVersion.headers.delete("etag");
+  withVersion.headers.delete("last-modified");
+  // 管理画面や404で付けた no-store は、より強い指定なのでそのまま残す
+  if (!/no-store/i.test(withVersion.headers.get("cache-control") || "")) {
+    withVersion.headers.set("cache-control", "no-cache");
   }
 
   const origin = url.origin;

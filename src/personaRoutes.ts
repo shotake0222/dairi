@@ -13,9 +13,12 @@ import { CONSENT_TEXTS, CONSENT_VERSION } from "./persona/consent";
 import { PROFILE_GROUPS, completionRate } from "./persona/profile";
 import { renderOllamaModelfile, renderReadme } from "./persona/personaCard";
 import { LogContext, logInfo } from "./lib/log";
+import { buildSlmPackage, DEFAULT_SLM_BASE, SLM_BASES } from "./slm";
 
 export interface PersonaRoutesEnv {
   CHARACTER: DurableObjectNamespace<CharacterState>;
+  /** 持ち主に「いま写しを受け取れる法人の数」を見せるために読む（無ければ出さない） */
+  DB?: D1Database;
 }
 
 function json(data: unknown, status = 200): Response {
@@ -79,7 +82,24 @@ export async function handleGetOwnerView(env: PersonaRoutesEnv, url: URL): Promi
     notesSeed: result.profileNotesSeed,
     nextField: result.nextField,
     interactionCount: result.interactionCount,
+    // 法人への個別提供を入れている人に、「いま何社が写しを受け取れる状態か」を見せる。
+    // 許可したきり中身が見えないと、取り消す判断ができない。
+    activeGrants: await countActiveGrants(env, cid),
   });
+}
+
+async function countActiveGrants(env: PersonaRoutesEnv, cid: string): Promise<number | null> {
+  if (!env.DB) return null;
+  try {
+    const row = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM delivery_grants WHERE character_id = ? AND revoked_at IS NULL AND expires_at > ?"
+    )
+      .bind(cid, Date.now())
+      .first<{ n: number }>();
+    return row?.n ?? 0;
+  } catch {
+    return null;
+  }
 }
 
 export async function handleSetConsent(
@@ -98,6 +118,7 @@ export async function handleSetConsent(
     profile: result.consent.profile,
     aggregate: result.consent.aggregate,
     terms: result.consent.terms,
+    individual: result.consent.individual,
   });
   return json({ consent: result.consent });
 }
@@ -179,6 +200,34 @@ export async function handlePersonaCard(env: PersonaRoutesEnv, url: URL, log: Lo
   }
   if (format === "readme") {
     return text(renderReadme(card), `${safeName}_README.md`);
+  }
+  // 自分専用のSLM一式。**本人が自分の分身を書き出すときだけ**、会話からの学習データが入る
+  // （法人へ渡す写しでは、学習データは空になる。会話の本文を第三者へ渡さないため）。
+  // 御社が自分で育てた分身を載せる、という使い方はここで完結する。
+  if (format === "slm") {
+    const base = SLM_BASES.some((b) => b.id === url.searchParams.get("base")) ? url.searchParams.get("base")! : DEFAULT_SLM_BASE;
+    const pkg = buildSlmPackage(card, base);
+    return new Response(
+      JSON.stringify(
+        {
+          format: "waketama.slm-package",
+          formatVersion: "1.0",
+          generatedAt: Date.now(),
+          stats: pkg.stats,
+          files: { Modelfile: pkg.modelfile, "train.jsonl": pkg.trainJsonl, "eval.jsonl": pkg.evalJsonl, "README.md": pkg.readme },
+          note: "files の各キーがそのままファイル名です。会話の抜粋が入っているので、人に渡す前に中身を確認してください。",
+        },
+        null,
+        2
+      ),
+      {
+        headers: {
+          "content-type": "application/json; charset=utf-8",
+          "cache-control": "no-store",
+          "content-disposition": `attachment; filename="${encodeURIComponent(`${safeName}_slm.json`)}"`,
+        },
+      }
+    );
   }
 
   return new Response(JSON.stringify(card, null, 2), {

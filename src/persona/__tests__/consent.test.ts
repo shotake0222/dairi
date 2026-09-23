@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { BUNDLED_WITH_TERMS, CONSENT_VERSION, EMPTY_CONSENT, hasConsent, normalizeConsent } from "../consent";
+import { BUNDLED_WITH_TERMS, CONSENT_TEXTS, CONSENT_VERSION, ConsentState, EMPTY_CONSENT, hasConsent, normalizeConsent, OPT_IN_ONLY } from "../consent";
 
 /**
  * 同意の扱いの検証。
@@ -88,5 +88,37 @@ describe("normalizeConsent", () => {
     const consent = normalizeConsent({ terms: true }, previous);
     expect(consent.aggregate).toBe(false);
     expect(consent.profile).toBe(true);
+  });
+});
+
+describe("法人への個別提供（individual）は、本人が入れたときだけ", () => {
+  it("terms に同意しても、一緒には有効にならない（束ねない）", () => {
+    const c = normalizeConsent({ terms: true });
+    expect(c.profile).toBe(true);
+    expect(c.aggregate).toBe(true);
+    expect(c.individual).toBe(false);
+  });
+
+  it("この項目が無かった頃の記録からは、推定しない", () => {
+    const old = { version: CONSENT_VERSION, updatedAt: 1, terms: true, profile: true, aggregate: true } as unknown as ConsentState;
+    expect(normalizeConsent({ aggregate: false }, old).individual).toBe(false);
+  });
+
+  it("本人が入れれば有効になり、別の項目を触っても落ちない", () => {
+    const on = normalizeConsent({ terms: true, individual: true });
+    expect(hasConsent(on, "individual")).toBe(true);
+    expect(normalizeConsent({ aggregate: false }, on).individual).toBe(true);
+  });
+
+  it("始めてもいない（terms が無い）分身では、入れても有効にならない", () => {
+    expect(normalizeConsent({ individual: true }).individual).toBe(false);
+  });
+
+  it("入口の同意に束ねる項目には入っていない", () => {
+    expect(BUNDLED_WITH_TERMS).not.toContain("individual");
+    expect(OPT_IN_ONLY).toContain("individual");
+    // 何が渡らないかを、同意文面で言い切っていること
+    expect(CONSENT_TEXTS.individual.note).toContain("会話の本文");
+    expect(CONSENT_TEXTS.individual.body).toContain("年収を除く");
   });
 });

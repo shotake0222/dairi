@@ -61,13 +61,15 @@ export const SKUS: Sku[] = [
     name: "人格カード",
     buyer: "自前のLLM基盤を持っていて、その上でこの人格を動かしたい相手",
     delivers: [
-      "persona_card.json（性格・価値観・口調・覚え書き・会話の例・身体のパラメータ）",
+      "persona_card.json（性格・価値観・口調・声・身体のパラメータ・選択肢で答えた属性）",
       "system_prompt.txt（そのまま渡せる形）",
       "Modelfile（Ollama用。ローカルで動かす場合）",
       "README.md（載せ方と、含まれていないものの説明）",
     ],
     requires: "任意のLLM（クラウドでもローカルでも可）",
-    excludes: "会話の全文ログ、持ち主の連絡先、年収などの機微な属性",
+    excludes:
+      "会話の本文と、そこから抜いた応答例・記憶・覚え書き（規約で第三者へ渡さないと約束している）、" +
+      "年収、入力方法などの設定、持ち主の連絡先。持ち主が「法人への個別提供」を入れていない分身は発行できない",
     endpoint: "GET /api/delivery?scope=card&token=<TOKEN>（&format=modelfile で Modelfile）",
   },
   {
@@ -102,12 +104,13 @@ export const SKUS: Sku[] = [
     buyer: "クラウドに繋がず、手元の小さなモデルでこの人格を喋らせたい相手",
     delivers: [
       "Modelfile（土台のSLM＋人格。ollama create だけで動く）",
-      "train.jsonl / eval.jsonl（口調をさらに寄せたいとき用のLoRA学習データ）",
       "README.md（0.5B〜8Bの選び方、学習手順、移ったかどうかの確かめ方）",
+      "※ LoRA学習データ（train.jsonl）は会話そのものなので、買い手には空で渡る。" +
+        "中身が入るのは、持ち主が自分の分身を書き出したとき（/api/persona/card?format=slm）だけ",
     ],
     requires: "Ollama が動く環境。0.5BならRaspberry Pi 4でも回る",
     excludes:
-      "会話の全文ログ、持ち主の連絡先、機微な属性。" +
+      "会話の本文（学習データを含む）、持ち主の連絡先、機微な属性。" +
       "※ SLM は Small Language Model。SML（Standard ML という別の言語）ではない",
     endpoint: "GET /api/delivery?scope=slm&token=<TOKEN>",
   },
@@ -179,7 +182,7 @@ export interface Grant {
 }
 
 export async function issueGrant(
-  env: { DB: D1Database },
+  env: DeliveryEnv,
   params: { characterId?: unknown; scopes?: unknown; label?: unknown; days?: unknown }
 ): Promise<{ ok: true; token: string; expiresAt: number } | { ok: false; status: number; error: string }> {
   const characterId = typeof params.characterId === "string" ? params.characterId.trim() : "";
@@ -188,6 +191,15 @@ export async function issueGrant(
   const requested = Array.isArray(params.scopes) ? params.scopes : [];
   const scopes = DELIVERY_SCOPES.filter((s) => requested.includes(s));
   if (scopes.length === 0) return { ok: false, status: 400, error: "渡す範囲を1つ以上選んでください" };
+
+  // 持ち主が「法人への個別提供」を入れていない分身には、券を切らない。
+  // 取り出しの側（buildBuyerCard）でも止まるが、発行できてしまうと「売れる」と誤解して商談が進む。
+  const consentCheck = await env.CHARACTER.getByName(characterId).buildBuyerCard();
+  if (!consentCheck.ok) {
+    return consentCheck.error === "not found"
+      ? { ok: false, status: 404, error: "その分身は見つかりませんでした" }
+      : { ok: false, status: 409, error: "この分身の持ち主は、法人への個別提供を許可していません" };
+  }
 
   const days = Number(params.days);
   const validDays = Number.isFinite(days) && days > 0 && days <= 730 ? Math.floor(days) : DEFAULT_GRANT_DAYS;
@@ -290,10 +302,10 @@ export async function verifyGrant(
  * 同じにすると、片方だけ範囲を変えたときに事故る。
  */
 async function loadCard(env: DeliveryEnv, characterId: string): Promise<PersonaCard | null> {
-  // 引換券は運営が発行したものなので、DO側の持ち主判定はここで代行する。
-  const state = await env.CHARACTER.getByName(characterId).getState();
-  if (!state) return null;
-  const result = await env.CHARACTER.getByName(characterId).buildCard(state.ownerToken);
+  // 買い手向けの写しは、本人向けの buildCard とは別の入口（buildBuyerCard）で作る。
+  // 以前は持ち主トークンを代行して buildCard を呼んでおり、会話の抜粋・記憶・覚え書きまで渡っていた。
+  // 持ち主が「法人への個別提供」を切っていれば、ここで null になる（＝取り出せない）。
+  const result = await env.CHARACTER.getByName(characterId).buildBuyerCard();
   return result.ok ? result.card : null;
 }
 

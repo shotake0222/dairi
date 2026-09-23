@@ -47,7 +47,7 @@ import {
 } from "../analysis/psychographics";
 import { classifySegment, SegmentResult } from "../analysis/segments";
 import { removeFromRegistry, syncRegistry, countMetric } from "../persona/registry";
-import { buildPersonaCard, PersonaCard } from "../persona/personaCard";
+import { buildPersonaCard, buyerProfileAnswers, PersonaCard } from "../persona/personaCard";
 
 export interface Env {
   AI: Ai;
@@ -351,13 +351,22 @@ export class CharacterState extends DurableObject<Env> {
   private readonly rateLimiter = new RateLimiter();
 
   /**
+   * 法人（MCPの買い手）からの呼び出し専用の回数制限。
+   * 持ち主の会話と同じ入れ物で数えると、買い手が1日の上限を使い切ったとき
+   * **持ち主本人がその日この子と話せなくなる**。売った相手の都合で本人が締め出されるのは筋が違うので分ける。
+   * persona_reply はこちらでLLMを呼ばない（材料を返すだけ）ので、上限の意味は機械的な連打の抑止。
+   */
+  private readonly buyerRateLimiter = new RateLimiter();
+
+  /**
    * その場限りモード用に、書き込みを一切せずに必要な情報だけを返す。
    * 通常のchat()は性格更新・履歴追加・記憶保存まで行うため、あちらを条件分岐で使い回すと
    * 将来の変更で「書かないはずが書いてしまう」事故が起きる。用途ごとに入口を分けている。
    *
    * 併せてレート制限の判定もここで行う（判定自体はメモリ上の操作なので書き込みは発生しない）。
+   * `source` が "buyer"（MCP）のときは、持ち主とは別の入れ物で数える。
    */
-  async beginEphemeralTurn(userMessage: string): Promise<
+  async beginEphemeralTurn(userMessage: string, source: "owner" | "buyer" = "owner"): Promise<
     | {
         ok: true;
         name: string;
@@ -380,7 +389,7 @@ export class CharacterState extends DurableObject<Env> {
       return { ok: false, error: `メッセージが長すぎます（${MAX_MESSAGE_LENGTH}文字以内にしてね）` };
     }
 
-    const verdict = this.rateLimiter.check();
+    const verdict = (source === "buyer" ? this.buyerRateLimiter : this.rateLimiter).check();
     if (!verdict.allowed) return { ok: false, error: verdict.message };
 
     return {
@@ -843,6 +852,24 @@ export class CharacterState extends DurableObject<Env> {
 
     await this.ctx.storage.put("data", data);
     await this.syncPersonaRegistry(data);
+
+    // 法人への個別提供をやめたら、発行済みの引換券もその場で失効させる。
+    // 取り出しの側でも同意を見ている（buildBuyerCard）が、一覧に「有効」と出続けると
+    // 運営が気づかずに更新の案内を送ってしまう。台帳の上でも止めておく。
+    if (!hasConsent(data.consent, "individual")) {
+      const characterId = this.ctx.id.name;
+      if (characterId) {
+        try {
+          await this.env.DB.prepare(
+            "UPDATE delivery_grants SET revoked_at = ? WHERE character_id = ? AND revoked_at IS NULL"
+          )
+            .bind(Date.now(), characterId)
+            .run();
+        } catch {
+          // 取り出し側でも同意を確かめているので、ここで失敗しても写しは渡らない
+        }
+      }
+    }
     return { ok: true, consent: data.consent };
   }
 
@@ -1076,6 +1103,55 @@ export class CharacterState extends DurableObject<Env> {
       accessibility: data.accessibility,
       // 本人の手元に返すものなので、属性・価値観も含めてよい
       includeOwnerProfile: true,
+    });
+
+    return { ok: true, card };
+  }
+
+  /**
+   * 法人（引換券の買い手）へ渡す写しを組み立てる。**買い手に渡る経路は、すべてここを通すこと。**
+   *
+   * buildCard（本人向け）をそのまま使っていた時期があり、会話の抜粋・記憶・覚え書き・年収・
+   * アクセシビリティ設定まで買い手に渡っていた。規約で「会話の本文そのものを第三者へ提供しない」と
+   * 約束しているので、ここでは次のものを**構造的に空にする**（引数を絞るのではなく、最初から渡さない）:
+   *   - 会話の抜粋（examples の元になる recentTurns）と、長期記憶
+   *   - 覚え書き（相手について覚えていること）
+   *   - 年収と、管理画面から後で足した設問（buyerProfileAnswers）
+   *   - 入力方法などのアクセシビリティ設定
+   *
+   * 持ち主が「法人への個別提供」（consent.individual）を入れていない分身は、そもそも組み立てない。
+   * 同意の文面（src/persona/consent.ts の CONSENT_TEXTS.individual）と、ここの範囲は必ず一緒に直すこと。
+   */
+  async buildBuyerCard(): Promise<{ ok: true; card: PersonaCard } | { ok: false; error: string }> {
+    const data = await this.ctx.storage.get<CharacterData>("data");
+    if (!data) return { ok: false, error: "not found" };
+    if (!hasConsent(data.consent, "terms") || !hasConsent(data.consent, "individual")) {
+      return { ok: false, error: "no_consent" };
+    }
+
+    // 分身の識別子は、本人のURLや引き継ぎの手がかりになる。買い手には、同じ分身なら毎回同じだが
+    // 元の識別子へは戻せない値を渡す（MCPで更新を取りに来たとき、同じ子だと分かれば足りる）。
+    const characterId = this.ctx.id.name ?? "unknown";
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`waketama-buyer:${characterId}`));
+    const opaqueId = "p_" + [...new Uint8Array(digest)].slice(0, 8).map((b) => b.toString(16).padStart(2, "0")).join("");
+    const card = buildPersonaCard({
+      characterId: opaqueId,
+      name: data.name,
+      species: data.species,
+      color: data.color,
+      createdAt: data.createdAt,
+      growthStage: data.growthStage,
+      interactionCount: data.interactionCount,
+      personality: data.personality,
+      psychographics: data.psychographics ?? emptyPsychographics(),
+      segment: this.segmentOf(data),
+      profileAnswers: hasConsent(data.consent, "profile") ? buyerProfileAnswers(data.profile?.answers ?? {}) : {},
+      profileNotes: "",
+      memories: [],
+      recentTurns: [],
+      accessibility: undefined,
+      includeOwnerProfile: true,
+      audience: "buyer",
     });
 
     return { ok: true, card };
