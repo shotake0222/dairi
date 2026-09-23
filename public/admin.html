@@ -90,6 +90,14 @@
   .srcTag.override { background: #fff4e2; border-color: #ffd9a0; color: #9a6b1a; }
   .srcTag.custom { background: #e8f7ef; border-color: #b6e6cd; color: #1c7a4d; }
   .offRow { opacity: 0.5; }
+  /* メタバースの「置く物」 */
+  .metaObj { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; background: #fcfbff; }
+  .metaObj .head { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+  .metaObj .head b { font-size: 13px; flex: 1; }
+  .metaObj .quizRow { display: grid; grid-template-columns: 1fr 7em 1fr auto; gap: 6px; margin-bottom: 6px; }
+  .metaObj .quizRow input, .metaObj .quizRow select { padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; font: inherit; font-size: 12.5px; }
+  @media (max-width: 600px) { .metaObj .quizRow { grid-template-columns: 1fr 7em; } }
+  .adTag { font-size: 10px; background: #2a2440; color: #fff; border-radius: 999px; padding: 2px 8px; }
 </style>
 </head>
 <body>
@@ -113,6 +121,7 @@
     <button class="tab" data-panel="delivery" type="button">納品</button>
     <button class="tab" data-panel="yorishiro" type="button">依代（タグ・QR）</button>
     <button class="tab" data-panel="recovery" type="button">分身の復旧</button>
+    <button class="tab" data-panel="meta" type="button">メタバース</button>
   </div>
 
   <div class="panel" id="panel-overview">
@@ -322,13 +331,13 @@
       <p class="lead">
         分身が宿るもの。<strong>NFCタグ</strong>でも<strong>QR</strong>でも、仕組みはまったく同じです。
         <br />・<strong>1つの依代からは1体だけ</strong>（2回目以降の読み取りは、同じ子に会いに行く）
-        <br />・<strong>姿は引くもの</strong>。既定では30種類から等確率で、運営でも個体は指定できません
+        <br />・<strong>姿は引くもの</strong>。既定では90種類（15種族×6色）から等確率で、運営でも個体は指定できません
         <br />・<strong>人が持てる数に上限はありません</strong>。依代を3つ持てば3体育ちます
         <br />・<strong>依代が無くても始められます</strong>（<code>/w</code>）。タグを刷る前でもサービスを出せます
         <br />「その場所でしか手に入らない」は、まず<strong>そのコードをその場所にしか置かないこと</strong>で作ります。
         それでも足りないときだけ、配布元ごとに<strong>出る姿の範囲</strong>を絞れます（下の「配布元」）。
         ※ 限定の姿が効くのは<strong>1枚ずつコードを振って発行した依代（主にQR）だけ</strong>です。
-        共通URLのNFCタグは、どこで配ったかを台帳に持っていないので、いつもどおり30種類から引きます。
+        共通URLのNFCタグは、どこで配ったかを台帳に持っていないので、いつもどおり90種類から引きます。
         <br />絞れるのは範囲までで、<strong>どの子が出るかは決められません</strong>——
         ここを崩すと「引き当てた」が「配られた」になり、集める理由が消えます。
       </p>
@@ -436,7 +445,7 @@
       <details class="poolBox" id="poolBox">
         <summary>ここでしか出ない姿にする（ふだんは開かなくて構いません）</summary>
         <div class="poolWarn">
-          <strong>何も選ばなければ、これまでどおり30種類から等確率です。</strong>
+          <strong>何も選ばなければ、これまでどおり90種類から等確率です。</strong>
           選ぶと、この配布元で発行した依代からは<strong>選んだ範囲の中だけ</strong>から出るようになります。
           <br />範囲を狭めることはできますが、<strong>どの子が出るかは指定できません</strong>。
           抽選そのものはこちらでも動かせない作りにしてあります。
@@ -502,9 +511,57 @@
       </div>
     </section>
   </div>
+  <div class="panel" id="panel-meta" hidden>
+    <section>
+      <h2>メタバースの部屋</h2>
+      <p class="lead">
+        部屋はここでだけ作れます（利用者は作れません）。部屋ごとに、場所・時間帯・最初の視点と、
+        <strong>置く物（看板＝広告・お知らせ／動画／いまいる子の紹介／ミニゲーム）</strong>を決めます。
+        保存すると、いま部屋にいる人の画面もその場で変わります。
+      </p>
+      <div class="scroll"><table id="metaRoomTable"></table></div>
+      <div class="row" style="margin-top:10px">
+        <button type="button" id="metaNewBtn">＋ 新しい部屋</button>
+      </div>
+    </section>
+
+    <section id="metaEditor" hidden>
+      <h2 id="metaEditorTitle">部屋を作る</h2>
+      <div class="formGrid">
+        <label>部屋の名前<input type="text" id="metaName" maxlength="30" placeholder="春のキャンペーン会場" /></label>
+        <label>場所<select id="metaPlace"></select></label>
+        <label>時間帯<select id="metaTime"></select></label>
+        <label>最初の視点<select id="metaCamera"></select></label>
+      </div>
+      <label class="wide" style="display:flex;gap:6px;align-items:center">
+        <input type="checkbox" id="metaListed" style="width:auto;margin:0" checked />
+        メタバースの一覧に出す（外すと、リンクを知っている人だけが入れる）
+      </label>
+
+      <h2 style="margin-top:14px">置く物 <span id="metaObjCount" style="font-weight:400;color:var(--muted)"></span></h2>
+      <p class="lead">
+        置き場所は7か所。1か所に1つです。<strong>広告の看板には「広告」の表示が自動で付きます</strong>（外せません）。
+        画像・動画は https:// のURLで、相手のサーバーが外部からの読み込み（CORS）を許していないと表示されません。
+        ミニゲームの結果はサーバーに残りません（遊んだ端末の中だけ）。
+      </p>
+      <div id="metaObjects"></div>
+      <div class="row">
+        <select id="metaAddType"></select>
+        <button type="button" id="metaAddBtn">＋ 置く</button>
+      </div>
+
+      <div class="row" style="margin-top:16px">
+        <button type="button" id="metaSaveBtn" style="background:var(--brand);color:#fff;border-color:transparent">保存する</button>
+        <button type="button" id="metaCancelBtn">やめる</button>
+        <a id="metaOpenLink" href="#" target="_blank" rel="noopener" hidden style="font-size:12px">この部屋を開く ↗</a>
+        <span id="metaStatus" style="font-size:12px;color:var(--muted)"></span>
+      </div>
+    </section>
+  </div>
 </main>
 
 <script src="/vendor/qrcode.js"></script>
+<script src="/species.js"></script>
 <script>
   async function api(path, options) {
     const res = await fetch(path, options);
@@ -571,6 +628,7 @@
       if (tab.dataset.panel === "questions") loadQuestions();
       if (tab.dataset.panel === "yorishiro") loadYorishiro();
       if (tab.dataset.panel === "delivery") loadDelivery();
+      if (tab.dataset.panel === "meta" && typeof loadMetaRooms === "function") loadMetaRooms();
     });
   });
 
@@ -997,16 +1055,9 @@
   }
 
   // ---- 限定の姿 ----
-  // 名前はサービス側と揃える（src/durable-objects/characterState.ts）。
-  // ここだけ増やしても実体は増えないので、姿を足すときは両方を直すこと。
-  const SPECIES = [
-    ["punikoro", "ぷにころ"], ["mofukuru", "もふくる"], ["tsunomaru", "つのまる"],
-    ["howahowa", "ほわほわ"], ["kiratsubu", "きらつぶ"],
-  ];
-  const COLORS = [
-    ["coral", "コーラル"], ["sky", "スカイ"], ["leaf", "リーフ"],
-    ["sun", "サン"], ["lavender", "ラベンダー"], ["peach", "ピーチ"],
-  ];
+  // 名前と並びは public/species.js が唯一の定義元（サーバー側の定義と一致することはテストで確かめている）。
+  const SPECIES = window.WaketamaSpecies.order.map((k) => [k, window.WaketamaSpecies.label(k)]);
+  const COLORS = window.WaketamaSpecies.colors.map((k) => [k, window.WaketamaSpecies.colorLabel(k)]);
 
   function buildPoolPicker(slotId, items, name) {
     const slot = document.getElementById(slotId);
@@ -1038,7 +1089,7 @@
     const co = readPool("color");
     const out = document.getElementById("poolSummary");
     if (sp.length === 0 && co.length === 0) {
-      out.textContent = "制限なし（30種類から等確率）";
+      out.textContent = "制限なし（90種類から等確率）";
       return;
     }
     const n = (sp.length || SPECIES.length) * (co.length || COLORS.length);
@@ -1451,5 +1502,6 @@
     );
   });
 </script>
+<script src="/admin-meta.js"></script>
 </body>
 </html>

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { env, SELF, createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
 import worker, { runMeeting, pickMostSimilar } from "../index";
 import type { PersonalityTraits } from "../ai/personality";
-import { MEETING_COOLDOWN_MS } from "../durable-objects/characterState";
+import { COLOR_KEYS, MEETING_COOLDOWN_MS, SPECIES_KEYS, SPECIES_LABELS } from "../durable-objects/characterState";
 
 // AI呼び出しはデフォルトでは常に失敗させ、リモート課金や不確定な応答に依存しないようにする。
 // chat()/speakInMeeting() 側にフォールバック文言が用意されているため、これでもテストは意味を持つ。
@@ -689,5 +689,36 @@ describe("履歴の2つのAPIが取り合っていないこと", () => {
     const mine = await SELF.fetch(`${BASE}/api/character/dialogue?cid=${cid}&token=${token}`);
     expect(mine.status).toBe(200);
     expect(Array.isArray((await mine.json<{ turns: unknown[] }>()).turns)).toBe(true);
+  });
+});
+
+/**
+ * 種族を足したときの取りこぼし。
+ * サーバーの定義（SPECIES_KEYS）・画面の一覧（public/species.js）・実ファイル（PNG/GLB）の3つが
+ * 揃っていないと、生まれた子の姿が出ない／図鑑の数が合わない／名前がローマ字で出る。
+ */
+describe("種族と姿の実ファイル", () => {
+  it("画面の一覧（species.js）が、サーバーの定義と同じ並び・同じ名前", async () => {
+    const js = await (await env.ASSETS.fetch(`${BASE}/species.js`)).text();
+    const order = /var ORDER = \[([\s\S]*?)\];/.exec(js)?.[1] ?? "";
+    const keys = [...order.matchAll(/"([a-z]+)"/g)].map((m) => m[1]);
+    expect(keys).toEqual([...SPECIES_KEYS]);
+    for (const key of SPECIES_KEYS) {
+      expect(js).toContain(`${key}: "${SPECIES_LABELS[key]}"`);
+    }
+  });
+
+  it("15種族×6色のすべてに、画像と3Dモデルがある", async () => {
+    const missing: string[] = [];
+    for (const s of SPECIES_KEYS) {
+      for (const c of COLOR_KEYS) {
+        for (const ext of ["png", "glb"]) {
+          const res = await env.ASSETS.fetch(`${BASE}/characters/${s}_${c}.${ext}`);
+          if (!res.ok) missing.push(`${s}_${c}.${ext}`);
+          await res.arrayBuffer();
+        }
+      }
+    }
+    expect(missing).toEqual([]);
   });
 });

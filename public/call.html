@@ -258,7 +258,7 @@
       if (window.WaketamaVoice && WaketamaVoice.getQuality() === "high") {
         avatarEl.classList.add("speaking");
         try {
-          if (await WaketamaVoice.speakHighQuality(text)) return;
+          if (await WaketamaVoice.speakHighQuality(text, { voice: voiceProfile })) return;
         } finally {
           avatarEl.classList.remove("speaking");
         }

@@ -120,18 +120,14 @@
   </div>
 </main>
 
+<script src="/species.js"></script>
 <script>
   const params = new URLSearchParams(location.search);
   const cid = params.get("cid");
   document.getElementById("backBtn").href = `/chat?cid=${encodeURIComponent(cid || "")}`;
 
-  const SPECIES_LABELS = {
-    punikoro: "ぷにころ",
-    mofukuru: "もふくる",
-    tsunomaru: "つのまる",
-    howahowa: "ほわほわ",
-    kiratsubu: "きらつぶ",
-  };
+  // 種族の名前は public/species.js が唯一の定義元
+  const SPECIES_LABELS = window.WaketamaSpecies.labels;
 
   function el(id) { return document.getElementById(id); }
 

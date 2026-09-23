@@ -289,6 +289,7 @@
       <a id="eyesLink" href="#" title="視線・スイッチで話しかける">👁 視線入力</a>
       <a id="callLink" href="#" title="その場限りの通話">📞 通話</a>
       <a id="historyLink" href="#">📈 成長</a>
+      <a id="metaLink" href="#" title="ほかの人の分身と会える3Dの空間">🌐 メタバース</a>
       <button id="toggleSocial" type="button">🤝 交流</button>
       <button id="toggleExport" type="button">📦 保存/復元</button>
       <button id="toggleTraits" type="button">性格を見る ▾</button>
@@ -487,6 +488,8 @@
   document.getElementById("callLink").href = `/call?cid=${encodeURIComponent(cid || "")}`;
   document.getElementById("talkLink").href = `/talk?cid=${encodeURIComponent(cid || "")}`;
   document.getElementById("profileLink").href = `/profile?cid=${encodeURIComponent(cid || "")}`;
+  // この子と一緒にメタバースへ（部屋を選ぶところから）
+  document.getElementById("metaLink").href = `/meta?cid=${encodeURIComponent(cid || "")}`;
   document.getElementById("eyesLink").href = `/eyes?cid=${encodeURIComponent(cid || "")}`;
 
   // --- 人格パッケージの書き出し/復元（フィジカルAI・メタバース移植やバックアップの土台） ---
@@ -845,7 +848,7 @@
     if (
       window.WaketamaVoice &&
       WaketamaVoice.getQuality() === "high" &&
-      (await WaketamaVoice.speakHighQuality(text))
+      (await WaketamaVoice.speakHighQuality(text, { voice: voiceProfile }))
     ) {
       return;
     }

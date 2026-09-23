@@ -48,6 +48,7 @@ import {
 import { classifySegment, SegmentResult } from "../analysis/segments";
 import { removeFromRegistry, syncRegistry, countMetric } from "../persona/registry";
 import { buildPersonaCard, buyerProfileAnswers, PersonaCard } from "../persona/personaCard";
+import { auditCompact, toCompact } from "../../tools/edge/compact.mjs";
 
 export interface Env {
   AI: Ai;
@@ -57,8 +58,15 @@ export interface Env {
   CHAT_MODEL?: string;
 }
 
-// 5種族×6色=30種類。実ファイルは public/characters/{species}_{color}.png / .glb
-export const SPECIES_KEYS = ["punikoro", "mofukuru", "tsunomaru", "howahowa", "kiratsubu"] as const;
+// 15種族×6色=90種類。実ファイルは public/characters/{species}_{color}.png / .glb
+// 後半の10種族（hoshipo 以降）は 2026-09-23 に追加。tools/characters/make_characters.py が作る。
+// **並びを変えない・消さない。** 既存の分身は種族のキーで姿を引いているので、消すと姿が出なくなる。
+// 画面側の一覧（public/species.js）と、声の家系（src/ai/voiceProfile.ts）も同じ並びで持つ。
+export const SPECIES_KEYS = [
+  "punikoro", "mofukuru", "tsunomaru", "howahowa", "kiratsubu",
+  "hoshipo", "kinokon", "tamatori", "mimipyon", "futabaru",
+  "kuragekko", "nyamaru", "kamenko", "ponpoko", "futatama",
+] as const;
 export const COLOR_KEYS = ["coral", "sky", "leaf", "sun", "lavender", "peach"] as const;
 export type SpeciesKey = (typeof SPECIES_KEYS)[number];
 export type ColorKey = (typeof COLOR_KEYS)[number];
@@ -70,6 +78,16 @@ export const SPECIES_LABELS: Record<SpeciesKey, string> = {
   tsunomaru: "つのまる",
   howahowa: "ほわほわ",
   kiratsubu: "きらつぶ",
+  hoshipo: "ほしぽ",
+  kinokon: "きのこん",
+  tamatori: "たまとり",
+  mimipyon: "みみぴょん",
+  futabaru: "ふたばる",
+  kuragekko: "くらげっこ",
+  nyamaru: "にゃまる",
+  kamenko: "かめんこ",
+  ponpoko: "ぽんぽこ",
+  futatama: "ふたたま",
 };
 
 /** 分身同士の交流ログの1発言。roleはこのキャラクター視点での自分/相手。 */
@@ -439,7 +457,7 @@ export class CharacterState extends DurableObject<Env> {
    * 運営が姿を決められる口を1つでも開けると「引き当てた」が「配られた」に変わる。
    */
   /**
-   * @param pool 引く範囲。省略すれば30種類から等確率（ほとんどの依代はこちら）。
+   * @param pool 引く範囲。省略すれば90種類から等確率（ほとんどの依代はこちら）。
    *   **姿そのものを指定する引数ではない。** 詳しくは BirthPool のコメントと migration 0011。
    */
   async init(name: string, pool?: BirthPool): Promise<CharacterData> {
@@ -1155,6 +1173,67 @@ export class CharacterState extends DurableObject<Env> {
     });
 
     return { ok: true, card };
+  }
+
+  /**
+   * メタバースに連れて入るときの姿と動きの数値（持ち主だけが呼べる）。
+   *
+   * 同じ部屋の他の人に配られるのは、ここで返すものだけ:
+   *   名前・種族・色・声の高さと速さ・動きの数値（最小形 compact。約250バイト）
+   * 会話・覚え書き・記憶・属性・分身の識別子は含まない（auditCompact で機械的に確かめる）。
+   * compact の id は元の識別子と結びつかない値に差し替える（部屋の中では、配った先の番号で呼ぶ）。
+   */
+  async getMetaverseAvatar(ownerToken?: string): Promise<
+    | {
+        ok: true;
+        name: string;
+        species: SpeciesKey;
+        color: ColorKey;
+        compact: ReturnType<typeof toCompact>;
+        voice: { pitch: number; rate: number; voiceIndex: number };
+      }
+    | { ok: false; error: string }
+  > {
+    const data = await this.ctx.storage.get<CharacterData>("data");
+    if (!data) return { ok: false, error: "not found" };
+    if (!isOwner(data, ownerToken)) return { ok: false, error: "この操作は分身の持ち主だけが行えます" };
+    if (!hasConsent(data.consent, "terms")) return { ok: false, error: "はじめる前の同意が済んでいません" };
+
+    const characterId = this.ctx.id.name ?? "unknown";
+    const card = buildPersonaCard({
+      characterId: "meta",
+      name: data.name,
+      species: data.species,
+      color: data.color,
+      createdAt: data.createdAt,
+      growthStage: data.growthStage,
+      interactionCount: data.interactionCount,
+      personality: data.personality,
+      psychographics: data.psychographics ?? emptyPsychographics(),
+      segment: null,
+      profileAnswers: {},
+      profileNotes: "",
+      memories: [],
+      recentTurns: [],
+      accessibility: undefined,
+      // 価値観から導く振る舞いの方針（policy）を動きに効かせるため、人物像の数値だけは使う
+      includeOwnerProfile: true,
+      audience: "buyer",
+    });
+    const compact = toCompact(card);
+    compact.id = "";
+    const audit = auditCompact(compact, card);
+    if (!audit.ok) return { ok: false, error: "動きの数値を作れませんでした" };
+
+    const voice = deriveVoiceProfile(characterId, data.personality, data.species, data.color);
+    return {
+      ok: true,
+      name: data.name,
+      species: data.species,
+      color: data.color,
+      compact,
+      voice: { pitch: voice.pitch, rate: voice.rate, voiceIndex: voice.voiceIndex },
+    };
   }
 
   // 出品用の要約（getListingSummary）は削除した。

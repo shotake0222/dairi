@@ -154,15 +154,11 @@
   </div>
 </main>
 
+<script src="/species.js"></script>
 <script>
   const MY_CHARACTERS_KEY = "sodatsukake_myCharacters";
-  const SPECIES_LABELS = {
-    punikoro: "ぷにころ",
-    mofukuru: "もふくる",
-    tsunomaru: "つのまる",
-    howahowa: "ほわほわ",
-    kiratsubu: "きらつぶ",
-  };
+  // 種族の名前・並びは public/species.js が唯一の定義元（書き写さない）
+  const SPECIES_LABELS = window.WaketamaSpecies.labels;
 
   function loadList() {
     try {
@@ -195,10 +191,9 @@
     return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
 
-  // 姿は 5種族 × 6色 = 30通り。名前はサービス側と揃えること
-  // （src/durable-objects/characterState.ts の SPECIES_KEYS / COLOR_KEYS）。
-  const SPECIES_ORDER = ["punikoro", "mofukuru", "tsunomaru", "howahowa", "kiratsubu"];
-  const COLOR_ORDER = ["coral", "sky", "leaf", "sun", "lavender", "peach"];
+  // 姿は 15種族 × 6色 = 90通り（public/species.js）。
+  const SPECIES_ORDER = window.WaketamaSpecies.order;
+  const COLOR_ORDER = window.WaketamaSpecies.colors;
 
   /**
    * 集めた姿の図鑑。

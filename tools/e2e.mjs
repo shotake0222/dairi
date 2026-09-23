@@ -410,6 +410,20 @@ check("到達率の実測値が出ている", bizHtml.includes("到達率") && b
 check("検査を再現できると書いてある", bizHtml.includes("persona:check"));
 check("LLM無しで振る舞いが分かれる例が出ている", bizHtml.includes("policy[].code"));
 check("確かめていないことも書いてある", bizHtml.includes("モデル次第です"));
+// メタバース（キャラクター画面から入る・部屋の一覧・wt_core の写しが本体と同じ）
+{
+  const metaHtml = await (await fetch(`${BASE}/meta`)).text();
+  check("メタバースの画面が配信される", metaHtml.includes("/meta/app.mjs"));
+  const rooms = await (await fetch(`${BASE}/api/meta/rooms`)).json();
+  check("最初からある部屋（ひろば）に入れる", rooms.rooms.some((r) => r.id === "hiroba"));
+  const chatHtml = await (await fetch(`${BASE}/chat`)).text();
+  check("キャラクター画面からメタバースへ行ける", chatHtml.includes('id="metaLink"'));
+  const served = await (await fetch(`${BASE}/meta/wt_core.mjs`)).text();
+  const { readFileSync } = await import("node:fs");
+  const local = readFileSync(new URL("./device/web/wt_core.mjs", import.meta.url), "utf8");
+  // 振る舞いエンジンの写しがずれると、メタバースと実機で同じ子が違う動きをする
+  check("メタバースの振る舞いエンジンが、実機の検証機と同じ", served === local);
+}
 check("料金の節があり、ヘッダーから飛べる", bizHtml.includes('id="pricing"') && bizHtml.includes('href="#pricing"'));
 check("料金が税別と明記されている", bizHtml.includes("税別"));
 // 料金のボタンが選ぶ分類は、フォームの選択肢に必ずあること（無いと選ばれずに素通りする）

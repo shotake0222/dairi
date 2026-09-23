@@ -98,10 +98,22 @@
    * 戻り値: 再生できたら true、生成・再生いずれかに失敗したら false
    *  （呼び出し側はfalseのときブラウザ標準にフォールバックすること）。
    *
-   * 注意: 現状のMeloTTSモデルは声質を1種類しか返さない（種族・個体ごとの声の作り分けは無い）。
-   * ブラウザ標準側にある「種族ごとに違う声を当てる」演出は、高音質モードでは効かない。
-   * これは既知の制約として ROADMAP.md に書いてある。
+   * MeloTTS は声質を1種類しか返さない。そこで**再生側で声を分ける**:
+   * opts.voice（/api/character が返す voice。pitch と rate を持つ）を渡すと、
+   * 再生速度を分身ごとに変え、音程も一緒に動かす（preservesPitch = false）。
+   * 高い声の家系ほど少し速く高く、低い家系ほどゆっくり低くなる。
+   * 変えすぎると早回しに聞こえるので、0.9〜1.2倍に収めている（voicePlaybackRate）。
    */
+  /**
+   * 分身の声（pitch 1.0〜2.0 / rate 0.8〜1.4）から、高音質音声の再生倍率を決める。
+   * 高さを主に、話す速さを少しだけ混ぜる。声を渡されなければ等倍。
+   */
+  function voicePlaybackRate(voice) {
+    if (!voice || typeof voice.pitch !== "number") return 1;
+    var r = 0.9 + (voice.pitch - 1.2) * 0.4 + ((voice.rate || 1) - 1) * 0.25;
+    return Math.max(0.9, Math.min(1.2, Math.round(r * 100) / 100));
+  }
+
   function speakHighQuality(text, opts) {
     opts = opts || {};
     return new Promise(function (resolve) {
@@ -122,6 +134,12 @@
       var playFromUrl = function (url) {
         try {
           var el = ensureAudioEl();
+          var rate = voicePlaybackRate(opts.voice);
+          el.playbackRate = rate;
+          // 音程ごと動かす（true のままだと速さだけ変わって、声の違いにならない）
+          if ("preservesPitch" in el) el.preservesPitch = false;
+          if ("webkitPreservesPitch" in el) el.webkitPreservesPitch = false;
+          if ("mozPreservesPitch" in el) el.mozPreservesPitch = false;
           el.onended = function () {
             clearTimeout(guard);
             finish(true);
@@ -185,6 +203,7 @@
     setQuality: setQuality,
     unlock: unlock,
     speakHighQuality: speakHighQuality,
+    voicePlaybackRate: voicePlaybackRate,
     stop: stop,
   };
 })();

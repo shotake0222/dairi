@@ -447,7 +447,7 @@
       // 「声質：高音質」のときは、まずMeloTTS（/api/voice/speak）を試す。
       // 失敗したら（対応端末でもネットワークでも起こりうる）黙って標準の読み上げに戻す。
       if (window.WaketamaVoice && WaketamaVoice.getQuality() === "high") {
-        const ok = await WaketamaVoice.speakHighQuality(text);
+        const ok = await WaketamaVoice.speakHighQuality(text, { voice: voiceProfile });
         if (ok) return;
       }
 

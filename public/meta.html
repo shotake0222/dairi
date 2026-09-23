@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>わけたま｜メタバース</title>
+<meta name="description" content="わけたまで育った分身が、人格どおりに動く3Dの空間。ほかの人の分身と会ったり、ミニゲームで遊んだりできます。" />
+<link rel="manifest" href="/manifest.webmanifest" />
+<meta name="theme-color" content="#14102a" />
+<link rel="icon" href="/icons/favicon-64.png" sizes="64x64" type="image/png" />
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+<style>
+  :root {
+    --brand: #8b6cff; --ink: #1c1630; --muted: #6f668f; --line: #e6e2f2; --bg: #f6f4fc;
+    --safe-t: env(safe-area-inset-top, 0px); --safe-b: env(safe-area-inset-bottom, 0px);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--ink); line-height: 1.7;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    overscroll-behavior: none;
+  }
+  button { font-family: inherit; cursor: pointer; }
+
+  /* ---- ロビー ---- */
+  #lobby { max-width: 560px; margin: 0 auto; padding: calc(14px + var(--safe-t)) 16px calc(40px + var(--safe-b)); }
+  .top { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .top a { color: var(--brand); text-decoration: none; font-size: 14px; }
+  h1 { font-size: 20px; margin: 6px 0 2px; }
+  .lead { color: var(--muted); font-size: 13px; margin: 0 0 16px; }
+  h2 { font-size: 14px; margin: 20px 0 8px; }
+  #picker { display: flex; gap: 8px; flex-wrap: wrap; }
+  .pick {
+    display: flex; align-items: center; gap: 6px; background: #fff; border: 1px solid var(--line);
+    border-radius: 999px; padding: 4px 12px 4px 6px; font-size: 13px;
+  }
+  .pick img { width: 34px; height: 34px; object-fit: contain; }
+  .pick input { accent-color: var(--brand); }
+  .empty { color: var(--muted); font-size: 13px; background: #fff; border-radius: 12px; padding: 12px 14px; margin: 0; }
+  #roomList { display: grid; gap: 10px; }
+  .roomCard {
+    text-align: left; border: none; border-radius: 16px; padding: 16px 18px; color: #fff;
+    display: grid; gap: 2px; box-shadow: 0 6px 18px rgba(60,40,130,.12); font-size: 13px;
+    background: linear-gradient(135deg, #7ccf7f, #4fa6d8);
+  }
+  .roomCard b { font-size: 16px; }
+  .roomCard em { font-style: normal; font-size: 12px; opacity: .92; }
+  .roomCard.place-room { background: linear-gradient(135deg, #f0b27a, #e27aa5); }
+  .roomCard.place-shrine { background: linear-gradient(135deg, #e06a5a, #9a6ad8); }
+  .roomCard.place-beach { background: linear-gradient(135deg, #5fc2ea, #f0c86a); }
+  .roomCard.place-hill, .roomCard.time-night { background: linear-gradient(135deg, #2c3570, #6a4fb8); }
+  .roomCard.time-evening { background: linear-gradient(135deg, #f28c5c, #b25ab0); }
+  #directRoom { background: #fff; border: 2px solid var(--brand); border-radius: 16px; padding: 14px 16px; margin-top: 14px; }
+  #directRoom p { margin: 0 0 8px; font-size: 13px; color: var(--muted); }
+  .primaryBtn, #dlgActions .primary, #directGo {
+    background: var(--brand); color: #fff; border: none; border-radius: 999px; padding: 11px 22px; font-size: 14px; font-weight: 700;
+  }
+  #noticeBox { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; font-size: 12.5px; color: var(--muted); margin-top: 18px; }
+  #noticeBox b { color: var(--ink); }
+
+  /* ---- 部屋 ---- */
+  #stage { position: fixed; inset: 0; background: #000; touch-action: none; }
+  #stage canvas { width: 100%; height: 100%; display: block; }
+  #hud { position: fixed; inset: 0; pointer-events: none; }
+  #hud > * { pointer-events: auto; }
+  .hudTop {
+    position: absolute; top: calc(8px + var(--safe-t)); left: 8px; right: 8px;
+    display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+  }
+  .pill {
+    background: rgba(255,255,255,.92); border: none; border-radius: 999px; padding: 7px 12px; font-size: 12.5px;
+    color: var(--ink); text-decoration: none; box-shadow: 0 2px 8px rgba(0,0,0,.12); white-space: nowrap;
+  }
+  #hudName { font-weight: 700; max-width: 40vw; overflow: hidden; text-overflow: ellipsis; }
+  #hudStatus:empty { display: none; }
+  .spacer { flex: 1; }
+  #gameHud {
+    position: absolute; top: calc(104px + var(--safe-t)); left: 50%; transform: translateX(-50%);
+    background: rgba(28,22,48,.86); color: #fff; border-radius: 14px; padding: 8px 14px; font-size: 13.5px;
+    max-width: calc(100vw - 24px); text-align: center; font-weight: 700;
+  }
+  #quitGame { position: absolute; top: calc(150px + var(--safe-t)); right: 8px; }
+  .hudBottom {
+    position: absolute; left: 0; right: 0; bottom: 0; padding: 8px 8px calc(10px + var(--safe-b));
+    display: grid; gap: 6px; background: linear-gradient(to top, rgba(20,16,42,.35), transparent);
+  }
+  #mineBar, .actRow { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+  .chip {
+    display: flex; align-items: center; gap: 4px; border: 2px solid transparent; background: rgba(255,255,255,.92);
+    border-radius: 999px; padding: 2px 10px 2px 3px; font-size: 12.5px; white-space: nowrap;
+  }
+  .chip img { width: 30px; height: 30px; object-fit: contain; }
+  .chip.on { border-color: var(--brand); background: #fff; font-weight: 700; }
+  .stamp {
+    min-width: 44px; height: 40px; border: none; border-radius: 999px; background: rgba(255,255,255,.92);
+    font-size: 15px; color: #e8457a; font-weight: 700; padding: 0 10px; flex: 0 0 auto;
+  }
+  #greetBtn { background: var(--brand); color: #fff; border: none; border-radius: 999px; padding: 0 16px; height: 40px; font-weight: 700; flex: 0 0 auto; }
+
+  /* ---- 重なるもの ---- */
+  #dialog, #lost, #noWebgl {
+    position: fixed; inset: 0; background: rgba(20,16,42,.45); display: flex; align-items: flex-end; justify-content: center; z-index: 20;
+    padding: 16px 16px calc(16px + var(--safe-b));
+  }
+  .sheet { background: #fff; border-radius: 20px; padding: 18px 18px 14px; width: min(480px, 100%); }
+  .sheet h3 { margin: 0 0 6px; font-size: 17px; }
+  .sheet p { margin: 0 0 14px; font-size: 13.5px; color: var(--muted); white-space: pre-line; }
+  #dlgActions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+  #dlgActions button { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 10px 18px; font-size: 14px; }
+  #toast {
+    position: fixed; left: 50%; bottom: calc(150px + var(--safe-b)); transform: translateX(-50%); z-index: 30;
+    background: rgba(28,22,48,.9); color: #fff; padding: 8px 14px; border-radius: 999px; font-size: 13px; max-width: 90vw;
+  }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+
+<div id="lobby" hidden>
+  <div class="top"><a id="backLink" href="/home">← もどる</a></div>
+  <h1>メタバース</h1>
+  <p class="lead">分身が、育った性格のとおりに動く空間です。ほかの人の分身と会ったり、ミニゲームで遊んだりできます。</p>
+
+  <h2>いっしょに行く子（3体まで）</h2>
+  <div id="picker"></div>
+
+  <div id="directRoom" hidden>
+    <p>招待された部屋</p>
+    <b id="directName"></b>
+    <div style="margin-top:10px"><button id="directGo" type="button">この部屋に入る</button></div>
+  </div>
+
+  <h2>部屋をえらぶ</h2>
+  <div id="roomList">読み込み中…</div>
+
+  <div id="noticeBox">
+    <b>同じ部屋の人に見えるもの</b>: 分身の名前・姿・声の高さ・動き方（性格から決まる数値）。
+    会話の中身や、分身が覚えていること、あなたの情報は見えません。
+    ほかの人と文字でやりとりする機能はありません（挨拶とスタンプだけです）。
+  </div>
+</div>
+
+<div id="stage" hidden></div>
+
+<div id="hud" hidden>
+  <div class="hudTop">
+    <a class="pill" id="hudBack" href="/meta">← 出る</a>
+    <span class="pill" id="hudName"></span>
+    <span class="pill" id="hudCount">0体</span>
+    <span class="pill" id="hudStatus"></span>
+    <span class="spacer"></span>
+    <button class="pill" id="camBtn" type="button">視点</button>
+    <button class="pill" id="soundBtn" type="button">音</button>
+  </div>
+  <div id="gameHud" hidden></div>
+  <button class="pill" id="quitGame" type="button" hidden>やめる</button>
+  <div class="hudBottom">
+    <div id="mineBar"></div>
+    <div class="actRow">
+      <button id="greetBtn" type="button">あいさつ</button>
+      <span id="stampBar" style="display:flex;gap:6px"></span>
+    </div>
+  </div>
+</div>
+
+<div id="dialog" hidden>
+  <div class="sheet">
+    <h3 id="dlgTitle"></h3>
+    <p id="dlgBody"></p>
+    <div id="dlgActions"></div>
+  </div>
+</div>
+
+<div id="lost" hidden>
+  <div class="sheet">
+    <h3>部屋から出ました</h3>
+    <p id="lostText">回線が切れたか、部屋が閉じられました。</p>
+    <div id="dlgActions2" style="display:flex;gap:8px;justify-content:flex-end">
+      <a class="pill" href="/meta">ロビーへ</a>
+      <button class="primaryBtn" id="reconnect" type="button">もう一度入る</button>
+    </div>
+  </div>
+</div>
+
+<div id="noWebgl" hidden>
+  <div class="sheet">
+    <h3>この端末では表示できません</h3>
+    <p>3D表示（WebGL）に対応したブラウザで開いてください。ブラウザの設定でハードウェアアクセラレーションが切れていると、表示できないことがあります。</p>
+  </div>
+</div>
+
+<div id="toast" hidden></div>
+
+<script src="/species.js"></script>
+<script src="/voiceSpeak.js" defer></script>
+<script type="module" src="/meta/app.mjs"></script>
+</body>
+</html>

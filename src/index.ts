@@ -67,15 +67,19 @@ import {
   isEntryOpen,
 } from "./entryPolicy";
 import { handleMcp } from "./mcp";
+import { MetaverseRoom } from "./durable-objects/metaverseRoom";
+import { deleteRoom, getRoom, listAdminRooms, listRooms, metaverseCatalog, saveRoom } from "./metaverse";
 import { LogContext, newRequestId } from "./lib/log";
 
-export { CharacterState };
+export { CharacterState, MetaverseRoom };
 
 export interface Env {
   AI: Ai;
   DB: D1Database;
   MEMORY_INDEX: VectorizeIndex;
   CHARACTER: DurableObjectNamespace<CharacterState>;
+  /** メタバースの部屋（1部屋＝1インスタンス。src/durable-objects/metaverseRoom.ts） */
+  META_ROOM: DurableObjectNamespace<MetaverseRoom>;
   ASSETS: Fetcher;
   /** デプロイ時に注入される版数（npm run deploy が git のコミットハッシュを渡す）。 */
   APP_VERSION?: string;
@@ -257,6 +261,12 @@ export default {
     //
     // 持ち主トークンで取り出す /api/persona/card とは経路を分けてある。
     // 同じ関数から本人向けと買い手向けを出すと、片方だけ範囲を変えたときに事故る。
+    // --- メタバース（部屋の設定と、入室のWebSocket。src/metaverse.ts / metaverseRoom.ts） ---
+    if (url.pathname.startsWith("/api/meta/")) {
+      const metaResponse = await handleMetaverseApi(request, url, env);
+      if (metaResponse) return metaResponse;
+    }
+
     if (url.pathname === "/api/delivery" && request.method === "GET") {
       const scopeParam = url.searchParams.get("scope") || "card";
       const scope = (DELIVERY_SCOPES as string[]).includes(scopeParam) ? (scopeParam as DeliveryScope) : null;
@@ -289,6 +299,21 @@ export default {
     }
 
     // --- 管理画面のAPI（adminGate を通過したリクエストだけがここに来る） ---
+    // メタバースの部屋（作る・直すのはここだけ。置く物＝看板・動画・ミニゲームもここで決める）
+    if (url.pathname === "/api/admin/meta/rooms" && request.method === "GET") {
+      return json({ rooms: await listAdminRooms(env), builtin: await listRooms(env).then((r) => r.filter((x) => x.builtin)), catalog: metaverseCatalog() });
+    }
+    if (url.pathname === "/api/admin/meta/rooms" && request.method === "POST") {
+      const result = await saveRoom(env, await request.json<Record<string, unknown>>());
+      if (!result.ok) return json({ error: result.error }, { status: result.status });
+      // いま部屋にいる人にも、その場で新しい設定を配る
+      await env.META_ROOM.getByName(result.room.id).pushConfig(result.room).catch(() => undefined);
+      return json({ room: result.room });
+    }
+    if (url.pathname === "/api/admin/meta/rooms" && request.method === "DELETE") {
+      const body = await request.json<{ id?: string }>();
+      return json(await deleteRoom(env, body.id));
+    }
     if (url.pathname === "/api/admin/overview" && request.method === "GET") {
       return handleAdminOverview(env, log);
     }
@@ -1102,4 +1127,55 @@ export function pickMostSimilar<T extends Pick<PersonalityTraits, (typeof TRAIT_
     }
   }
   return best;
+}
+
+
+/**
+ * メタバースのAPI。
+ *
+ *   GET  /api/meta/rooms              ロビーの一覧（最初からある部屋＋一覧に出す部屋）と、選択肢の定義
+ *   GET  /api/meta/rooms/:id          1部屋の設定
+ *   GET  /api/meta/rooms/:id/ws       入室（WebSocket）
+ * 部屋を作る・直すのは管理画面だけ（/api/admin/meta/rooms）。
+ */
+async function handleMetaverseApi(request: Request, url: URL, env: Env): Promise<Response | null> {
+  if (url.pathname === "/api/meta/rooms" && request.method === "GET") {
+    return json({ rooms: await listRooms(env), catalog: metaverseCatalog() }, { headers: { "cache-control": "no-store" } });
+  }
+
+  const m = /^\/api\/meta\/rooms\/([a-z0-9-]{3,32})(\/ws)?$/.exec(url.pathname);
+  if (!m) return null;
+  const id = m[1];
+
+  if (m[2]) {
+    if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
+      return json({ error: "WebSocketで接続してください" }, { status: 426 });
+    }
+    // 他所のサイトから、閲覧者のブラウザを使って勝手に入室させない（Cross-Site WebSocket Hijacking）。
+    // Origin はブラウザが必ず付ける。付いていて、しかも自分のドメインでないものだけを断る。
+    const origin = request.headers.get("origin");
+    if (origin) {
+      let sameSite = false;
+      try {
+        const o = new URL(origin);
+        sameSite = o.host === url.host;
+      } catch {
+        sameSite = false;
+      }
+      if (!sameSite) return json({ error: "この接続は受け付けられません" }, { status: 403 });
+    }
+    const room = await getRoom(env, id);
+    if (!room) return json({ error: "その部屋はありません" }, { status: 404 });
+    // 部屋の設定は、ヘッダに載せず RPC で先に渡す（クイズの問題などで大きくなるとヘッダに収まらない）
+    const stub = env.META_ROOM.getByName(id);
+    await stub.setConfig(room);
+    return stub.fetch(request);
+  }
+
+  if (request.method === "GET") {
+    const room = await getRoom(env, id);
+    if (!room) return json({ error: "その部屋はありません" }, { status: 404 });
+    return json({ room, catalog: metaverseCatalog() }, { headers: { "cache-control": "no-store" } });
+  }
+  return null;
 }

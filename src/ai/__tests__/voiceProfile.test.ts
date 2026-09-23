@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { deriveVoiceProfile } from "../voiceProfile";
 import { DEFAULT_PERSONALITY } from "../personality";
+import { SPECIES_KEYS } from "../../durable-objects/characterState";
 
 /**
  * 「分身ごとの固有の声」の検証。
@@ -74,10 +75,11 @@ describe("deriveVoiceProfile", () => {
  * ここが同じ値に潰れていたら、実機で聞いても区別がつかない。
  */
 describe("種族・色ごとの声", () => {
-  const SPECIES = ["punikoro", "mofukuru", "tsunomaru", "howahowa", "kiratsubu"];
+  // 種族の一覧は定義元から取る（書き写すと、足したときにテストだけ古いままになる）
+  const SPECIES = [...SPECIES_KEYS];
   const COLORS = ["coral", "sky", "leaf", "sun", "lavender", "peach"];
 
-  it("30通りの組み合わせが、すべて違う声になる", () => {
+  it("15種族×6色の90通りが、すべて違う声になる", () => {
     const seen = new Set<string>();
     for (const s of SPECIES) {
       for (const c of COLORS) {
@@ -119,5 +121,18 @@ describe("種族・色ごとの声", () => {
     const v = deriveVoiceProfile("legacy-cid", DEFAULT_PERSONALITY);
     expect(v.pitch).toBeGreaterThan(0);
     expect(v.label.length).toBeGreaterThan(0);
+  });
+});
+
+describe("声の家系の登録漏れ", () => {
+  it("すべての種族に、固有の声の家系がある（既定の声に落ちていない）", () => {
+    const labels = new Set<string>();
+    for (const s of SPECIES_KEYS) {
+      const v = deriveVoiceProfile("same-seed", DEFAULT_PERSONALITY, s, "coral");
+      // 既定（やわらかい声）に落ちると、足した種族が全部同じ声になる
+      expect(v.label, s).not.toContain("やわらかい声");
+      labels.add(v.label.replace(/^あたたかい/, "").split("・")[0]);
+    }
+    expect(labels.size).toBe(SPECIES_KEYS.length);
   });
 });

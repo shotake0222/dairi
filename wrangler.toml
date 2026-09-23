@@ -56,7 +56,7 @@ binding = "ASSETS"
 # 既定では静的ファイルはWorkerに届く前にアセット層が直接返してしまい、
 # src/index.ts の HTMLRewriter（OGPのURL絶対化）が動かないため。
 # 画像や3Dモデルまで対象にするとリクエストごとにWorker呼び出しが増えるので、ページのパスだけに限定する。
-run_worker_first = ["/", "/home", "/chat", "/call", "/talk", "/eyes", "/summon", "/friends", "/history", "/profile", "/admin", "/add", "/lp", "/biz", "/privacy", "/terms", "/recover", "/offline", "/sw.js", "/robots.txt", "/sitemap.xml"]
+run_worker_first = ["/", "/home", "/chat", "/call", "/talk", "/eyes", "/summon", "/friends", "/history", "/profile", "/admin", "/add", "/lp", "/biz", "/privacy", "/terms", "/recover", "/offline", "/meta", "/sw.js", "/robots.txt", "/sitemap.xml"]
 
 # --- Workers AI（序盤はSLMで運用） ---
 [ai]
@@ -85,6 +85,16 @@ class_name = "CharacterState"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["CharacterState"]
+
+# メタバースの部屋（2026-09-23 追加）。1部屋＝1インスタンスで、WebSocketの入退室を受ける。
+# **v2 のマイグレーションは、最初のデプロイで一度だけ適用される**（タグを変えたり消したりしないこと）。
+[[durable_objects.bindings]]
+name = "META_ROOM"
+class_name = "MetaverseRoom"
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["MetaverseRoom"]
 
 # --- 留守番エージェント（自動お散歩）: 1日2回、オプトイン済みキャラクターの「お散歩」を自動実行する ---
 # 頻度を上げすぎるとAI呼び出しコストが増えるため、まずは控えめな回数から開始し、様子を見て調整してください。
@@ -122,7 +132,7 @@ head_sampling_rate = 1
 directory = "./public"
 binding = "ASSETS"
 # not_found_handling は既定のまま（理由は本番側のコメント）
-run_worker_first = ["/", "/home", "/chat", "/call", "/talk", "/eyes", "/summon", "/friends", "/history", "/profile", "/admin", "/add", "/lp", "/biz", "/privacy", "/terms", "/recover", "/offline", "/sw.js", "/robots.txt", "/sitemap.xml"]
+run_worker_first = ["/", "/home", "/chat", "/call", "/talk", "/eyes", "/summon", "/friends", "/history", "/profile", "/admin", "/add", "/lp", "/biz", "/privacy", "/terms", "/recover", "/offline", "/meta", "/sw.js", "/robots.txt", "/sitemap.xml"]
 
 [env.staging.ai]
 binding = "AI"
@@ -143,6 +153,14 @@ class_name = "CharacterState"
 [[env.staging.migrations]]
 tag = "v1"
 new_sqlite_classes = ["CharacterState"]
+
+[[env.staging.durable_objects.bindings]]
+name = "META_ROOM"
+class_name = "MetaverseRoom"
+
+[[env.staging.migrations]]
+tag = "v2"
+new_sqlite_classes = ["MetaverseRoom"]
 
 # 検証環境のURL: https://staging.waketama.com
 # 本番と同じくDNSレコードと証明書はCloudflareが自動で用意する（手動作成は不要）。

@@ -9,6 +9,7 @@ declare namespace Cloudflare {
     DB: D1Database;
     MEMORY_INDEX: VectorizeIndex;
     CHARACTER: DurableObjectNamespace<import("../characterState").CharacterState>;
+    META_ROOM: DurableObjectNamespace<import("../metaverseRoom").MetaverseRoom>;
     ASSETS: Fetcher;
     // vitest.config.ts で readD1Migrations() の結果を渡しているテスト専用バインディング
     TEST_MIGRATIONS: import("cloudflare:test").D1Migration[];
