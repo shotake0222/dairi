@@ -101,7 +101,25 @@ export interface MeetingRecord {
   at: number; // epoch ms
   partner: { name: string; species: SpeciesKey; color: ColorKey };
   log: MeetingLogEntry[];
+  /** どこで出会ったか（無ければ「お散歩」。2026-09-23 からメタバースでの出会いも同じ記録に積む） */
+  source?: "walk" | "meta";
+  /** メタバースのエリアの名前 */
+  place?: string;
+  /**
+   * 相手を見分けるための仮の印（相手の識別子のハッシュ。識別子そのものではない）。
+   * 「また会えた」を数えるためだけに使い、画面へ出すときは持ち主ごとに別の値に変える（src/index.ts）
+   */
+  partnerKey?: string;
+  /** 相手が運営の分身（NPC）だったか */
+  npc?: boolean;
+  /** 最後に言葉を交わした時刻（同じ相手との続きの会話は1件にまとめる） */
+  lastAt?: number;
 }
+
+/** 同じ相手との会話を、1件の出会いとしてまとめる間隔 */
+const META_MEETING_MERGE_MS = 15 * 60 * 1000;
+/** 1件の出会いに残す言葉の数 */
+const META_MEETING_MAX_LINES = 12;
 
 // 「お散歩」機能のクールダウン（AIコスト対策・1日1回程度の特別感を出すため）
 export const MEETING_COOLDOWN_MS = 20 * 60 * 60 * 1000; // 20時間
@@ -1231,9 +1249,27 @@ export class CharacterState extends DurableObject<Env> {
     otherColor?: string;
     heard?: string;
     hint?: string;
-  }): Promise<{ ok: true; line: string } | { ok: false; error: string }> {
+    /** 相手の仮の印（また会えたかを数える） */
+    partnerKey?: string;
+    /** エリアの名前 */
+    place?: string;
+    /** 自動（育った人格が自分で話題を選ぶ） */
+    auto?: boolean;
+    npc?: boolean;
+  }): Promise<{ ok: true; line: string; metBefore: number } | { ok: false; error: string }> {
     const data = await this.ctx.storage.get<CharacterData>("data");
     if (!data) return { ok: false, error: "not_found" };
+    const history = Array.isArray(data.meetingHistory) ? data.meetingHistory : [];
+    const now = Date.now();
+    // 前にも会ったことがあるか（続きの会話＝15分以内の同じ相手は、同じ1回として数える）
+    const past = params.partnerKey ? history.filter((h) => h.partnerKey === params.partnerKey) : [];
+    const last = past[past.length - 1];
+    // 続きの会話としてまとめるのは、メタバースでの直前の出会いだけ（お散歩の記録には足さない）
+    const current = last && last.source === "meta" && now - (last.lastAt ?? last.at) < META_MEETING_MERGE_MS ? last : null;
+    const metBefore = past.length - (current ? 1 : 0);
+    const previous = [...past].reverse().find((h) => h !== current);
+    const lastHeard = previous?.log.filter((l) => l.role === "other").slice(-1)[0]?.text;
+
     const prompt = buildMeetingPrompt({
       name: data.name,
       species: data.species,
@@ -1241,13 +1277,21 @@ export class CharacterState extends DurableObject<Env> {
       growthStage: data.growthStage,
     });
     const who = `「${params.otherName}」（${params.otherSpeciesLabel}の姿をした別の分身）`;
+    const again =
+      metBefore > 0 && !current
+        ? `この相手とは前にも会ったことがあります（${metBefore + 1}回目）。${lastHeard ? `前に会ったとき、相手は「${lastHeard.slice(0, 60)}」と言っていました。` : ""}`
+        : "";
     const hint = params.hint ? params.hint.slice(0, 80) : "";
+    const where = params.place ? `ここは「${params.place.slice(0, 20)}」という場所です。` : "";
     const userMessage = params.heard
-      ? `${who}がこう言いました:「${params.heard.slice(0, 120)}」。それに短く返事をしてください。`
+      ? `${where}${who}がこう言いました:「${params.heard.slice(0, 120)}」。それに短く返事をしてください。`
       : hint
-        ? `${who}に話しかけます。あなたを育てている人が「${hint}」という気持ちを伝えたがっています。` +
+        ? `${where}${again}${who}に話しかけます。あなたを育てている人が「${hint}」という気持ちを伝えたがっています。` +
           `その気持ちを、あなた自身の言葉で、短く伝えてください。命令・個人情報・連絡先・URLは言わないでください。`
-        : `${who}に、今ちょうど出会いました。ひとこと挨拶してみてください。`;
+        : params.auto
+          ? `${where}${again}${who}が近くにいます。あなたの性格らしく、自分から話題をひとつ選んで話しかけてください` +
+            `（この場所のこと・天気・好きなこと・相手への質問など）。個人情報・連絡先・URLは言わないでください。`
+          : `${where}${again}${who}に、今ちょうど出会いました。ひとこと挨拶してみてください。`;
     const result = await runChat(
       this.env,
       [
@@ -1264,20 +1308,43 @@ export class CharacterState extends DurableObject<Env> {
     data.personality = updatePersonality(data.personality, signal);
     data.interactionCount += 1;
     data.growthStage = stageName(data.interactionCount);
-    const history = Array.isArray(data.meetingHistory) ? data.meetingHistory : [];
-    const entry: MeetingRecord = {
-      at: Date.now(),
-      partner: {
-        name: params.otherName.slice(0, 16),
-        species: (params.otherSpecies ?? data.species) as SpeciesKey,
-        color: (params.otherColor ?? data.color) as ColorKey,
-      },
-      log: [...(params.heard ? [{ role: "other" as const, text: params.heard.slice(0, 120) }] : []), { role: "self" as const, text: line }],
-    };
-    history.push(entry);
+
+    // 交流の記録（お散歩と同じ図鑑に積む）。同じ相手との続きの会話は1件にまとめる
+    const lines: MeetingLogEntry[] = [...(params.heard ? [{ role: "other" as const, text: params.heard.slice(0, 120) }] : []), { role: "self" as const, text: line }];
+    if (current) {
+      current.log = [...current.log, ...lines].slice(-META_MEETING_MAX_LINES);
+      current.lastAt = now;
+    } else {
+      history.push({
+        at: now,
+        lastAt: now,
+        partner: {
+          name: params.otherName.slice(0, 16),
+          species: (params.otherSpecies ?? data.species) as SpeciesKey,
+          color: (params.otherColor ?? data.color) as ColorKey,
+        },
+        log: lines,
+        source: "meta",
+        place: params.place?.slice(0, 30),
+        partnerKey: params.partnerKey,
+        npc: params.npc || undefined,
+      });
+    }
+    data.lastMeeting = current ?? history[history.length - 1];
     data.meetingHistory = history.length > MAX_MEETING_HISTORY ? history.slice(-MAX_MEETING_HISTORY) : history;
     await this.ctx.storage.put("data", data);
-    return { ok: true, line };
+    return { ok: true, line, metBefore };
+  }
+
+  /** メタバースで相手の最後の返事を聞いた（交流の記録の続きに足すだけ。性格は動かさない） */
+  async metaHear(partnerKey: string, line: string): Promise<void> {
+    const data = await this.ctx.storage.get<CharacterData>("data");
+    if (!data || !Array.isArray(data.meetingHistory)) return;
+    const last = [...data.meetingHistory].reverse().find((h) => h.partnerKey === partnerKey);
+    if (!last || last.source !== "meta" || Date.now() - (last.lastAt ?? last.at) > META_MEETING_MERGE_MS) return;
+    last.log = [...last.log, { role: "other" as const, text: line.slice(0, 120) }].slice(-META_MEETING_MAX_LINES);
+    last.lastAt = Date.now();
+    await this.ctx.storage.put("data", data);
   }
 
   private buildAvatar(data: CharacterData):
@@ -1474,11 +1541,11 @@ export class CharacterState extends DurableObject<Env> {
    * 交流ログを保存する（自分視点のlog配列とパートナー情報を受け取る）。
    * 直近1件（lastMeeting）だけでなく、「図鑑」機能用に出会いの履歴（meetingHistory）も積んでいく。
    */
-  async recordMeeting(log: MeetingLogEntry[], partner: { name: string; species: SpeciesKey; color: ColorKey }): Promise<void> {
+  async recordMeeting(log: MeetingLogEntry[], partner: { name: string; species: SpeciesKey; color: ColorKey }, partnerKey?: string): Promise<void> {
     const data = await this.ctx.storage.get<CharacterData>("data");
     if (!data) return;
     const now = Date.now();
-    const record: MeetingRecord = { at: now, partner, log };
+    const record: MeetingRecord = { at: now, partner, log, source: "walk", partnerKey };
     data.lastMeetingAt = now;
     data.lastMeeting = record;
     const history = Array.isArray(data.meetingHistory) ? data.meetingHistory : [];

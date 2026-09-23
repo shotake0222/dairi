@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>わけたま｜出会いの図鑑</title>
-<meta name="description" content="あなたの分身が、お散歩の途中で出会ってきた他の分身たちの記録。" />
+<meta name="description" content="あなたの分身が、お散歩とメタバースで出会ってきた他の分身たちとの交流の記録。" />
 
 <!-- PWA（ホーム画面に追加）。依代が手元に無くても分身に会いに来られるようにするための導線。 -->
 <link rel="manifest" href="/manifest.webmanifest" />
@@ -78,6 +78,19 @@
   .empty { text-align: center; color: #888; font-size: 13px; padding: 40px 16px; line-height: 1.8; }
   .loading { text-align: center; color: #aaa; font-size: 13px; padding: 40px 16px; }
 
+  .filters { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0 12px; }
+  .filters button { border: 1px solid #e3dcfa; background: #fff; color: #7c5cff; border-radius: 999px; padding: 6px 12px; font-size: 12.5px; font-family: inherit; cursor: pointer; }
+  .filters button.on { background: #7c5cff; color: #fff; border-color: transparent; }
+  .badge { display: inline-block; font-size: 10px; border-radius: 999px; padding: 1px 7px; margin-top: 4px; }
+  .badge.meta { background: #e8f4ff; color: #2f6fd6; }
+  .badge.walk { background: #eef9ee; color: #2f8a4a; }
+  .badge.npc { background: #fff4d6; color: #9a6b1a; margin-left: 4px; }
+  .badge.again { background: #ffe8f0; color: #d8456a; margin-left: 4px; }
+  .regulars { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+  .regular { flex: 0 0 auto; width: 92px; text-align: center; font-size: 11.5px; background: #faf9ff; border: 1px solid #ece7fb; border-radius: 12px; padding: 8px 4px; }
+  .regular img { width: 56px; height: 56px; object-fit: contain; }
+  .regular b { display: block; font-size: 12px; color: #333; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .goMeta { display: block; text-align: center; background: #7c5cff; color: #fff; text-decoration: none; border-radius: 999px; padding: 11px; font-size: 14px; font-weight: 700; margin-top: 10px; }
   .concept {
     font-size: 12px; color: #7c5cff; background: #f0ecff; border-radius: 12px;
     padding: 12px 14px; line-height: 1.7; margin-top: 4px;
@@ -104,18 +117,31 @@
   <div id="loading" class="loading">読み込み中…</div>
 
   <div id="content" hidden>
+    <div class="card" id="regularsCard" hidden>
+      <h2>よく会う子</h2>
+      <div class="sub">お散歩とメタバースで、何度も会っている子</div>
+      <div class="regulars" id="regulars"></div>
+    </div>
+
     <div class="card">
       <h2 id="summaryHeadline"></h2>
-      <div class="sub" id="summarySub">タップすると、その時の立ち話を振り返れます</div>
+      <div class="sub" id="summarySub">タップすると、その時の会話を振り返れます</div>
+      <div class="filters" id="filters">
+        <button type="button" data-f="all" class="on">すべて</button>
+        <button type="button" data-f="meta">🌐 メタバース</button>
+        <button type="button" data-f="walk">🚶 お散歩</button>
+      </div>
       <div class="grid" id="grid"></div>
       <button id="moreBtn" type="button" hidden>もっと見る</button>
     </div>
 
     <div class="card">
       <div class="concept">
-        「お散歩」機能でこれまでに出会った、他のユーザーが育てている分身たちの記録です。人間同士のメッセージのやり取りは行われず、
-        分身同士がその場限りの短い立ち話をするだけですが、この図鑑には「あなたの分身がどんな出会いを重ねてきたか」が積み重なっていきます。
+        「お散歩」とメタバースで出会った、他のユーザーが育てている分身（と運営の分身）との交流の記録です。
+        人間同士が直接メッセージをやり取りすることはなく、分身どうしが自分の言葉で話します。
+        同じ子に何度も会うと「◯回目」と分かり、前に話したことを覚えて話しかけることもあります。話すたびに、あなたの分身は少しずつ育ちます。
       </div>
+      <a class="goMeta" id="goMeta" href="#">🌐 メタバースで会いに行く</a>
     </div>
   </div>
 </main>
@@ -165,12 +191,21 @@
     }
   }
 
-  function renderGrid(container, history) {
+  let allHistory = [];
+  let filter = "all";
+  /** 同じ相手に何回会ったか（相手の仮の印ごと。印の無い古い記録は、名前と姿で見分ける） */
+  const partnerCount = new Map();
+  function partnerId(r) {
+    const p = r.partner || {};
+    return r.partnerKey || `${p.name}|${p.species}|${p.color}`;
+  }
+
+  function renderGrid(container) {
     container.innerHTML = "";
     // 新しい出会いを先頭に
-    pendingRecords = [...history].reverse();
+    const list = allHistory.filter((r) => filter === "all" || (filter === "meta" ? r.source === "meta" : r.source !== "meta"));
+    pendingRecords = [...list].reverse();
     appendPage(container);
-    el("moreBtn").addEventListener("click", () => appendPage(container));
   }
 
   function buildEntry(record) {
@@ -186,10 +221,14 @@
         .map((l) => `<div class="line ${l.role === "self" ? "self" : "other"}">${l.role === "self" ? "🟣 " : "⚪ "}${escapeHtml(l.text)}</div>`)
         .join("");
 
+      const isMeta = record.source === "meta";
+      const where = isMeta ? `🌐 メタバース${record.place ? `・${escapeHtml(record.place)}` : ""}` : "🚶 お散歩";
+      const times = partnerCount.get(partnerId(record)) || 1;
       entry.innerHTML = `
         <div class="icon">${iconSrc ? `<img src="${iconSrc}" alt="${escapeHtml(partner.name || "")}" />` : ""}</div>
         <div class="pname">${escapeHtml(partner.name || "名もなき分身")}</div>
         <div class="pspecies">${escapeHtml(speciesLabel)}</div>
+        <div><span class="badge ${isMeta ? "meta" : "walk"}">${where}</span>${record.npc ? '<span class="badge npc">運営の分身</span>' : ""}${times > 1 ? `<span class="badge again">${times}回会った</span>` : ""}</div>
         <div class="pdate">${formatDate(record.at)}</div>
         <div class="log">${logHtml}</div>
       `;
@@ -218,6 +257,7 @@
     el("pageTitle").textContent = `${data.name}の図鑑`;
 
     const history = Array.isArray(data.meetingHistory) ? data.meetingHistory : [];
+    el("goMeta").href = `/meta?cid=${encodeURIComponent(cid)}`;
 
     if (history.length === 0) {
       el("content").hidden = false;
@@ -226,13 +266,41 @@
       const empty = document.createElement("div");
       empty.className = "empty";
       empty.textContent =
-        "チャット画面の「🤝 交流」から「他の分身と出会う」をオンにすると、留守中や「お散歩」機能を通じて、他のユーザーが育てている分身と出会えるようになります。";
+        "メタバース（🌐）で近くの子に話しかけるか、チャット画面の「🤝 交流」から「他の分身と出会う」をオンにすると、他のユーザーが育てている分身と出会えるようになります。";
+      const go = el("goMeta").cloneNode(true);
+      empty.appendChild(go);
       el("grid").replaceWith(empty);
       return;
     }
 
-    el("summaryHeadline").textContent = `これまでに ${history.length} 体の分身と出会いました`;
-    renderGrid(el("grid"), history);
+    allHistory = history;
+    for (const r of history) partnerCount.set(partnerId(r), (partnerCount.get(partnerId(r)) || 0) + 1);
+    const metaCount = history.filter((r) => r.source === "meta").length;
+    el("summaryHeadline").textContent = `これまでに ${partnerCount.size} 体の分身と、${history.length} 回の出会い`;
+    el("summarySub").textContent = `メタバース ${metaCount} 回・お散歩 ${history.length - metaCount} 回｜タップすると、その時の会話を振り返れます`;
+
+    // よく会う子（2回以上）
+    const regulars = [...partnerCount.entries()].filter(([, n]) => n >= 2).sort((a, b) => b[1] - a[1]).slice(0, 10);
+    if (regulars.length) {
+      el("regularsCard").hidden = false;
+      for (const [key, n] of regulars) {
+        const r = [...history].reverse().find((h) => partnerId(h) === key);
+        const p = r.partner || {};
+        const div = document.createElement("div");
+        div.className = "regular";
+        div.innerHTML = `${p.species && p.color ? `<img src="/characters/${p.species}_${p.color}.png" alt="" />` : ""}<b>${escapeHtml(p.name || "")}</b>${n}回`;
+        el("regulars").appendChild(div);
+      }
+    }
+    el("moreBtn").addEventListener("click", () => appendPage(el("grid")));
+    el("filters").querySelectorAll("button").forEach((b) =>
+      b.addEventListener("click", () => {
+        filter = b.dataset.f;
+        el("filters").querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
+        renderGrid(el("grid"));
+      })
+    );
+    renderGrid(el("grid"));
     el("content").hidden = false;
   })();
 </script>

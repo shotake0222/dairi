@@ -27,6 +27,8 @@ const MY_CHARACTERS_KEY = "sodatsukake_myCharacters";
 const SOUND_KEY = "sodatsukake_metaSound";
 const CAMERA_KEY = "sodatsukake_metaCamera";
 const NOTICE_KEY = "sodatsukake_metaNoticeSeen";
+/** 自動（育った人格が自分で歩いて話しかける）か、手動（自分で動かして入力する）か */
+const MODE_KEY = "sodatsukake_metaMode";
 
 const STAMP_TEXT = { heart: "♡", clap: "ぱちぱち", wow: "！", question: "？", music: "♪", sleepy: "zzz" };
 
@@ -343,6 +345,11 @@ function enterRoom(room, catalog, chosen) {
   const mineCid = new Map();
   /** 話しかける相手（null なら自分の子と話す） */
   let talkTarget = null;
+  /** 自動モード: 育った人格（性格の数値）で、自分の子が自分から歩き・話しかける */
+  let autoMode = load(MODE_KEY) === "auto";
+  let autoPauseUntil = 0;
+  let lastAutoTalk = -Infinity;
+  let autoTalkOff = false;
 
   const actors = new Map(); // aid -> Actor
   let mine = [];
@@ -648,8 +655,18 @@ function enterRoom(room, catalog, chosen) {
         break;
       }
       case "talk_failed":
-        toast(msg.message || "うまく話せなかったみたい");
+        if (msg.code === "limit") autoTalkOff = true;
+        // 自動モードで間隔が短すぎたときは黙って次を待つ
+        if (!(autoMode && msg.code === "too_fast")) toast(msg.message || "うまく話せなかったみたい");
         break;
+      case "met_before": {
+        const a = actors.get(msg.aid);
+        if (!a) break;
+        a.metCount = msg.count;
+        toast(`${a.name}とは${msg.count}回目の出会い！（交流の記録に残っています）`);
+        addTalkLog("交流の記録", `${a.name}とは${msg.count}回目の出会い`, false);
+        break;
+      }
       case "moved":
         // エリアがまとめられた: まとめた先へ、同じ子たちで入り直す
         closedByUs = true;
@@ -1036,6 +1053,98 @@ function enterRoom(room, catalog, chosen) {
     talkBox.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
   }
 
+  // --- 自動と手動 ---
+  //   手動: 自分でタップして歩かせ、吹き出しに入力して話す（これまでどおり）
+  //   自動: 育った人格（性格の数値）で、自分の子が自分から歩き、近くの子に話しかける（話題も自分で選ぶ）
+  //         人なつっこい子ほど近づいて話しかけ、好奇心の強い子ほど屋台や看板を見に行く。慎重な子は間をあける
+  function renderMode() {
+    $("modeBtn").textContent = autoMode ? "🤖 自動" : "✋ 手動";
+    $("modeBtn").classList.toggle("on", autoMode);
+    $("modeBtn").title = autoMode ? "育った性格で、自分から歩いて話しかけます（タップで手動に）" : "自分で動かして話します（タップで自動に）";
+  }
+  renderMode();
+  $("modeBtn").addEventListener("click", () => {
+    autoMode = !autoMode;
+    store(MODE_KEY, autoMode ? "auto" : "manual");
+    renderMode();
+    for (const a of actors.values()) if (a.mine) a.autoNextAt = 0;
+    toast(autoMode ? "自動: 育った性格のとおりに、自分から歩いて話しかけます" : "手動: 自分で動かして、話しかけます");
+  });
+
+  function sociability(p) {
+    if (!p) return 0.5;
+    const v = (p.warmth + p.cheerfulness + p.curiosity) / 3 - p.caution * 0.3 - p.independence * 0.2;
+    return Math.max(0, Math.min(1, (v + 25) / 75));
+  }
+
+  function autoTick(now) {
+    if (!autoMode || games.running || now < autoPauseUntil) return;
+    const list = [...actors.values()];
+    for (const a of list) {
+      // 身振り（idle の揺れ）の最中でも決めてよい。歩いている間だけ待つ
+      if (!a.mine || a.walking || now < (a.autoNextAt || 0)) continue;
+      const p = a.persona;
+      const soc = sociability(p);
+      const curious = p ? p.curiosity / 100 : 0.5;
+      const energy = p ? p.energy / 100 : 0.5;
+      a.autoNextAt = now + 4000 + (1 - energy) * 8000 + Math.random() * 3000;
+      let nearest = null;
+      let nd = Infinity;
+      for (const b of list) {
+        if (b.mine) continue;
+        const d = a.position.distanceTo(b.position);
+        if (d < nd) {
+          nd = d;
+          nearest = b;
+        }
+      }
+      // 話しかける: 近くにいて、その相手とはしばらく話していない。間は人なつっこさで決まる（20〜60秒）
+      const talkGap = 60000 - soc * 40000;
+      a.talkedWith ??= new Map();
+      if (
+        !autoTalkOff &&
+        nearest &&
+        nd < 3.4 &&
+        now - lastAutoTalk > talkGap &&
+        now - (a.talkedWith.get(nearest.aid) || -Infinity) > 120000 &&
+        (!nearest.npc || nearest.npc.talk !== false)
+      ) {
+        lastAutoTalk = now;
+        a.talkedWith.set(nearest.aid, now);
+        a.other = nearest;
+        a.faceOther = true;
+        setTimeout(() => (a.faceOther = false), 3000);
+        send({ t: "talk", aid: a.aid, to: nearest.aid, auto: true });
+        continue;
+      }
+      const r = Math.random();
+      const half = catalog.worldHalf - 1;
+      if (nearest && r < 0.2 + soc * 0.5) {
+        a.other = nearest;
+        a.stepToward(nearest, 20);
+      } else if (things && things.items.length && r < 0.2 + soc * 0.5 + curious * 0.3) {
+        const it = things.items[Math.floor(Math.random() * things.items.length)];
+        const target = it.startPoint || it.root.position;
+        const x = Math.max(-half, Math.min(half, target.x + (Math.random() - 0.5) * 1.5));
+        const z = Math.max(-half, Math.min(half, target.z + (Math.random() - 0.5) * 1.5));
+        a.setDestination(x, z);
+        send({ t: "move", aid: a.aid, x, z });
+      } else {
+        const x = Math.max(-half, Math.min(half, a.position.x + (Math.random() * 2 - 1) * 3));
+        const z = Math.max(-half, Math.min(half, a.position.z + (Math.random() * 2 - 1) * 3));
+        a.setDestination(x, z);
+        send({ t: "move", aid: a.aid, x, z });
+      }
+    }
+  }
+
+  // 交流の記録（お散歩とメタバースの出会いを、同じ図鑑で見る）
+  $("friendsBtn").addEventListener("click", () => {
+    const cid = selected ? mineCid.get(selected.aid) : null;
+    if (!cid) return toast("記録を見る子を下から選んでね");
+    window.open(`/friends?cid=${encodeURIComponent(cid)}`, "_blank", "noopener");
+  });
+
   // --- 操作（タップで移動・挨拶、ドラッグで回す、ピンチで寄る） ---
   const raycaster = new THREE.Raycaster();
   const pointers = new Map();
@@ -1130,6 +1239,11 @@ function enterRoom(room, catalog, chosen) {
     const z = Math.max(-half, Math.min(half, g.point.z));
     selected.setDestination(x, z);
     send({ t: "move", aid: selected.aid, x, z });
+    // 自動のときに地面をタップしたら、しばらく（15秒）自分で動かす
+    if (autoMode) {
+      autoPauseUntil = performance.now() + 15000;
+      toast("15秒だけ手動で動かします");
+    }
   }
 
   // --- スタンプ・挨拶・音のボタン ---
@@ -1165,6 +1279,7 @@ function enterRoom(room, catalog, chosen) {
     if (document.hidden) return;
     wanderNpcs();
     const now = performance.now();
+    autoTick(now);
     const list = [...actors.values()];
     for (const a of list) {
       if (a.busy || a.walking) continue;
@@ -1187,7 +1302,7 @@ function enterRoom(room, catalog, chosen) {
       }
       if (Math.random() < 0.35) a.act("idle");
       // 自分の子（操作していない子）は、ときどき少しだけ歩き回る。ゲーム中は動かさない
-      if (a.mine && a !== selected && !games.running && Math.random() < 0.02 + a.energy / 5000) {
+      if (!autoMode && a.mine && a !== selected && !games.running && Math.random() < 0.02 + a.energy / 5000) {
         const half = catalog.worldHalf - 1;
         const x = Math.max(-half, Math.min(half, a.position.x + (Math.random() * 2 - 1) * 2.5));
         const z = Math.max(-half, Math.min(half, a.position.z + (Math.random() * 2 - 1) * 2.5));
@@ -1218,7 +1333,7 @@ function enterRoom(room, catalog, chosen) {
     if (pendingGreet && now - pendingGreet.at > 15000) pendingGreet = null;
 
     // 屋台の前の輪に、操作している子が入ったら、ゲームの案内を出す
-    if (selected && things && !games.running && $("dialog").hidden) {
+    if (!autoMode && selected && things && !games.running && $("dialog").hidden) {
       const hit = things.items.find(
         (i) => i.startPoint && Math.hypot(selected.position.x - i.startPoint.x, selected.position.z - i.startPoint.z) < 0.9
       );
@@ -1286,6 +1401,10 @@ function enterRoom(room, catalog, chosen) {
       sendTalk,
       openTalk,
       setTalkTarget,
+      get autoMode() {
+        return autoMode;
+      },
+      autoTick,
       get selected() {
         return selected;
       },

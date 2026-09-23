@@ -1,4 +1,4 @@
-import { CharacterState, SPECIES_LABELS, MEETING_COOLDOWN_MS, MeetingLogEntry, SpeciesKey, ColorKey, PersonalityPackageV1 } from "./durable-objects/characterState";
+import { CharacterState, SPECIES_LABELS, MEETING_COOLDOWN_MS, MeetingLogEntry, MeetingRecord, SpeciesKey, ColorKey, PersonalityPackageV1 } from "./durable-objects/characterState";
 import { deriveSpeechStyle } from "./ai/speechStyle";
 import { PersonalityTraits, TRAIT_KEYS } from "./ai/personality";
 import { handleCallStream } from "./call";
@@ -69,6 +69,7 @@ import {
 import { handleMcp } from "./mcp";
 import { MetaverseRoom } from "./durable-objects/metaverseRoom";
 import { roomView } from "./metaRoomView";
+import { partnerKeyOf } from "./metaText";
 import {
   createAdminCharacters,
   deleteAdminCharacter,
@@ -814,7 +815,9 @@ export default {
         // （src/ai/promptBuilder.ts の buildMeetingPrompt を参照）。
         lastMeeting: state.lastMeeting,
         lastMeetingAt: state.lastMeetingAt,
-        meetingHistory: state.meetingHistory,
+        // 相手の仮の印（partnerKey）は、この子ごとに別の値へ変えて渡す（同じ相手の記録をまとめるためだけ。
+        // 別の子の記録と突き合わせて、同じ相手を追えないように）
+        meetingHistory: await viewMeetingHistory(state.meetingHistory, characterId),
         speechStyleLabel: deriveSpeechStyle(state.personality).label,
         // 読み上げに使う「この子の声」。保存はせず、characterIdと性格から毎回導出する。
         voice: deriveVoiceProfile(characterId, state.personality, state.species, state.color),
@@ -1184,8 +1187,9 @@ export async function runMeeting(env: Env, characterId: string): Promise<Meeting
     { role: "other", text: lineA2 },
   ];
 
-  await selfStub.recordMeeting(selfLog, { name: partnerRow.name, species: partnerRow.species, color: partnerRow.color });
-  await partnerStub.recordMeeting(partnerLog, { name: selfState.name, species: selfState.species, color: selfState.color });
+  // メタバースで会ったときと同じ「相手の仮の印」を付けて、どちらで会っても「また会えた」と数える
+  await selfStub.recordMeeting(selfLog, { name: partnerRow.name, species: partnerRow.species, color: partnerRow.color }, await partnerKeyOf(partnerId));
+  await partnerStub.recordMeeting(partnerLog, { name: selfState.name, species: selfState.species, color: selfState.color }, await partnerKeyOf(characterId));
 
   return {
     ok: true,
@@ -1590,4 +1594,21 @@ async function handlePublicLandAndEntry(request: Request, url: URL, env: Env, lo
     return json(status, noStore);
   }
   return null;
+}
+
+
+/** 交流の記録を画面へ渡す形にする（相手の仮の印を、この子ごとの値に変える） */
+async function viewMeetingHistory(history: MeetingRecord[] | undefined, characterId: string): Promise<MeetingRecord[]> {
+  const list = Array.isArray(history) ? history : [];
+  const out: MeetingRecord[] = [];
+  for (const h of list) {
+    if (!h.partnerKey) {
+      out.push(h);
+      continue;
+    }
+    const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${characterId}:${h.partnerKey}`));
+    const key = [...new Uint8Array(d)].slice(0, 6).map((b) => b.toString(16).padStart(2, "0")).join("");
+    out.push({ ...h, partnerKey: key });
+  }
+  return out;
 }

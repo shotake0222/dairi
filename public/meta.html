@@ -86,6 +86,7 @@
   }
   #hudName { font-weight: 700; max-width: 40vw; overflow: hidden; text-overflow: ellipsis; }
   #hudStatus:empty { display: none; }
+  #modeBtn.on { background: #2a2440; color: #fff; }
   .spacer { flex: 1; }
   #gameHud {
     position: absolute; top: calc(104px + var(--safe-t)); left: 50%; transform: translateX(-50%);
@@ -259,6 +260,8 @@
   <div id="noticeBox">
     <b>同じ部屋の人に見えるもの</b>: 分身の名前・姿・声の高さ・動き方（性格から決まる数値）。
     会話の中身や、分身が覚えていること、あなたの情報は見えません。
+    <b>自動</b>にすると、育った性格のとおりに自分から歩き、近くの子に話しかけます（<b>手動</b>では自分で動かして入力）。
+    出会った子との会話は「交流の記録」（図鑑）に残ります。
     ほかの子に話しかけると、<b>あなたの子が自分の言葉で</b>伝えます（あなたが入力した文字そのものは、ほかの人に見えません）。
     自分の子との会話の返事は、あなたの画面にだけ出ます。
   </div>
@@ -283,6 +286,8 @@
     <span class="pill" id="hudCount">0体</span>
     <span class="pill" id="hudStatus"></span>
     <span class="spacer"></span>
+    <button class="pill" id="modeBtn" type="button" title="自動と手動を切り替え">✋ 手動</button>
+    <button class="pill" id="friendsBtn" type="button" title="出会った子との交流の記録">📖 記録</button>
     <button class="pill" id="camBtn" type="button">視点</button>
     <button class="pill" id="soundBtn" type="button">音</button>
   </div>

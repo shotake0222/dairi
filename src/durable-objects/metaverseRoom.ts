@@ -26,7 +26,7 @@
 
 import { DurableObject } from "cloudflare:workers";
 import { SPECIES_LABELS, type CharacterState, type SpeciesKey } from "./characterState";
-import { sanitizeHint } from "../metaText";
+import { partnerKeyOf, sanitizeHint } from "../metaText";
 import { GREETING_LINES, MAX_ACTORS_PER_PERSON, MAX_PEOPLE, STAMPS, TEST_AREA_ID, WORLD_HALF, type AreaState, type RoomConfig } from "../metaverse";
 
 export interface MetaRoomEnv {
@@ -65,6 +65,8 @@ const STAMP_INTERVAL_MS = 700;
 const GREET_INTERVAL_MS = 2500;
 /** 分身どうしの会話は AI を使うので、間隔と1回の入室あたりの回数を絞る */
 const TALK_INTERVAL_MS = 5000;
+/** 自動（育った人格が自分で話しかける）のときは、もっと間をあける */
+const AUTO_TALK_INTERVAL_MS = 15000;
 const TALKS_PER_CONNECTION = 80;
 
 function randomToken(n: number): string {
@@ -73,10 +75,8 @@ function randomToken(n: number): string {
   return [...bytes].map((b) => alphabet[b % alphabet.length]).join("");
 }
 
-async function hashShort(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`meta:${value}`));
-  return [...new Uint8Array(digest)].slice(0, 12).map((b) => b.toString(16).padStart(2, "0")).join("");
-}
+/** 相手の仮の印（お散歩と同じ値。src/metaText.ts の partnerKeyOf） */
+const hashShort = partnerKeyOf;
 
 function clampCoord(v: unknown): number | null {
   const n = Number(v);
@@ -352,12 +352,12 @@ export class MetaverseRoom extends DurableObject<MetaRoomEnv> {
   }
 
   /** 部屋の中で、aid から「分身の識別子・名前・姿」を引く（利用者の分身と NPC） */
-  private async findSpeaker(aid: string): Promise<{ cid: string; name: string; species: string; color: string; npc: boolean } | null> {
+  private async findSpeaker(aid: string): Promise<{ cid: string; name: string; species: string; color: string; npc: boolean; key: string } | null> {
     const config = await this.ctx.storage.get<RoomConfig>("config");
     const npc = config?.npcs?.find((n) => n.aid === aid);
     if (npc) {
       if ((npc as { talk?: boolean }).talk === false) return null;
-      return { cid: npc.cid, name: String(npc.name), species: String(npc.species), color: String(npc.color), npc: true };
+      return { cid: npc.cid, name: String(npc.name), species: String(npc.species), color: String(npc.color), npc: true, key: await hashShort(npc.cid) };
     }
     for (const other of this.ctx.getWebSockets()) {
       const a = other.deserializeAttachment() as Attachment | null;
@@ -365,7 +365,7 @@ export class MetaverseRoom extends DurableObject<MetaRoomEnv> {
       if (hit) {
         const pub = await this.ctx.storage.get<PublicActor>(`actor:${aid}`);
         if (!pub) return null;
-        return { cid: hit.cid, name: pub.name, species: pub.species, color: pub.color, npc: false };
+        return { cid: hit.cid, name: pub.name, species: pub.species, color: pub.color, npc: false, key: hit.cidHash };
       }
     }
     return null;
@@ -374,7 +374,8 @@ export class MetaverseRoom extends DurableObject<MetaRoomEnv> {
   private async onTalk(ws: WebSocket, att: Attachment, msg: Record<string, unknown>) {
     if (!att.joined) return;
     const now = Date.now();
-    if (now - (att.lastTalkAt ?? 0) < TALK_INTERVAL_MS) {
+    const auto = msg.auto === true;
+    if (now - (att.lastTalkAt ?? 0) < (auto ? AUTO_TALK_INTERVAL_MS : TALK_INTERVAL_MS)) {
       this.send(ws, { t: "talk_failed", code: "too_fast", message: "少し待ってから、また話しかけてね" });
       return;
     }
@@ -395,41 +396,51 @@ export class MetaverseRoom extends DurableObject<MetaRoomEnv> {
     att.talkCount = (att.talkCount ?? 0) + 1;
     ws.serializeAttachment(att);
 
-    const hint = sanitizeHint(msg.hint);
+    const hint = auto ? "" : sanitizeHint(msg.hint);
     const label = (species: string) => SPECIES_LABELS[species as SpeciesKey] ?? "ふしぎな生きもの";
-    this.broadcast({ t: "typing", aid: mine.aid });
-    let first: Awaited<ReturnType<CharacterState["metaTalk"]>>;
-    try {
-      first = await this.env.CHARACTER.getByName(me.cid).metaTalk({
-        otherName: target.name,
-        otherSpeciesLabel: label(target.species),
-        otherSpecies: target.species,
-        otherColor: target.color,
-        hint,
-      });
-    } catch {
-      first = { ok: false, error: "unavailable" };
-    }
-    if (!first.ok) {
-      this.send(ws, { t: "talk_failed", code: first.error, message: "うまく言葉が出てこなかったみたい" });
-      return;
-    }
-    this.broadcast({ t: "say", aid: mine.aid, to: toAid, line: first.line });
+    const config = await this.ctx.storage.get<RoomConfig>("config");
+    const place = config?.name ?? "";
+    type Talker = NonNullable<Awaited<ReturnType<MetaverseRoom["findSpeaker"]>>>;
+    const say = async (speaker: Talker, speakerAid: string, listener: Talker, heard?: string, extra: { hint?: string; auto?: boolean } = {}) => {
+      this.broadcast({ t: "typing", aid: speakerAid });
+      try {
+        const r = await this.env.CHARACTER.getByName(speaker.cid).metaTalk({
+          otherName: listener.name,
+          otherSpeciesLabel: label(listener.species),
+          otherSpecies: listener.species,
+          otherColor: listener.color,
+          heard,
+          hint: extra.hint,
+          auto: extra.auto,
+          partnerKey: listener.key,
+          place,
+          npc: listener.npc,
+        });
+        return r;
+      } catch {
+        return { ok: false as const, error: "unavailable" };
+      }
+    };
 
-    // 相手の返事（相手の分身が、自分の言葉で返す）
-    this.broadcast({ t: "typing", aid: toAid });
-    try {
-      const reply = await this.env.CHARACTER.getByName(target.cid).metaTalk({
-        otherName: me.name,
-        otherSpeciesLabel: label(me.species),
-        otherSpecies: me.species,
-        otherColor: me.color,
-        heard: first.line,
-      });
-      if (reply.ok) this.broadcast({ t: "say", aid: toAid, to: mine.aid, line: reply.line });
-    } catch {
-      /* 返事が無くても、話しかけたほうは成立している */
+    // 1往復（自動のときは2往復）。どちらも、それぞれの分身が自分の言葉で話す
+    const rounds = auto ? 2 : 1;
+    let heard: string | undefined;
+    for (let round = 0; round < rounds; round++) {
+      const first = await say(me, mine.aid, target, heard, round === 0 ? { hint, auto } : {});
+      if (!first.ok) {
+        if (round === 0) this.send(ws, { t: "talk_failed", code: first.error, message: "うまく言葉が出てこなかったみたい" });
+        return;
+      }
+      this.broadcast({ t: "say", aid: mine.aid, to: toAid, line: first.line });
+      // 前にも会ったことがある相手なら、話しかけた本人にだけ知らせる（交流の記録とつながっている）
+      if (round === 0 && first.metBefore > 0) this.send(ws, { t: "met_before", aid: toAid, count: first.metBefore + 1 });
+      const reply = await say(target, toAid, me, first.line);
+      if (!reply.ok) return;
+      this.broadcast({ t: "say", aid: toAid, to: mine.aid, line: reply.line });
+      heard = reply.line;
     }
+    // 最後の返事も、話しかけた側の交流の記録に残す
+    if (heard) await this.env.CHARACTER.getByName(me.cid).metaHear(target.key, heard).catch(() => undefined);
   }
 
   private async leave(ws: WebSocket) {

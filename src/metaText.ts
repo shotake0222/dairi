@@ -35,3 +35,12 @@ export function sanitizeHint(raw: unknown): string {
   // eslint-disable-next-line no-control-regex
   return raw.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80);
 }
+
+/**
+ * 相手を見分けるための仮の印（分身の識別子のハッシュ）。メタバースの部屋と「お散歩」で同じ値にして、
+ * どちらで会っても「また会えた」と数えられるようにする。識別子そのものは記録に残さない。
+ */
+export async function partnerKeyOf(characterId: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`meta:${characterId}`));
+  return [...new Uint8Array(digest)].slice(0, 12).map((b) => b.toString(16).padStart(2, "0")).join("");
+}

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import { env, SELF } from "cloudflare:test";
-import { sanitizeMetaLine } from "../metaText";
+import { partnerKeyOf, sanitizeMetaLine } from "../metaText";
 import { BUILTIN_ROOMS, PLACES } from "../metaverse";
 
 /**
@@ -137,6 +137,51 @@ describe("分身どうしの会話", () => {
     expect(everything).not.toContain("合言葉");
     ca.ws.close();
     cb.ws.close();
+  });
+
+  it("自動では、育った人格が自分から話題を選び、2往復話す。会話は交流の記録（図鑑）に「メタバース」として残る", async () => {
+    const a = await makeUserCharacter("auto-a");
+    const b = await makeUserCharacter("auto-b");
+    const room = "hanabatake";
+    const ca = await connect(room);
+    ca.ws.send(JSON.stringify({ t: "join", characters: [{ cid: a.cid, token: a.token }] }));
+    const wa = await ca.wait((m) => m.t === "welcome");
+    const cb = await connect(room);
+    cb.ws.send(JSON.stringify({ t: "join", characters: [{ cid: b.cid, token: b.token }] }));
+    const wb = await cb.wait((m) => m.t === "welcome");
+
+    ca.ws.send(JSON.stringify({ t: "talk", aid: wa!.mine[0], to: wb!.mine[0], auto: true }));
+    for (let i = 0; i < 4; i++) expect(await cb.wait((m) => m.t === "say", 4000)).toBeTruthy();
+    // 自動は間を長くあける（15秒）
+    ca.ws.send(JSON.stringify({ t: "talk", aid: wa!.mine[0], to: wb!.mine[0], auto: true }));
+    expect((await ca.wait((m) => m.t === "talk_failed"))!.code).toBe("too_fast");
+
+    const info = await (await SELF.fetch(`${BASE}/api/character?cid=${a.cid}`)).json<{ meetingHistory: Array<Record<string, any>> }>();
+    const rec = info.meetingHistory[info.meetingHistory.length - 1];
+    expect(rec.source).toBe("meta");
+    expect(rec.place).toBe("花畑");
+    // 2往復が1件の出会いにまとまる
+    expect(rec.log.length).toBe(4);
+    // 相手の仮の印は、画面へはこの子ごとの値に変えて渡す（部屋の印そのものは出さない）
+    expect(rec.partnerKey).toBeTruthy();
+    expect(rec.partnerKey).not.toBe(await partnerKeyOf(b.cid));
+    ca.ws.close();
+    cb.ws.close();
+  });
+
+  it("お散歩で会った相手とメタバースで会うと、「また会えた」と数える（前に聞いた言葉も覚えている）", async () => {
+    const a = await makeUserCharacter("again-a");
+    const b = await makeUserCharacter("again-b");
+    await env.CHARACTER.getByName(a.cid).recordMeeting(
+      [{ role: "other", text: "おにぎりが好きなんだ" }],
+      { name: "びー", species: "hoshipo" as never, color: "sun" as never },
+      await partnerKeyOf(b.cid)
+    );
+    const r = await env.CHARACTER.getByName(a.cid).metaTalk({ otherName: "びー", otherSpeciesLabel: "ほしぽ", partnerKey: await partnerKeyOf(b.cid), auto: true, place: "森のひろば" });
+    expect(r.ok && r.metBefore).toBe(1);
+    // AI への頼み方に、前に聞いた言葉が入っている
+    const calls = (env.AI.run as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    expect(JSON.stringify(calls[calls.length - 1])).toContain("おにぎり");
   });
 
   it("分身の言葉から、連絡先・URL・不適切な語を落とす", () => {
