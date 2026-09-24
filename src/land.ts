@@ -21,6 +21,7 @@ import {
   LANDMARK_COLORS,
   LANDMARK_MODELS,
   cleanLong,
+  cleanImageUrl,
   cleanText,
   cleanUrl,
   getRoom,
@@ -156,13 +157,14 @@ export async function saveLandSettings(env: MetaverseEnv, raw: Record<string, un
  */
 export function sanitizeContent(kind: Kind, raw: unknown): { ok: true; value: PlacementContent } | { ok: false; error: string } {
   const o = (raw ?? {}) as Record<string, unknown>;
-  const urlField = (key: string, label: string): string | { error: string } => {
+  const urlField = (key: string, label: string, clean = cleanUrl): string | { error: string } => {
     const v = typeof o[key] === "string" ? (o[key] as string).trim() : "";
     if (!v) return "";
-    const u = cleanUrl(v);
+    const u = clean(v);
     return u || { error: `${label}は https:// で始まるURLにしてください` };
   };
-  const imageUrl = urlField("imageUrl", "画像のURL");
+  // 画像はアップロードした画像（/img/…）も通す
+  const imageUrl = urlField("imageUrl", "画像のURL", cleanImageUrl);
   const linkUrl = urlField("linkUrl", "リンク先");
   const qrUrl = urlField("qrUrl", "QRコードの行き先");
   for (const v of [imageUrl, linkUrl, qrUrl]) if (typeof v !== "string") return { ok: false, error: v.error };

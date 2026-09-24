@@ -457,6 +457,12 @@ check("確かめていないことも書いてある", bizHtml.includes("モデ�
   check("メタバースに会話の吹き出しと広告の詳細がある", metaHtml.includes('id="talkBox"') && metaHtml.includes('id="adSheet"') && metaHtml.includes("/vendor/qrcode.js"));
   const landHtml = await (await fetch(`${BASE}/land`)).text();
   check("広告・ランドマークの申込ページが配信される", landHtml.includes("/api/land/catalog"));
+  check("申込ページで画像をアップロードできる（URLは自動で入る）", landHtml.includes("/image-upload.js") && landHtml.includes("/api/land/image"));
+  const upJs = await fetch(`${BASE}/image-upload.js`);
+  check("画像のアップロード欄の部品が配信される", upJs.ok && (await upJs.text()).includes("WaketamaImageUpload"));
+  const noAdminUpload = await fetch(`${BASE}/api/admin/media`, { method: "POST", headers: { "content-type": "image/png" }, body: new Uint8Array([0x89, 0x50, 0x4e, 0x47]) });
+  check("管理画面の画像アップロードは合言葉なしでは使えない", noAdminUpload.status === 404 || noAdminUpload.status === 401, String(noAdminUpload.status));
+  check("無い画像は 404", (await fetch(`${BASE}/img/ffffffffffffffffffffffff.png`)).status === 404);
   const applyHtml = await (await fetch(`${BASE}/apply`)).text();
   check("Web申し込みのページが配信される", applyHtml.includes("/api/apply"));
   const badInvite = await fetch(`${BASE}/i/nosuchcode123`, { redirect: "manual" });
@@ -607,6 +613,19 @@ if (adminPass) {
     body: JSON.stringify({ code: issuedRecovery.code }),
   })).json();
   check("そのコードで所有権が戻る", recovered.characterId === newCid && Boolean(recovered.ownerToken));
+
+  // 広告・看板の画像: 管理画面からアップロードした画像を、同じサイトの /img/… で配る
+  {
+    const png = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="), (c) => c.charCodeAt(0));
+    const up = await (await fetch(`${BASE}/api/admin/media`, { method: "POST", headers: { cookie, "content-type": "image/png" }, body: png })).json();
+    check("管理画面から画像をアップロードできる", /^\/img\/[a-f0-9]{24}\.png$/.test(up.url || ""), JSON.stringify(up));
+    const got = await fetch(`${BASE}${up.url}`);
+    check("アップロードした画像が配信される（画像として・長く覚えてよい）", got.ok && got.headers.get("content-type") === "image/png" && (got.headers.get("cache-control") || "").includes("immutable"));
+    const notImage = await fetch(`${BASE}/api/admin/media`, { method: "POST", headers: { cookie, "content-type": "image/png" }, body: "<svg onload=alert(1)></svg>" });
+    check("画像でないものはアップロードできない", notImage.status === 415, String(notImage.status));
+    const adminHtml = await (await fetch(`${BASE}/admin`, { headers: { cookie } })).text();
+    check("管理画面に画像のアップロード欄の部品が読み込まれている", adminHtml.includes("/image-upload.js"));
+  }
   currentToken = recovered.ownerToken;
 
   // 戻った所有権で、会話の履歴を含めた自分のデータが読めること（＝復旧が成立している）

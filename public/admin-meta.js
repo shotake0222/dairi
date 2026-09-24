@@ -375,7 +375,10 @@
 
       if (o.type === "board") {
         grid.appendChild(field("本文", o.text, function (v) { o.text = v; }, { maxLength: 80, placeholder: "80文字まで" }));
-        grid.appendChild(field("画像のURL（任意）", o.imageUrl, function (v) { o.imageUrl = v; }, { placeholder: "https://…" }));
+        var imgField = field("画像（任意。「📷 画像を選ぶ」でアップロードすると、URLは自動で入ります）", o.imageUrl, function (v) { o.imageUrl = v; }, { placeholder: "https://…" });
+        imgField.className = "span2";
+        grid.appendChild(imgField);
+        if (window.WaketamaImageUpload) window.WaketamaImageUpload.attach(imgField.querySelector("input"), { endpoint: "/api/admin/media" });
         grid.appendChild(field("リンク先（任意）", o.linkUrl, function (v) { o.linkUrl = v; }, { placeholder: "https://…" }));
         var adWrap = el("label");
         var ad = document.createElement("input");

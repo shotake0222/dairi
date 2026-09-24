@@ -399,7 +399,8 @@
         catalog: landCatalog,
         placement: { spot: $("plEdSpot").value, kind: kind, content: content },
       });
-      $("plPreviewNote").textContent = "メタバースと同じ部品で描いています。" + (content.imageUrl ? "画像が出ないときは、相手のサーバーが外部からの読み込み（CORS）を許していません。" : "");
+      $("plPreviewNote").textContent = "メタバースと同じ部品で描いています。" +
+        (/^https:/.test(content.imageUrl || "") ? "貼ったURLの画像が出ないときは、相手のサーバーが外部からの読み込み（CORS）を許していません。「📷 画像を選ぶ」でアップロードすると必ず出ます。" : "");
     } catch (e) {
       $("plPreviewNote").textContent = "この端末では3Dのプレビューを描けませんでした（" + e.message + "）";
     }
@@ -507,6 +508,7 @@
     $("plEdTitle").value = c.title || "";
     $("plEdText").value = c.text || "";
     $("plEdImage").value = c.imageUrl || "";
+    if ($("plEdImage").wtImgRefresh) $("plEdImage").wtImgRefresh();
     if (c.model) $("plEdModel").value = c.model;
     if (c.color) $("plEdColor").value = c.color;
     $("plEdPlaque").value = c.plaque || "";
@@ -530,7 +532,7 @@
     var lines = [];
     if (kind === "landmark") lines.push("形: " + c.model + "・色: " + c.color + "・銘板: " + (c.plaque || ""));
     if (c.title) lines.push("見出し: " + c.title);
-    if (c.imageUrl) lines.push("画像: " + c.imageUrl);
+    if (c.imageUrl) lines.push("画像: " + (/^\/img\//.test(c.imageUrl) ? "アップロードされた画像（見本に出ています）" : c.imageUrl));
     if (c.linkUrl) lines.push("リンク: " + c.linkUrl);
     if (c.qrUrl) lines.push("QR: " + c.qrUrl);
     return lines.join("\n");
@@ -728,6 +730,8 @@
     });
     $("orderFilter").addEventListener("change", loadOrders);
     $("plotArea").addEventListener("change", loadPlots);
+    // 画像はアップロードでも入れられる（URLは自動で入る。public/image-upload.js）
+    if (window.WaketamaImageUpload) window.WaketamaImageUpload.attach($("plEdImage"), { endpoint: "/api/admin/media" });
     // 入力が変わるたびに、プレビューを描き直す
     ["plEdArea", "plEdSpot", "plEdKind"].forEach(function (id) { $(id).addEventListener("change", updatePlaceForm); });
     document.querySelectorAll("#panel-land [data-subpanel='place'] input, #panel-land [data-subpanel='place'] textarea, #panel-land [data-subpanel='place'] select").forEach(function (i) {

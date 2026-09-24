@@ -7,6 +7,7 @@ import { deriveVoiceProfile } from "./ai/voiceProfile";
 import { handleHealth } from "./health";
 import { handleTranscribe, handleSpeak } from "./voice";
 import { issueTransferCode, claimTransferCode } from "./transfer";
+import { purgeUnusedImages, serveImage, storeImage, storeLandImage } from "./media";
 import { stagingGate, applyStagingHeaders } from "./stagingGuard";
 import { handleEconomyAdmin, handleEconomyApi, handleRedeemApi } from "./economyRoutes";
 import { listShops } from "./economy";
@@ -348,6 +349,11 @@ export default {
       const publicResponse = await handlePublicLandAndEntry(request, url, env, log);
       if (publicResponse) return publicResponse;
     }
+    // アップロードした画像: /img/<id>.<拡張子>（広告・ランドマーク・看板。src/media.ts）
+    if (url.pathname.startsWith("/img/")) {
+      const image = await serveImage(env, request, url.pathname);
+      if (image) return image;
+    }
     // 招待リンク: /i/<コード>（開いた端末に分身と持ち主の印を渡す）
     if (url.pathname.startsWith("/i/")) {
       const code = url.pathname.slice(3).replace(/\/$/, "");
@@ -407,6 +413,12 @@ export default {
     ) {
       const extra = await handleAdminExtra(request, url, env);
       if (extra) return extra;
+    }
+    // 管理画面からの画像のアップロード（広告・ランドマーク・看板）
+    if (url.pathname === "/api/admin/media" && request.method === "POST") {
+      const stored = await storeImage(env, request, "admin");
+      if (!stored.ok) return json({ error: stored.error }, { status: stored.status });
+      return json({ url: stored.url, bytes: stored.bytes });
     }
     if (url.pathname.startsWith("/api/admin/economy/")) {
       const economyAdmin = await handleEconomyAdmin(request, url, env);
@@ -992,6 +1004,8 @@ export default {
     // 回数制限の記録は数日で用済みになる。放っておくと増え続けるので、ここで掃除する
     // （塩も一緒に消えるため、過去の送信元をあとから割り出すことはできなくなる）。
     ctx.waitUntil(purgeOldIpQuota(env).catch(() => {}));
+    // 申込ページから入れて、どこにも使われなかった画像（30日）
+    ctx.waitUntil(purgeUnusedImages(env).catch(() => 0));
 
     const BATCH_LIMIT = 50;
     const rows = await env.DB.prepare(
@@ -1587,6 +1601,13 @@ async function handlePublicLandAndEntry(request: Request, url: URL, env: Env, lo
     const status = await orderStatus(env, om[1], url.searchParams.get("key"));
     if (!status) return json({ error: "申込が見つかりませんでした" }, { status: 404 });
     return json(status, noStore);
+  }
+  // 申込ページからの画像のアップロード（受付中のときだけ）
+  if (p === "/api/land/image" && request.method === "POST") {
+    if (!(await getLandSettings(env)).salesOpen) return json({ error: "いまは申し込みを受け付けていません" }, { status: 403 });
+    const stored = await storeLandImage(env, request);
+    if (!stored.ok) return json({ error: stored.error }, { status: stored.status });
+    return json({ url: stored.url, bytes: stored.bytes });
   }
   if (p === "/api/meta-ad-event" && request.method === "POST") {
     const raw = (await request.json().catch(() => ({}))) as Record<string, unknown>;

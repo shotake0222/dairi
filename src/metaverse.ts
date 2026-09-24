@@ -27,6 +27,8 @@
  * マイク・カメラ・センサーの値も端末の外へ出さない（画面の中で使って捨てる）。
  */
 
+import { isUploadedImagePath } from "./media";
+
 export interface MetaverseEnv {
   DB: D1Database;
 }
@@ -883,6 +885,14 @@ export function cleanUrl(value: unknown): string {
   }
 }
 
+/**
+ * 画像の URL。https:// のほか、アップロードした画像（同じサイトの /img/…、src/media.ts）も通す。
+ */
+export function cleanImageUrl(value: unknown): string {
+  if (typeof value === "string" && isUploadedImagePath(value.trim())) return value.trim();
+  return cleanUrl(value);
+}
+
 export function intIn(value: unknown, min: number, max: number, fallback: number): number {
   const n = Math.round(Number(value));
   return Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : fallback;
@@ -920,7 +930,7 @@ export function sanitizeObjects(raw: unknown): { ok: true; value: RoomObject[] }
     };
 
     if (type === "board") {
-      base.imageUrl = cleanUrl(o.imageUrl);
+      base.imageUrl = cleanImageUrl(o.imageUrl);
       base.linkUrl = cleanUrl(o.linkUrl);
       base.ad = o.ad === true;
       base.detail = cleanLong(o.detail, 200);

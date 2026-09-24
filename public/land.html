@@ -92,7 +92,7 @@
         <div id="adFields">
           <label>見出し<input id="title" maxlength="24" /></label>
           <label>本文（80文字まで）<input id="text" maxlength="80" /></label>
-          <label>画像のURL（https://、任意）<input id="imageUrl" placeholder="https://…" /></label>
+          <label>画像（任意。「📷 画像を選ぶ」でアップロードすると、URLは自動で入ります）<input id="imageUrl" placeholder="https://…" /></label>
         </div>
         <div id="lmFields" hidden>
           <div class="row">
@@ -125,6 +125,7 @@
     </form>
   </div>
 </main>
+<script src="/image-upload.js"></script>
 <script>
 (function () {
   "use strict";
@@ -132,6 +133,8 @@
   var params = new URLSearchParams(location.search);
   var catalog = null;
   var chosenSpot = params.get("spot") || "";
+  // 画像はアップロードでも入れられる（受付中のときだけ・1日の回数に上限。public/image-upload.js）
+  if (window.WaketamaImageUpload) window.WaketamaImageUpload.attach($("imageUrl"), { endpoint: "/api/land/image" });
 
   function yen(n) { return n == null ? "要相談" : Number(n).toLocaleString() + "円"; }
   function kind() { var r = document.querySelector('input[name="kind"]:checked'); return r ? r.value : "ad"; }

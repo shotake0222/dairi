@@ -81,6 +81,7 @@
   .poolPick input { width: auto; }
   .formGrid label, label.wide { display: block; font-size: 12px; color: var(--muted); }
   label.wide { margin-bottom: 10px; }
+  .formGrid .span2 { grid-column: 1 / -1; }
   .formGrid input, .formGrid select, label.wide input, label.wide textarea {
     width: 100%; margin-top: 4px; padding: 8px 10px; border-radius: 8px;
     border: 1px solid var(--line); font-family: inherit; font-size: 13px; background: #fff; color: var(--ink);
@@ -642,7 +643,7 @@
       <h2 style="margin-top:14px">置く物 <span id="metaObjCount" style="font-weight:400;color:var(--muted)"></span></h2>
       <p class="lead">
         置き場所は7か所。1か所に1つです。<strong>広告の看板には「広告」の表示が自動で付きます</strong>（外せません）。
-        画像・動画は https:// のURLで、相手のサーバーが外部からの読み込み（CORS）を許していないと表示されません。
+        看板の画像は「📷 画像を選ぶ」でアップロードできます（URLは自動で入ります）。URLを貼る場合と動画は https:// で、相手のサーバーが外部からの読み込み（CORS）を許していないと表示されません。
         ミニゲームの結果はサーバーに残りません（遊んだ端末の中だけ）。「📱」の付いたミニゲームはスマホのセンサー（ジャイロ・加速度・マイク・カメラ・AR）を使います。
       </p>
       <div id="metaObjects"></div>
@@ -785,7 +786,7 @@
           <div class="formGrid">
             <label data-kind="ad">見出し（看板の上に出る）<input id="plEdTitle" maxlength="24" /></label>
             <label data-kind="ad">本文（画像が無いときに看板に出る）<input id="plEdText" maxlength="80" /></label>
-            <label data-kind="ad">画像のURL（看板いっぱいに出る。https://）<input id="plEdImage" placeholder="https://…" /></label>
+            <label data-kind="ad" class="span2">画像（看板いっぱいに出る。「📷 画像を選ぶ」でアップロードすると、URLは自動で入ります）<input id="plEdImage" placeholder="https://…" /></label>
             <label data-kind="landmark">形<select id="plEdModel"></select></label>
             <label data-kind="landmark">色<select id="plEdColor"></select></label>
             <label data-kind="landmark">銘板（ランドマークの札）<input id="plEdPlaque" maxlength="20" /></label>
@@ -809,7 +810,7 @@
         <div class="placePreview">
           <div class="pvHead">メタバースでの見え方（区画の正面から）</div>
           <canvas id="plPreview3d" width="560" height="380"></canvas>
-          <div class="pvNote" id="plPreviewNote">プレビューは実際の空間と同じ部品で描いています（画像は、相手のサーバーが外部からの読み込みを許していないと出ません）。</div>
+          <div class="pvNote" id="plPreviewNote">プレビューは実際の空間と同じ部品で描いています。</div>
           <div class="pvHead" style="margin-top:12px">タップしたときの詳細</div>
           <div id="plPreviewSheet" class="adSheetPv"></div>
         </div>
@@ -1925,6 +1926,7 @@
     );
   });
 </script>
+<script src="/image-upload.js"></script>
 <script src="/admin-meta.js"></script>
 <script src="/admin-extra.js"></script>
 <script type="module" src="/admin-land-preview.mjs"></script>
