@@ -91,21 +91,23 @@ describe("normalizeConsent", () => {
   });
 });
 
-describe("法人への個別提供（individual）は、本人が入れたときだけ", () => {
-  it("terms に同意しても、一緒には有効にならない（束ねない）", () => {
+describe("法人への個別提供（individual）は、はじめるときの同意に束ねる（版5から）", () => {
+  it("terms に同意すると、3つの使い道がすべて有効になる（「あなたのこと」のトグルは全部オン）", () => {
     const c = normalizeConsent({ terms: true });
     expect(c.profile).toBe(true);
     expect(c.aggregate).toBe(true);
-    expect(c.individual).toBe(false);
+    expect(c.individual).toBe(true);
   });
 
-  it("この項目が無かった頃の記録からは、推定しない", () => {
-    const old = { version: CONSENT_VERSION, updatedAt: 1, terms: true, profile: true, aggregate: true } as unknown as ConsentState;
-    expect(normalizeConsent({ aggregate: false }, old).individual).toBe(false);
+  it("設定で止めた人を、黙って戻さない", () => {
+    const off = normalizeConsent({ individual: false }, normalizeConsent({ terms: true }));
+    expect(off.individual).toBe(false);
+    expect(normalizeConsent({ terms: true }, off).individual).toBe(false);
+    expect(normalizeConsent({ aggregate: false }, off).individual).toBe(false);
   });
 
-  it("本人が入れれば有効になり、別の項目を触っても落ちない", () => {
-    const on = normalizeConsent({ terms: true, individual: true });
+  it("本人が入れ直せば有効になり、別の項目を触っても落ちない", () => {
+    const on = normalizeConsent({ individual: true }, normalizeConsent({ individual: false }, normalizeConsent({ terms: true })));
     expect(hasConsent(on, "individual")).toBe(true);
     expect(normalizeConsent({ aggregate: false }, on).individual).toBe(true);
   });
@@ -114,11 +116,13 @@ describe("法人への個別提供（individual）は、本人が入れたとき
     expect(normalizeConsent({ individual: true }).individual).toBe(false);
   });
 
-  it("入口の同意に束ねる項目には入っていない", () => {
-    expect(BUNDLED_WITH_TERMS).not.toContain("individual");
-    expect(OPT_IN_ONLY).toContain("individual");
-    // 何が渡らないかを、同意文面で言い切っていること
+  it("入口の同意に束ねる項目に入り、渡るもの・渡らないものを文面で言い切っている", () => {
+    expect(BUNDLED_WITH_TERMS).toContain("individual");
+    expect(OPT_IN_ONLY).not.toContain("individual");
     expect(CONSENT_TEXTS.individual.note).toContain("会話の本文");
     expect(CONSENT_TEXTS.individual.body).toContain("年収を除く");
+    // 事業者名の括弧書きは出さない（「運営」だけ）
+    expect(CONSENT_TEXTS.individual.body).not.toContain("Straid");
+    expect(CONSENT_TEXTS.terms.body).toContain("3つの使い道");
   });
 });

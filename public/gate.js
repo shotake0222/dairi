@@ -73,7 +73,7 @@
   }
 
   async function fetchJson(url, options) {
-    const res = await fetch(url, options);
+    const res = await fetch(url, { cache: "no-store", ...(options || {}) });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || `失敗しました (${res.status})`);
     return data;
@@ -110,7 +110,7 @@
       [
         ["個人情報", "氏名・メールアドレス・電話番号はお預かりしません。アカウント登録もありません"],
         ["会話の中身", "運営が読むことはありません。外へ出るときも、本文そのものは渡りません"],
-        ["使い道", "会話から生まれた性格や傾向を、運営がサービスの改善や、個人が特定されない形での提供に使うことがあります"],
+        ["使い道", "会話から生まれた性格や傾向を、運営がサービスの改善や、企業への提供（統計・分身の写し）に使うことがあります"],
       ].forEach(([k, v]) => {
         const row = el("div");
         row.appendChild(el("b", null, k));
@@ -145,10 +145,10 @@
 
       // --- 束ねた使い道。**チェックではなく、説明として全部見せる** ---
       // 選ばせないぶん、隠さない。ここを畳んだり省いたりしたら、同意ではなくなる。
-      const bundled = ["profile", "aggregate"].filter((k) => allTexts[k]);
+      const bundled = ["profile", "aggregate", "individual"].filter((k) => allTexts[k]);
       if (bundled.length > 0) {
         const opt = el("div", "opt");
-        opt.appendChild(el("p", "lead", "はじめると、次の2つが有効になります。あとから設定でいつでも止められます。"));
+        opt.appendChild(el("p", "lead", `はじめると、次の${bundled.length}つが有効になります。あとから「あなたのこと」の設定でいつでも1つずつ止められます。`));
         for (const key of bundled) {
           const t = allTexts[key] || {};
           const item = el("div", "optItem");
@@ -187,6 +187,7 @@
               consent: { terms: true },
             }),
           });
+          remember(cid, currentVersion);
           overlay.remove();
           resolve(true);
         } catch (e) {
@@ -207,17 +208,47 @@
    * 同意が要るかを確かめ、必要なら聞く。
    * @returns true なら進んでよい
    */
+  // この端末で「この子は、この版の同意が済んでいる」と確かめた印。
+  // 画面を開くたびに同意の画面が出る（通信が不安定なときに古い状態を読む、など）のを防ぐ。
+  // 版が上がれば印は合わなくなるので、新しい文面は必ず聞き直す。サーバー側の判定（入室・会話）は別にある
+  const KEY = (cid) => `waketama_consentOk_${cid}`;
+  let currentVersion = null;
+  function remember(cid, version) {
+    try {
+      if (cid && version != null) localStorage.setItem(KEY(cid), String(version));
+    } catch (e) {
+      /* noop */
+    }
+  }
+  function forget(cid) {
+    try {
+      localStorage.removeItem(KEY(cid));
+    } catch (e) {
+      /* noop */
+    }
+  }
+  function remembered(cid) {
+    try {
+      return localStorage.getItem(KEY(cid));
+    } catch (e) {
+      return null;
+    }
+  }
+
   async function require_(cid, ownerToken) {
     if (!cid) return true;
     try {
-      const [schema, view] = await Promise.all([
-        fetchJson("/api/profile/schema"),
-        fetchJson(`/api/profile?cid=${encodeURIComponent(cid)}&token=${encodeURIComponent(ownerToken || "")}`),
-      ]);
+      const schema = await fetchJson("/api/profile/schema");
+      currentVersion = schema.consentVersion;
+      if (remembered(cid) === String(schema.consentVersion)) return true;
+      const view = await fetchJson(`/api/profile?cid=${encodeURIComponent(cid)}&token=${encodeURIComponent(ownerToken || "")}`);
       const c = view.consent || {};
       // 版が上がっているときも聞き直す。文面が変わったのに古い同意を使い回すのは、
       // 黙って範囲を広げるのと同じ。
-      if (c.version === schema.consentVersion && c.terms === true) return true;
+      if (c.version === schema.consentVersion && c.terms === true) {
+        remember(cid, schema.consentVersion);
+        return true;
+      }
       return await ask(schema.consentTexts || {}, cid, ownerToken);
     } catch (e) {
       // 持ち主でない端末（403）や、まだ存在しない分身では聞きようがない。
@@ -226,5 +257,5 @@
     }
   }
 
-  window.waketamaGate = { require: require_ };
+  window.waketamaGate = { require: require_, forget: forget };
 })();

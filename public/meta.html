@@ -78,6 +78,11 @@
   }
   #noticeBox { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; font-size: 12.5px; color: var(--muted); margin-top: 18px; }
   #noticeBox b { color: var(--ink); }
+  #noticeBox summary { cursor: pointer; list-style: none; }
+  #noticeBox summary::-webkit-details-marker { display: none; }
+  #noticeBox summary::after { content: " ▾"; color: var(--muted); }
+  #noticeBox[open] summary { margin-bottom: 6px; }
+  #noticeBox[open] summary::after { content: " ▴"; }
 
   /* ---- 部屋 ---- */
   #stage { position: fixed; inset: 0; background: #000; touch-action: none; }
@@ -207,7 +212,14 @@
   .adHead h3 { margin: 0; flex: 1; }
   #adTag { font-size: 11px; background: #2a2440; color: #fff; border-radius: 999px; padding: 2px 8px; }
   #adSponsor { font-size: 12px; color: var(--muted); margin: 0 0 8px; }
-  #adImage { width: 100%; border-radius: 12px; margin-bottom: 8px; max-height: 220px; object-fit: cover; }
+  #adImageWrap { position: relative; margin-bottom: 8px; background: #f4f2fb; border-radius: 12px; cursor: zoom-in; }
+  #adImage { width: 100%; border-radius: 12px; max-height: 46vh; object-fit: contain; display: block; }
+  #adImageWrap span { position: absolute; right: 8px; bottom: 8px; background: rgba(28,22,48,.75); color: #fff; font-size: 11.5px; border-radius: 999px; padding: 3px 10px; pointer-events: none; }
+  /* 画像の拡大表示（ピンチ・ダブルタップ・ドラッグ・ホイール） */
+  #imgViewer { position: fixed; inset: 0; z-index: 26; background: rgba(8,6,20,.94); touch-action: none; overflow: hidden; }
+  #imgViewer img { position: absolute; left: 50%; top: 50%; max-width: 100vw; max-height: 100vh; transform-origin: center center; user-select: none; -webkit-user-drag: none; will-change: transform; }
+  #imgViewerClose { position: absolute; top: calc(12px + var(--safe-t)); right: 12px; z-index: 2; }
+  #imgViewerHint { position: absolute; left: 50%; bottom: calc(18px + var(--safe-b)); transform: translateX(-50%); color: #cfc8ee; font-size: 12px; white-space: nowrap; pointer-events: none; }
   #adText { white-space: pre-line; font-size: 13.5px; color: var(--ink); margin: 0 0 10px; }
   #adCoupon { border: 2px dashed #ff6f91; border-radius: 14px; padding: 10px 12px; margin-bottom: 10px; background: #fff6f8; }
   #adCoupon b { color: #d8456a; }
@@ -225,6 +237,7 @@
 
   /* ---- 通貨・お店（wallet.mjs） ---- */
   #walletBtn { background: #fff4c8; color: #6a4a00; font-weight: 800; }
+  #shopBtn { background: #ffe3ec; color: #b8456a; font-weight: 800; }
   #walletSheet, #shopSheet, #voucherSheet { position: fixed; inset: 0; z-index: 19; background: rgba(20,16,42,.5); display: flex; align-items: flex-end; justify-content: center; padding: 16px 16px calc(16px + var(--safe-b)); }
   #voucherSheet { z-index: 22; }
   #walletSheet .sheet, #shopSheet .sheet, #voucherSheet .sheet { max-height: 86vh; overflow-y: auto; }
@@ -311,14 +324,15 @@
   <h2>部屋をえらぶ</h2>
   <div id="roomList">読み込み中…</div>
 
-  <div id="noticeBox">
+  <details id="noticeBox">
+    <summary><b>メタバースで気をつけること・同じ部屋の人に見えるもの</b></summary>
     <b>同じ部屋の人に見えるもの</b>: 分身の名前・姿・声の高さ・動き方（性格から決まる数値）。
     会話の中身や、分身が覚えていること、あなたの情報は見えません。
     <b>自動</b>にすると、育った性格のとおりに自分から歩き、近くの子に話しかけます（<b>手動</b>では自分で動かして入力）。
     出会った子との会話は「交流の記録」（図鑑）に残ります。
     ほかの子に話しかけると、<b>あなたの子が自分の言葉で</b>伝えます（あなたが入力した文字そのものは、ほかの人に見えません）。
     自分の子との会話の返事は、あなたの画面にだけ出ます。
-  </div>
+  </details>
 </div>
 
 <div id="stage" hidden><video id="arVideo" playsinline muted hidden></video></div>
@@ -341,6 +355,7 @@
     <span class="pill" id="hudStatus"></span>
     <span class="spacer"></span>
     <button class="pill" id="walletBtn" type="button" title="財布（メタバースの通貨）" hidden>🪙 0</button>
+    <button class="pill" id="shopBtn" type="button" title="このエリアのお店" hidden>🛍 お店</button>
     <button class="pill" id="modeBtn" type="button" title="自動と手動を切り替え">✋ 手動</button>
     <button class="pill" id="friendsBtn" type="button" title="出会った子との交流の記録">📖 記録</button>
     <button class="pill" id="camBtn" type="button">視点</button>
@@ -374,7 +389,7 @@
   <div class="sheet">
     <div class="adHead"><span id="adTag">広告</span><h3 id="adTitle"></h3></div>
     <p id="adSponsor"></p>
-    <img id="adImage" alt="" hidden />
+    <div id="adImageWrap" hidden><img id="adImage" alt="" /><span>🔍 タップで拡大</span></div>
     <p id="adText"></p>
     <div id="adCoupon" hidden>
       <b>🎟 特別クーポン</b>
@@ -423,6 +438,12 @@
     <div id="voucherQr"></div>
     <p id="voucherNote"></p>
   </div>
+</div>
+
+<div id="imgViewer" hidden>
+  <img id="imgViewerImg" alt="" />
+  <button type="button" class="pill" id="imgViewerClose">とじる</button>
+  <div id="imgViewerHint">ピンチ・ダブルタップで拡大、ドラッグで移動</div>
 </div>
 
 <div id="dialog" hidden>

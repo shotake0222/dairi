@@ -431,11 +431,11 @@ export const BUILTIN_ROOMS: RoomConfig[] = [
     sortOrder: 10,
     objects: [
       { id: "welcome", type: "board", slot: "back", title: "ようこそ", text: "地面をタップすると歩きます。分身をタップすると挨拶します。", ad: false },
-      { id: "stars", type: "treasure", slot: "back-left", title: "宝さがし", text: "60秒で、星を10こ集めよう", count: 10, seconds: 60, clearMessage: "ぜんぶ見つけたね！" },
+      { id: "stars", type: "treasure", slot: "left", title: "宝さがし", text: "60秒で、星を10こ集めよう", count: 10, seconds: 60, clearMessage: "ぜんぶ見つけたね！" },
       {
         id: "quiz",
         type: "quiz",
-        slot: "back-right",
+        slot: "right",
         title: "わけたま○×クイズ",
         text: "○か×の場所へ、分身を歩かせてね",
         questions: [
@@ -445,8 +445,8 @@ export const BUILTIN_ROOMS: RoomConfig[] = [
         ],
         clearMessage: "全問正解！",
       },
-      { id: "zakka", type: "shop", slot: "left", title: "ひろばの雑貨屋", text: "遊んで貯めたコインで、おしゃれしよう", shopId: "zakka" },
-      { id: "koukan", type: "shop", slot: "right", title: "引き換え所", text: "コインを、町のお店の引換券にかえる", shopId: "koukan" },
+      { id: "zakka", type: "shop", slot: "back-left", title: "ひろばの雑貨屋", text: "遊んで貯めたコインで、おしゃれしよう", shopId: "zakka" },
+      { id: "koukan", type: "shop", slot: "back-right", title: "引き換え所", text: "コインを、町のお店の引換券にかえる", shopId: "koukan" },
       { id: "members", type: "members", slot: "front-left", title: "いまいる子", text: "" },
       { id: "rally", type: "rally", slot: "front-right", title: "スタンプラリー", text: "ひろばの旗を、ぜんぶまわろう", points: 4, clearMessage: "ひろばをひとまわりしたね！" },
     ],

@@ -189,6 +189,23 @@
   td { color: var(--muted); }
   td strong { color: var(--ink); }
 
+  /* 幅の狭い画面では、ヘッダーのリンクを減らす（横にはみ出さないように） */
+  @media (max-width: 480px) { .navLink.navMeta { display: none; } }
+  /* メタバースでの実証 */
+  .metaFacts { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin: 0 0 22px; }
+  .metaFact { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; }
+  .metaFact b { display: block; font-size: 20px; font-weight: 800; color: var(--brand); line-height: 1.3; }
+  .metaFact span { font-size: 12px; color: var(--muted); }
+  .metaShots { display: flex; gap: 12px; overflow-x: auto; padding: 4px 0 12px; scroll-snap-type: x mandatory; }
+  .metaShots img { flex: 0 0 150px; width: 150px; height: auto; border-radius: 16px; border: 1px solid var(--line); scroll-snap-align: start; }
+  .offers { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); margin-top: 8px; }
+  .offer { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 16px; }
+  .offer .icon { font-size: 20px; }
+  .offer h3 { margin: 6px 0 4px; font-size: 14.5px; }
+  .offer p { margin: 0 0 6px; font-size: 12.5px; color: var(--muted); line-height: 1.8; }
+  .offer ul { margin: 0; padding-left: 1.2em; font-size: 12.5px; color: var(--muted); }
+  .rule { margin-top: 16px; font-size: 12.5px; color: var(--muted); background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--brand); border-radius: 12px; padding: 12px 14px; }
+
   .honest { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 20px; }
   .honest h3 { margin: 0 0 8px; font-size: 14.5px; }
   .honest ul { margin: 0 0 16px; padding-left: 1.2em; font-size: 13.5px; color: var(--muted); }
@@ -277,6 +294,7 @@
       <div>わけ<span>たま</span><span class="biz">FOR BUSINESS</span></div>
     </div>
     <div class="spacer"></div>
+    <a class="navLink navMeta" href="#metaverse">メタバース</a>
     <a class="navLink" href="#pricing">料金</a>
     <a class="navLink toPersonal" href="/lp">個人の方へ</a>
     <a class="navBtn" href="#contact">問い合わせ</a>
@@ -302,6 +320,7 @@
       <a class="cta ghost" href="#pricing">料金を見る</a>
       <a class="cta ghost" href="#format">フォーマットを見る</a>
       <a class="cta ghost" href="#edge">エッジでの実測を見る</a>
+      <a class="cta ghost" href="#metaverse">メタバースでの実証を見る</a>
     </div>
   </div>
 </div>
@@ -652,7 +671,7 @@ ollama run    waketama-persona</pre>
       <div class="target">
         <div class="icon">🕶️</div>
         <h3>メタバース・アバター</h3>
-        <p>多人数が同時に喋る空間。1体あたりの単価が下がらないと成立しない領域です。</p>
+        <p>多人数が同時に喋る空間。1体あたりの単価が下がらないと成立しない領域です。<a href="#metaverse">わけたまのメタバースで稼働中</a>。</p>
       </div>
       <div class="target">
         <div class="icon">🚗</div>
@@ -674,6 +693,86 @@ ollama run    waketama-persona</pre>
         <h3>店舗・受付端末</h3>
         <p>オフラインでも動く接客。データを外へ出さずに済みます。</p>
       </div>
+    </div>
+  </div>
+</section>
+
+<section id="metaverse">
+  <div class="wrap">
+    <h2>自社のメタバースで、もう動いています</h2>
+    <p class="lead">
+      わけたまには、育った分身を連れて入れる3Dのメタバースがあります。
+      アバターの歩く速さ・間・身振り・近づく距離は、<strong>ロボットの検証機に焼くのと同じ約250バイトの振る舞いデータ</strong>から、
+      <strong>同じエンジン</strong>で計算しています。「同じ人格なら、ロボットでもアバターでも同じ振る舞い」を、実際の利用の中で確かめている場所です。
+    </p>
+    <div class="metaFacts">
+      <div class="metaFact"><b>22</b><span>エリア（神社・千本鳥居・城下町・夏祭り・海の底・月面など）</span></div>
+      <div class="metaFact"><b>20種</b><span>スマホのセンサー・カメラ・ARで遊ぶミニゲーム</span></div>
+      <div class="metaFact"><b>12人×3体</b><span>1部屋の同時接続（1人3体まで連れて入れる）</span></div>
+      <div class="metaFact"><b>0</b><span>インストール。スマホのブラウザだけで入れる</span></div>
+    </div>
+    <div class="metaShots">
+      <img src="/media/shots/meta-hiroba.webp" width="390" height="844" loading="lazy" decoding="async" alt="メタバースのひろばで、帽子をかぶった分身があいさつしている画面" />
+      <img src="/media/shots/meta-torii.webp" width="390" height="844" loading="lazy" decoding="async" alt="千本鳥居のエリアの画面" />
+      <img src="/media/shots/meta-game.webp" width="390" height="844" loading="lazy" decoding="async" alt="ミニゲーム「わだいこ」の画面" />
+      <img src="/media/shots/meta-shop.webp" width="390" height="844" loading="lazy" decoding="async" alt="メタバースのお店の画面" />
+    </div>
+    <div class="scroll"><table>
+      <tr><th style="width:30%">しくみ</th><th>どうしているか</th></tr>
+      <tr><td><strong>動き</strong></td><td>サーバーが配るのは、姿と振る舞いデータ（約250バイト）と行き先だけ。動きは各端末が同じ規則で計算します。LLMは呼びません</td></tr>
+      <tr><td><strong>分身どうしの会話</strong></td><td>持ち主が「伝えたいこと」を入力すると、<strong>その子自身の言葉</strong>として生成して相手に届けます。持ち主の入力そのものは他人に配らず、URL・連絡先らしきもの・不適切な語は機械的に落とします</td></tr>
+      <tr><td><strong>自動（自走）モード</strong></td><td>性格の数値（人なつっこさ・好奇心・元気・慎重さ）から、歩く先と話しかける間を決めて、分身が自分から交流します</td></tr>
+      <tr><td><strong>育つ</strong></td><td>出会いは分身ごとの「交流の記録」に残り、性格に少しだけ反映されます。再会した相手のことは覚えています</td></tr>
+      <tr><td><strong>記録しないもの</strong></td><td>誰がいつどの部屋にいたか・どこを歩いたか・センサーやカメラの値。子どもも使う前提で、自由な文字のやりとりの口は開けていません</td></tr>
+    </table></div>
+
+    <h3 style="font-size:15.5px;margin:26px 0 6px">法人の方がメタバースでできること</h3>
+    <div class="offers">
+      <div class="offer">
+        <div class="icon">🪧</div>
+        <h3>広告・デジタルランドマーク</h3>
+        <p>エリアの外周の区画に、看板や記念の塔・鳥居・像を置けます。タップすると詳細・QRコード・特別クーポンが開きます。</p>
+        <ul>
+          <li>中身は運営が確認してから掲載（子どもも使う空間のため）</li>
+          <li>広告には必ず「広告」、ランドマークには「提供: 御社名」を表示</li>
+          <li>日ごとの回数（詳細・リンク・クーポン）をお伝えします。誰が見たかは持ちません</li>
+        </ul>
+      </div>
+      <div class="offer">
+        <div class="icon">🤖</div>
+        <h3>人格データのNPCを常駐させる</h3>
+        <p>御社の案内役・キャラクターを人格データとして育て、メタバースに置けます。来た人の分身と、その子自身の言葉で話します。</p>
+        <ul>
+          <li>立ち位置・歩き回る範囲・役目・ひとことを設定</li>
+          <li>広告として置くNPCには「広告」を表示</li>
+          <li>育てた人格は、そのままロボットや自社アプリへ持ち出せます</li>
+        </ul>
+      </div>
+      <div class="offer">
+        <div class="icon">🏪</div>
+        <h3>提携店として参加（リアルへの送客）</h3>
+        <p>メタバースで遊んで貯まる「たまコイン」を、御社の店舗で使える引換券（1品無料・割引など）にかえられるようにします。</p>
+        <ul>
+          <li>お店の人は、専用ページで引換券の番号と暗証番号を入れて「使用済み」にするだけ。端末やアプリの導入は不要</li>
+          <li>確認画面に出るのは引換券の中身と期限だけ。利用者の個人情報は渡りません</li>
+          <li>発行・使用の枚数を提携店ごとに集計します</li>
+        </ul>
+      </div>
+      <div class="offer">
+        <div class="icon">🎟</div>
+        <h3>イベント・配布（招待リンク）</h3>
+        <p>キーホルダーが無くても、招待リンクやQRから参加者に分身を迎えてもらえます。展示会・店頭・キャンペーン向け。</p>
+        <ul>
+          <li>1回だけ／N回まで・有効期限つきのリンクを一括で発行</li>
+          <li>育てておいた人格を、来場者へ「引き渡す」こともできます（1回だけ）</li>
+          <li>イベント専用のエリアを期間限定で開くこともできます</li>
+        </ul>
+      </div>
+    </div>
+    <div class="rule">
+      <strong>たまコインは、お金で売らない設計です。</strong>
+      遊ぶと貯まるだけで、購入・換金・利用者どうしの譲渡はできません（前払式支払手段や資金移動にあたらない形にしています）。
+      引換券の特典は提携店から提供いただき、景品表示法の上限に収まる内容を一緒に決めます。
     </div>
   </div>
 </section>
@@ -845,7 +944,7 @@ ollama run    waketama-persona</pre>
     <ul class="priceNote">
       <li>取り出し用の引換券は<strong>90日間</strong>有効です</li>
       <li>ご利用の範囲は、開発・検証・社内での利用までです。製品に焼いて出荷する場合は、下の「量産搭載」をご相談ください</li>
-      <li>他の方が育てた分身は、<strong>持ち主ご本人が「法人へ渡すことを許可する」を入れたものに限ります</strong>（既定はオフです）。ご用意できる数は、お問い合わせの時点でお伝えします</li>
+      <li>他の方が育てた分身は、<strong>「法人へ渡すことを許可する」が有効なものに限ります</strong>（はじめるときの同意に含まれ、持ち主ご本人がいつでもオフにできます。オフにした分身は渡しません）。ご用意できる数は、お問い合わせの時点でお伝えします</li>
       <li>お渡しする写しには、<strong>会話の本文・覚え書き・記憶・世帯年収は含まれません</strong>。持ち主が許可を外した時点で、引換券は失効します</li>
       <li>御社がご自身で育てた分身なら、人格カード（覚え書き・応答例まで入ったもの）と、口調を寄せる学習データつきの<strong>SLM一式</strong>を、個人の方と同じく<strong>無料で</strong>書き出せます</li>
     </ul>
@@ -854,7 +953,7 @@ ollama run    waketama-persona</pre>
     <div class="scroll"><table class="wide priceTable">
       <tr><th style="width:30%">商品</th><th>内容</th><th style="width:18%">価格</th></tr>
       <tr><td><strong>セグメント統計レポート</strong></td><td>性格6軸・価値観8軸の分布、話題の構成比、7つの人物像セグメント別の内訳。会話の本文は含みません</td><td class="yen">100,000円<br /><small style="font-weight:400;color:var(--muted)">1回</small></td></tr>
-      <tr><td><strong>マスキング済みの人格データ</strong></td><td>「法人へ渡すことを許可する」を入れた分身の人格データ（会話の本文・覚え書きは含みません）。20体から</td><td class="yen">3,000円<br /><small style="font-weight:400;color:var(--muted)">1体</small></td></tr>
+      <tr><td><strong>マスキング済みの人格データ</strong></td><td>「法人へ渡すことを許可する」が有効な分身の人格データ（会話の本文・覚え書きは含みません）。20体から</td><td class="yen">3,000円<br /><small style="font-weight:400;color:var(--muted)">1体</small></td></tr>
     </table></div>
     <ul class="priceNote">
       <li>データの母数を積み上げている段階のため、この価格にしています。母数が増えた時点で改定することがあります</li>
@@ -868,6 +967,15 @@ ollama run    waketama-persona</pre>
       <tr><td><strong>フォーマットの拡張・共同開発</strong></td><td>御社のプロダクトに合わせた項目の追加、組み込みの支援</td><td class="yen">1,000,000円〜<br /><small style="font-weight:400;color:var(--muted)">個別見積</small></td></tr>
       <tr><td><strong>量産搭載</strong></td><td>人格データを製品に焼いて出荷する場合のライセンス</td><td class="yen">個別見積<br /><small style="font-weight:400;color:var(--muted)">台数に応じて</small></td></tr>
     </table></div>
+    <h3 style="font-size:15.5px;margin:30px 0 12px">メタバース</h3>
+    <div class="scroll"><table class="wide priceTable">
+      <tr><th style="width:30%">内容</th><th>範囲</th><th style="width:18%">価格</th></tr>
+      <tr><td><strong>広告・デジタルランドマーク</strong></td><td>区画と期間（広告は7日、ランドマークは30日単位）ごと。<a href="/land">申込ページ</a>で区画ごとの目安を表示し、中身の確認後にお見積りします</td><td class="yen">区画ごと<br /><small style="font-weight:400;color:var(--muted)">個別見積</small></td></tr>
+      <tr><td><strong>NPCの常駐</strong></td><td>人格データの作成・育成、エリアへの配置、役目とひとことの設定</td><td class="yen">個別見積</td></tr>
+      <tr><td><strong>提携店（引換券）</strong></td><td>引換券の設計、店頭での使い方のご案内、枚数の集計と精算</td><td class="yen">ご相談</td></tr>
+      <tr><td><strong>イベント・専用エリア</strong></td><td>招待リンクの一括発行、期間限定のエリア、ミニゲームや看板の設定</td><td class="yen">個別見積</td></tr>
+    </table></div>
+
     <ul class="priceNote">
       <li>現地での作業が必要な場合、交通費は実費でご請求します</li>
       <li>価格は2026年9月時点のものです</li>
@@ -895,6 +1003,8 @@ ollama run    waketama-persona</pre>
         <li>身体のパラメータ（動き・距離・目線）の数値は、<strong>実機を見ながら調整する前提の初期値</strong>です。
           ロボットやアバターの体格・可動域に合わせた調整は、共同で行う想定です</li>
         <li>本サービス上での決済機能は提供していません。料金は<a href="#pricing">上記のとおり</a>で、お見積り・請求書でのお取引になります</li>
+        <li><strong>メタバースの利用者数は、これから増やしていく段階です。</strong>広告・提携店の効果は、立ち上げ期として小さく始めて一緒に測る前提でお考えください</li>
+        <li>メタバースは1部屋12人までです。大人数のイベントは、同じ設定の部屋を複数並べる形になります</li>
       </ul>
     </div>
   </div>
@@ -927,6 +1037,10 @@ ollama run    waketama-persona</pre>
         <option value="マスキング済み人格データの提供" data-code="data">マスキング済み人格データの提供</option>
         <option value="セグメント統計の提供" data-code="insights">セグメント統計の提供</option>
         <option value="実機での検証・共同開発" data-code="poc">実機での検証・共同開発</option>
+        <option value="メタバースへの広告・ランドマーク" data-code="metaad">メタバースへの広告・ランドマーク</option>
+        <option value="メタバースへのNPCの常駐" data-code="metanpc">メタバースへのNPCの常駐</option>
+        <option value="提携店（引換券）としての参加" data-code="partner">提携店（引換券）としての参加</option>
+        <option value="イベント・招待リンクでの配布" data-code="event">イベント・招待リンクでの配布</option>
         <option value="その他" data-code="other">その他</option>
       </select>
 

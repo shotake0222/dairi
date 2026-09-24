@@ -398,9 +398,16 @@ const lp2 = await (await fetch(`${BASE}/lp`)).text();
 check("LPで分け御霊の由来を説明している", lp2.includes("分 け 御 霊") || lp2.includes("分け御霊"));
 check("LPで話しかけ方が5通り紹介されている", lp2.includes("かざして話す") && lp2.includes("視線で話す") && lp2.includes("その場限りの通話"));
 check("LPから法人ページへ行ける", lp2.includes('href="/biz"'));
+check("LPからWebで申し込める（キーホルダーが無くてもはじめられる）", lp2.includes('href="/apply"') && lp2.includes("キーホルダーが無くても"));
+check("LPにメタバースの節があり、実際の画面が載っている", lp2.includes('id="metaverse"') && lp2.includes("/media/shots/meta-hiroba.webp"));
+for (const n of ["meta-hiroba", "meta-torii", "meta-game", "meta-shop"]) {
+  const r = await fetch(`${BASE}/media/shots/${n}.webp`);
+  check(`メタバースの画面写真が配信される(${n})`, r.ok);
+}
 
 const bizHtml = await (await fetch(`${BASE}/biz`)).text();
 check("法人向けページが配信される", bizHtml.includes("小さなモデルに"));
+check("法人ページにメタバースでの実証と、出稿・NPC・提携店の案内がある", bizHtml.includes('id="metaverse"') && bizHtml.includes("提携店として参加") && bizHtml.includes('data-code="partner"'));
 check("SLM・エッジ向けの訴求が入っている", bizHtml.includes("フィジカルAI") && bizHtml.includes("メタバース"));
 check("マスキング済みデータの説明が入っている", bizHtml.includes("マスキング済み"));
 check("人格カードの書き出し形式が示されている", bizHtml.includes("modelfile"));
@@ -443,6 +450,7 @@ check("確かめていないことも書いてある", bizHtml.includes("モデ�
   check("メタバースで自動と手動を選べ、交流の記録へ行ける", metaHtml.includes('id="modeBtn"') && metaHtml.includes('id="friendsBtn"'));
   const friendsHtml = await (await fetch(`${BASE}/friends`)).text();
   check("交流の記録（図鑑）で、メタバースとお散歩を絞り込める", friendsHtml.includes('data-f="meta"') && friendsHtml.includes('data-f="walk"'));
+  check("メタバースのHUDからお店を開ける・広告の画像を拡大できる", metaHtml.includes('id="shopBtn"') && metaHtml.includes('id="imgViewer"'));
   check("メタバースに財布・お店・引換券の画面がある", metaHtml.includes('id="walletBtn"') && metaHtml.includes('id="shopSheet"') && metaHtml.includes('id="voucherSheet"'));
   check("メタバースに会話の吹き出しと広告の詳細がある", metaHtml.includes('id="talkBox"') && metaHtml.includes('id="adSheet"') && metaHtml.includes("/vendor/qrcode.js"));
   const landHtml = await (await fetch(`${BASE}/land`)).text();
@@ -1158,7 +1166,8 @@ console.log("\n[35] はじめての流れ（同意 → 名前 → 土台）");
 
   // 同意。**聞くのは1つだが、束ねた使い道は隠さず全部出す**
   check("同意の画面が出る", (await page.locator(".wtGate").count()) === 1);
-  check("束ねた使い道を2つとも本文で見せている", (await page.locator(".wtGate .optItem").count()) === 2);
+  // 版5から「法人へ渡すことを許可する」も束ねた。3つとも本文で見せる（見せずに束ねたら同意にならない）
+  check("束ねた使い道を3つとも本文で見せている", (await page.locator(".wtGate .optItem").count()) === 3);
   check("使い道の説明が空でない",
     (await page.evaluate(() =>
       [...document.querySelectorAll(".wtGate .optItem .d")].every((d) => (d.textContent || "").length > 20))) === true);

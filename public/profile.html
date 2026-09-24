@@ -115,6 +115,7 @@
   .brand .mk { width: 1.25em; height: 1.25em; flex: none; }
 </style>
 <script src="/pulse.js" defer></script>
+<script src="/gate.js"></script>
 </head>
 <body>
 
@@ -388,6 +389,24 @@
             body: JSON.stringify({ characterId: cid, token: token(), consent: next }),
           });
           state.consent = data.consent;
+          // 入れたのに入らなかった（はじめる前の同意がまだ、など）ときは、理由を出して同意の画面へ
+          const want = next[input.dataset.consent];
+          if (want === true && data.consent[input.dataset.consent] !== true) {
+            setStatus("はじめる前の同意が済んでいないため、入れられませんでした");
+            if (window.waketamaGate) {
+              window.waketamaGate.forget?.(cid);
+              if (await window.waketamaGate.require(cid, token())) {
+                const again = await api("/api/consent", {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({ characterId: cid, token: token(), consent: next }),
+                });
+                state.consent = again.consent;
+              }
+            }
+            await load();
+            return;
+          }
           setStatus("保存しました");
           // 属性の同意を外すと回答も消えるので、必ず読み直す
           await load();
@@ -780,7 +799,12 @@
     });
   });
 
-  load().catch((e) => {
+  // 同意の版が古いまま（はじめる前の同意がまだ）だと、使い道のトグルを入れてもサーバーが受け付けない
+  // （法人へ渡すことを許可する が入らない、の原因だった）。先に同意を済ませてから読み込む
+  (async () => {
+    if (cid && window.waketamaGate) await window.waketamaGate.require(cid, token());
+    await load();
+  })().catch((e) => {
     document.querySelector("main").innerHTML =
       `<section><h2>開けませんでした</h2><p class="lead"></p></section>`;
     document.querySelector("main .lead").textContent = e.message;

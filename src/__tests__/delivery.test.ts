@@ -378,7 +378,8 @@ describe("法人へ渡す写し（中身と同意）", () => {
   const LEAKS = ["コタロウ", "夜勤", "検査結果", "港北区", "1000万円"];
 
   it("持ち主が許可していない分身には、引換券を発行できない", async () => {
-    const { cid } = await makeRichCharacter("noconsent", { terms: true, profile: true, aggregate: true });
+    // 版5から法人への提供は、はじめるときの同意に束ねた。ここでは本人が設定で止めた分身を確かめる
+    const { cid } = await makeRichCharacter("noconsent", { terms: true, profile: true, aggregate: true, individual: false });
     const issued = await issueGrant(env, { characterId: cid, scopes: ["card"] });
     expect(issued.ok).toBe(false);
     if (!issued.ok) expect(issued.status).toBe(409);

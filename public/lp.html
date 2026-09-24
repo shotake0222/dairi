@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>わけたま｜あなたの御霊を、わける。</title>
-<meta name="description" content="わけたま（分け御霊）は、自分をもう一つ作るサービス。文字でも、声でも、カメラをかざしても、視線でも。話しかけた分だけ、その子はあなたに似ていきます。" />
+<meta name="description" content="わけたま（分け御霊）は、自分をもう一つ作るサービス。文字でも、声でも、カメラをかざしても、視線でも。話しかけた分だけ、その子はあなたに似ていきます。キーホルダーが無くてもWebから申し込めて、育った分身はメタバースでほかの分身と出会えます。" />
 
 <link rel="manifest" href="/manifest.webmanifest" />
 <meta name="theme-color" content="#7c5cff" />
@@ -109,6 +109,36 @@
     box-shadow: 0 10px 26px rgba(124,92,255,0.32);
   }
   .ctaNote { display: block; font-size: 12px; color: var(--muted); margin-top: 12px; }
+  /* 幅の狭い画面では、ヘッダーのリンクを減らす（ロゴが折り返さないように） */
+  @media (max-width: 480px) { .navLink.navMeta { display: none; } }
+  .ctaRow { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  .cta.ghost { background: #fff; color: var(--brand); border: 2px solid var(--brand); box-shadow: none; padding: 13px 30px; }
+
+  /* 新しくできたこと（Web申し込み・メタバース） */
+  .news { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); margin: 0 0 40px; }
+  .newsCard { display: block; text-decoration: none; color: inherit; background: #fff; border: 1px solid var(--line); border-radius: 18px; padding: 18px 20px; text-align: left; }
+  .newsCard .pill { display: inline-block; font-size: 11px; font-weight: 800; color: #fff; background: #ff6f91; border-radius: 999px; padding: 2px 10px; letter-spacing: .06em; }
+  .newsCard h3 { margin: 8px 0 4px; font-size: 16px; }
+  .newsCard p { margin: 0; font-size: 13px; color: var(--muted); }
+  .newsCard .more { display: inline-block; margin-top: 8px; font-size: 13px; font-weight: 700; color: var(--brand); }
+
+  /* はじめかた: 入口を選ぶ */
+  .routes { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); margin: 10px 0 0; }
+  .route { background: #faf8ff; border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; }
+  .route b { display: block; font-size: 14px; }
+  .route span { font-size: 12.5px; color: var(--muted); }
+  .applyFlow { margin: 22px 0 0; background: #fff; border: 1px solid var(--line); border-radius: 18px; padding: 18px 20px; }
+  .applyFlow h3 { margin: 0 0 6px; font-size: 15px; }
+  .applyFlow ol { margin: 0 0 14px; padding-left: 1.3em; font-size: 13.5px; color: var(--muted); }
+  .applyFlow ol li { margin-bottom: 4px; }
+  .applyFlow .note { font-size: 12px; color: #9a90c0; margin: 12px 0 0; }
+
+  /* メタバース */
+  .metaverse { background: linear-gradient(180deg, #f3f9ff 0%, #fbf9ff 100%); }
+  .metaverse .cards { margin-top: 22px; }
+  .metaverse .card { background: #fff; }
+  .safe { margin-top: 18px; background: #fff; border: 1px solid var(--line); border-left: 4px solid var(--brand); border-radius: 12px; padding: 14px 16px; font-size: 13px; color: var(--muted); }
+  .safe b { color: var(--ink); }
 
   section { padding: 44px 0; border-top: 1px solid var(--line); }
   /* ヘッダーが追従するので、ページ内リンクで飛ぶと見出しがその下に隠れる */
@@ -312,6 +342,7 @@
       <div>わけ<span>たま</span></div>
     </div>
     <div class="spacer"></div>
+    <a class="navLink navMeta" href="#metaverse">メタバース</a>
     <a class="navLink" href="/biz">法人の方へ</a>
     <a class="navBtn" href="#contact">問い合わせ</a>
   </div>
@@ -334,8 +365,26 @@
       キーホルダーにスマホをかざすと、空っぽの分身が生まれます。<br />
       話しかけた分だけ、その子はあなたに似ていきます。
     </p>
-    <a class="cta" href="#contact">ご購入はお問い合わせください</a>
-    <span class="ctaNote">アカウント登録は不要です。今すぐはじめられます。</span>
+    <div class="ctaRow">
+      <a class="cta" href="/apply">Webで申し込んではじめる</a>
+      <a class="cta ghost" href="#product">キーホルダーで迎える</a>
+    </div>
+    <span class="ctaNote">アカウント登録は不要です。キーホルダーが無くても、Webの申し込みからはじめられます。</span>
+  </div>
+
+  <div class="news">
+    <a class="newsCard" href="#start">
+      <span class="pill">NEW</span>
+      <h3>キーホルダーが無くても、はじめられます</h3>
+      <p>Webで申し込むと、あなた専用の「はじめる」リンクが届きます。開いた端末で、その子が生まれます。</p>
+      <span class="more">はじめかたを見る →</span>
+    </a>
+    <a class="newsCard" href="#metaverse">
+      <span class="pill">NEW</span>
+      <h3>分身が歩き、出会うメタバース</h3>
+      <p>育った性格のまま3Dの空間を歩き、ほかの人の分身とおしゃべり。神社や夏祭りなど22のエリアと、20種のミニゲーム。</p>
+      <span class="more">メタバースを見る →</span>
+    </a>
   </div>
 </div>
 
@@ -457,16 +506,21 @@
   </div>
 </section>
 
-<section>
+<section id="start">
   <div class="wrap">
     <h2>はじめかた</h2>
-    <p class="lead">やることは3つだけです。</p>
+    <p class="lead">やることは3つだけです。入口は、キーホルダーでもWebでも選べます。</p>
     <div class="steps">
       <div class="step">
         <div class="num">1</div>
         <div>
-          <h3>キーホルダーにかざす</h3>
-          <p>スマホを近づけるだけでページが開きます。アプリのインストールも、会員登録も要りません。</p>
+          <h3>入口をひとつ選ぶ</h3>
+          <p>どの入口でも、アプリのインストールも会員登録も要りません。<strong>開いた端末が、その子の持ち主</strong>になります。</p>
+          <div class="routes">
+            <div class="route"><b>🔑 キーホルダーにかざす</b><span>スマホを近づけるだけでページが開きます。</span></div>
+            <div class="route"><b>🌐 Webで申し込む</b><span>申し込むと「はじめる」リンクが出ます。キーホルダーは要りません。</span></div>
+            <div class="route"><b>🎟 配られたQR・招待リンク</b><span>イベントやお店で受け取ったものから、そのままはじめられます。</span></div>
+          </div>
         </div>
       </div>
       <div class="step">
@@ -480,9 +534,23 @@
         <div class="num">3</div>
         <div>
           <h3>話す。ただ、それだけ</h3>
-          <p>その日の入口はどれでも構いません。話した分だけ、その子は濃くなっていきます。</p>
+          <p>その日の入口はどれでも構いません。話した分だけ、その子は濃くなっていきます。育ったら、メタバースへ連れて行くこともできます。</p>
         </div>
       </div>
+    </div>
+
+    <div class="applyFlow">
+      <h3>Webで申し込むときの流れ</h3>
+      <ol>
+        <li><a href="/apply">申し込みページ</a>で、呼び名（ニックネームで構いません）とひとことを送ります</li>
+        <li>受け付けると、申し込みの状況ページに<strong>「分身をはじめる」ボタン</strong>が出ます</li>
+        <li>ボタンを押した端末で、その子が生まれます。名前をつけたら、あとはキーホルダーで迎えた子と同じです</li>
+      </ol>
+      <a class="cta" href="/apply" style="font-size:15px;padding:12px 30px">Webで申し込む</a>
+      <p class="note">
+        申し込みは運営が確認してからご案内します（イベント期間などは、すぐにはじめられることがあります）。
+        受け付けを止めている期間は、申し込みページでお知らせします。いただいた連絡先は、はじめるためのご案内にだけ使います。
+      </p>
     </div>
   </div>
 </section>
@@ -512,7 +580,7 @@
         <ul class="spec">
           <li>スマホをかざすだけ。アプリのインストールも会員登録も要りません</li>
           <li><strong>1つのキーホルダーから生まれる分身は1体だけ</strong>です</li>
-          <li>姿と色はかざしたときに決まります。<strong>狙って選ぶことはできません</strong></li>
+          <li>姿と色（25種族×6色＝150通り）はかざしたときに決まります。<strong>狙って選ぶことはできません</strong></li>
           <li>なくしても、一度会っていれば分身はホーム画面から呼び出せます</li>
         </ul>
         <a class="cta buy" href="#contact" data-buy>お問い合わせで購入する</a>
@@ -554,6 +622,80 @@
   </div>
 </section>
 
+<section class="metaverse" id="metaverse">
+  <div class="wrap">
+    <h2>育った分身が、会いに行ける場所 — メタバース</h2>
+    <p class="lead">
+      スマホのブラウザでそのまま入れる、3Dの空間です。アプリは要りません。
+      分身は<strong>育った性格のとおりに</strong>歩き、ほかの人の分身と出会います。
+    </p>
+    <div class="shots">
+      <div class="shot">
+        <img src="/media/shots/meta-hiroba.webp" width="390" height="844" loading="lazy" decoding="async"
+             alt="メタバースのひろば。麦わら帽子をかぶった分身が、吹き出しであいさつしている" />
+        <div class="cap"><b>出会う</b>近くの子に話しかけると、分身が自分の言葉で伝えます。</div>
+      </div>
+      <div class="shot">
+        <img src="/media/shots/meta-torii.webp" width="390" height="844" loading="lazy" decoding="async"
+             alt="千本鳥居のエリア。朱色の鳥居が並び、きつねの像がある" />
+        <div class="cap"><b>おでかけする</b>千本鳥居・桜の神社・夏祭り・雪の里・海の底まで22のエリア。</div>
+      </div>
+      <div class="shot">
+        <img src="/media/shots/meta-game.webp" width="390" height="844" loading="lazy" decoding="async"
+             alt="ミニゲーム「わだいこ」。流れてくる合図に合わせて太鼓をたたく" />
+        <div class="cap"><b>遊ぶ</b>スマホを傾ける・ふる・声を出す。センサーで遊ぶミニゲームが20種。</div>
+      </div>
+      <div class="shot">
+        <img src="/media/shots/meta-shop.webp" width="390" height="844" loading="lazy" decoding="async"
+             alt="メタバースのお店。たまコインで帽子や王冠と交換できる" />
+        <div class="cap"><b>おしゃれする</b>遊んで貯めた「たまコイン」で、帽子や王冠を。</div>
+      </div>
+    </div>
+    <p class="shotNote">横にスワイプできます。実際の画面です。</p>
+
+    <div class="cards">
+      <div class="card">
+        <div class="icon">🚶</div>
+        <h3>性格のとおりに動く</h3>
+        <p>歩く速さ・話しかけるまでの間・身振りは、育った性格の数値から決まります。<strong>自動</strong>にすると、自分から歩いて近くの子に話しかけます。<strong>手動</strong>なら、あなたが動かして話しかけます。</p>
+      </div>
+      <div class="card">
+        <div class="icon">💬</div>
+        <h3>分身どうしが話す</h3>
+        <p>伝えたいことを文字・声・視線で入力すると、<strong>あなたの分身が自分の言葉で</strong>相手に伝え、相手の分身が答えます。出会いは「交流の記録」に残り、また会えた子のことは覚えています。</p>
+      </div>
+      <div class="card">
+        <div class="icon">⛩️</div>
+        <h3>22のエリア</h3>
+        <p>桜の神社・千本鳥居・お城の城下町・七夕・田んぼのあぜ道といった和の景色から、港町・砂丘・おかしの国・月面・海の底・ゆうえんちまで。</p>
+      </div>
+      <div class="card">
+        <div class="icon">🎮</div>
+        <h3>センサーで遊ぶミニゲーム</h3>
+        <p>かたむけて迷路、ふって釣りぼり、声で風船、カメラで色さがし、はねつき、わだいこ、そりすべり、AR…全部で20種。センサーが使えなくても、画面の操作で遊べます。</p>
+      </div>
+      <div class="card">
+        <div class="icon">🪙</div>
+        <h3>たまコインとお店</h3>
+        <p>遊ぶと貯まるメタバースのコイン。帽子や王冠で分身を飾ったり、みんなに見える花火を上げたり。提携しているお店の引換券にもかえられます。<strong>お金では買えません</strong>。</p>
+      </div>
+      <div class="card">
+        <div class="icon">🌱</div>
+        <h3>出会いが、育つきっかけに</h3>
+        <p>ほかの子と交わした言葉は、少しだけ性格に反映されます。あなたと話すのとは違う経験を、その子が自分で積んでいきます。</p>
+      </div>
+    </div>
+
+    <div class="safe">
+      <b>子どもも安心して入れるように。</b>
+      同じ部屋の人に見えるのは、分身の名前・姿・動きと、<b>分身が話した言葉だけ</b>です。
+      あなたが入力した文字そのもの・会話の中身・分身が覚えていること・あなたの情報は見えません。
+      知らない人と自由に文字でやりとりする機能はなく、分身の言葉からもURLや連絡先らしきものは機械的に取り除きます。
+      スマホのセンサー・マイク・カメラの値は、その端末の中でゲームに使うだけで、送りも保存もしません。
+    </div>
+  </div>
+</section>
+
 <section class="future">
   <div class="wrap">
     <h2>いつか、身体を持つ日のために</h2>
@@ -569,7 +711,7 @@
       <div class="body">
         <div class="icon">🕶️</div>
         <h3>アバターとして</h3>
-        <p>メタバースやARの中で、あなたの代わりにそこに居られるように。</p>
+        <p>わけたまのメタバースでは、もう歩いています。次はARや、ほかのサービスの中でも、あなたの代わりにそこに居られるように。</p>
       </div>
       <div class="body">
         <div class="icon">🔌</div>
@@ -625,7 +767,19 @@
     <h2>よくある質問</h2>
     <details>
       <summary>お金はかかりますか？</summary>
-      <p>分身と話すのに費用はかかりません。かかるのは<a href="#product">専用NFCキーホルダー（5,500円・税込／送料別）</a>だけで、買い切りです。月々のお支払いはありません。すでにお持ちの方は、そのままお使いいただけます。</p>
+      <p>分身と話すのに費用はかかりません。メタバースも無料です。キーホルダーで迎える場合にかかるのは<a href="#product">専用NFCキーホルダー（5,500円・税込／送料別）</a>だけで、買い切りです。月々のお支払いはありません。すでにお持ちの方は、そのままお使いいただけます。</p>
+    </details>
+    <details>
+      <summary>キーホルダーが無くても使えますか？</summary>
+      <p>使えます。<a href="/apply">Webで申し込む</a>と、あなた専用の「はじめる」リンクが届き、開いた端末で分身が生まれます。イベントやお店で配られたQRコード・招待リンクからもはじめられます。どの入口から生まれた子も、できることは同じです。</p>
+    </details>
+    <details>
+      <summary>メタバースで、知らない人と会っても大丈夫ですか？</summary>
+      <p>同じ部屋の人に見えるのは、分身の名前・姿・動きと、分身が話した言葉だけです。利用者どうしが自由に文字でやりとりする機能はありません。あなたが入力した文字や、会話の中身・分身が覚えていることも、ほかの人には見えません。</p>
+    </details>
+    <details>
+      <summary>たまコインとは何ですか？</summary>
+      <p>メタバースで遊ぶと貯まるコインです（毎日の入室・ミニゲームのクリア・分身どうしのおしゃべり）。お店で分身のかざりや演出と交換したり、提携しているお店の引換券にかえたりできます。お金で買うことも、お金に戻すことも、ほかの人に渡すこともできません。</p>
     </details>
     <details>
       <summary>会員登録やログインは必要ですか？</summary>
@@ -657,7 +811,10 @@
 <div class="wrap finalCta">
   <h2>その子は、まだ名前を持っていません。</h2>
   <p class="lead">会いに行くところから始まります。</p>
-  <a class="cta" href="#contact">ご購入はお問い合わせください</a>
+  <div class="ctaRow">
+    <a class="cta" href="/apply">Webで申し込んではじめる</a>
+    <a class="cta ghost" href="#contact">キーホルダーのご購入はお問い合わせへ</a>
+  </div>
 </div>
 
 <!-- お問い合わせフォームセクション -->

@@ -24,6 +24,7 @@ import { buildPlacements } from "./land.mjs";
 import { openGazePicker } from "./gaze.mjs";
 import { createWallet } from "./wallet.mjs";
 import { spawnEffect } from "./wear.mjs";
+import { createImageViewer } from "./imageviewer.mjs";
 
 const MY_CHARACTERS_KEY = "sodatsukake_myCharacters";
 const SOUND_KEY = "sodatsukake_metaSound";
@@ -141,6 +142,8 @@ function explainRejections(rejected, chosen) {
     const name = (c && c.name) || "この子";
     lines.push((REJECT_TEXT[r.code] || REJECT_TEXT.unavailable)(name));
     if (c && ["no_consent", "not_owner", "no_token"].includes(r.code)) fixCid = fixCid || c.cid;
+    // この端末の「同意済み」の印が古かった。次に入るときは同意の画面を出し直す
+    if (c && r.code === "no_consent") window.waketamaGate?.forget?.(c.cid);
   }
   return { text: lines.join("\n\n"), fixCid };
 }
@@ -203,7 +206,9 @@ async function showLobby() {
       }
     });
   }
-  $("noticeBox").hidden = load(NOTICE_KEY) === "1";
+  // 注意書きは、はじめての1回だけ開いて見せる。2回目からは畳んでおく（見出しを押せばいつでも読める）
+  $("noticeBox").open = load(NOTICE_KEY) !== "1";
+  store(NOTICE_KEY, "1");
 
   const chosen = () =>
     [...picker.querySelectorAll("input:checked")].map((el) => chars.find((c) => c.cid === el.value)).filter(Boolean);
@@ -214,7 +219,6 @@ async function showLobby() {
       toast("いっしょに行く子を選んでね");
       return;
     }
-    store(NOTICE_KEY, "1");
     unlockAudio();
     // 「はじめる前の同意」がまだの子（同意の文面の版が上がった後、まだ開いていない子など）は、
     // ここで同意の画面を出す。入ってから断られるより先に済ませる
@@ -420,6 +424,16 @@ function enterRoom(room, catalog, chosen) {
     send: (m) => send(m),
   });
   const effects = [];
+  const imageViewer = createImageViewer($);
+  $("shopBtn").addEventListener("click", () => {
+    const shops = (config.objects || []).filter((o) => o.type === "shop");
+    if (shops.length === 1) return wallet.openShop(shops[0].shopId, shops[0].title);
+    dialog({
+      title: "このエリアのお店",
+      body: "どのお店に入りますか？",
+      actions: [...shops.map((o) => ({ label: `🛍 ${o.title}`, primary: true, run: () => wallet.openShop(o.shopId, o.title) })), { label: "とじる" }],
+    });
+  });
 
   // --- カメラ ---
   const CAMERA_MODES = catalog.cameras.map((c) => c.id);
@@ -444,7 +458,7 @@ function enterRoom(room, catalog, chosen) {
     let pos;
     let look;
     // 縦長の画面では横の見える幅が狭いので、少し引いて左右の屋台が入るようにする
-    const portrait = Math.min(1.4, Math.max(1, Math.sqrt(0.75 / Math.max(0.3, camera.aspect))));
+    const portrait = Math.min(1.75, Math.max(1, Math.sqrt(0.75 / Math.max(0.3, camera.aspect)) * 1.12));
     if (cameraMode === "overview") {
       const r = 13 * zoom * portrait;
       pos = new THREE.Vector3(Math.sin(yaw) * r, 10 * zoom * portrait, Math.cos(yaw) * r);
@@ -488,6 +502,8 @@ function enterRoom(room, catalog, chosen) {
     land = buildPlacements(THREE, scene, config.placements || [], config.plotsForSale || [], catalog);
     syncNpcs(config.npcs || []);
     refreshPeople();
+    // お店の屋台は画面の端（縦長の画面では外）にあることが多いので、HUD からも開けるようにする
+    $("shopBtn").hidden = !(config.objects || []).some((o) => o.type === "shop");
   }
 
   // --- NPC（運営が置いた分身）。動きは各端末で同じ規則（時刻と番号から決まる散歩）で計算する ---
@@ -787,7 +803,8 @@ function enterRoom(room, catalog, chosen) {
       if (!games.running) games.offer(item);
       return;
     }
-    if (o.type === "board" && (o.ad || o.couponCode || o.detail || o.qrUrl)) {
+    // 画像のある看板も、タップで詳細（画像の拡大）を開く
+    if (o.type === "board" && (o.ad || o.couponCode || o.detail || o.qrUrl || o.imageUrl)) {
       openAdDetail({
         key: `o-${room.id}-${o.id}`,
         ad: !!o.ad,
@@ -883,8 +900,13 @@ function enterRoom(room, catalog, chosen) {
     $("adTag").textContent = ad ? "広告" : "";
     $("adTitle").textContent = (landmark ? c.plaque || c.title : c.title) || "お知らせ";
     $("adSponsor").textContent = c.sponsor ? `提供: ${c.sponsor}` : "";
-    $("adImage").hidden = !c.imageUrl;
-    if (c.imageUrl) $("adImage").src = c.imageUrl;
+    // 画像は切り取らずに全体を見せ、タップで拡大表示へ（細かい文字まで読めるように）
+    $("adImageWrap").hidden = !c.imageUrl;
+    if (c.imageUrl) {
+      $("adImage").src = c.imageUrl;
+      $("adImage").alt = c.title || "";
+      $("adImageWrap").onclick = () => imageViewer.open(c.imageUrl, c.title || "");
+    }
     $("adText").textContent = [c.text, c.detail].filter(Boolean).join("\n\n");
     // クーポン（押すまでコードは隠す。押した回数だけ数える）
     const couponBox = $("adCoupon");
@@ -1464,6 +1486,7 @@ function enterRoom(room, catalog, chosen) {
         return selected;
       },
       wallet,
+      openAdDetail,
     };
   }
 }

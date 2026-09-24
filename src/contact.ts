@@ -20,7 +20,7 @@ const MAX_COMPANY = 80;
 const MAX_CONTACT = 120;
 const MAX_MESSAGE = 1000;
 // /biz のフォームの data-code と揃えること（ここに無い値は "other" に丸められる）
-const TOPICS = ["sample", "plan", "persona", "format", "data", "insights", "poc", "other"];
+const TOPICS = ["sample", "plan", "persona", "format", "data", "insights", "poc", "metaad", "metanpc", "partner", "event", "other"];
 /**
  * 同じ送信元からの1日あたりの上限。
  * 相談・復旧依頼を続けて送る人（書き直し・追記）はいるので、1〜2件では狭すぎる。

@@ -87,6 +87,16 @@ async function owner(env: EconomyEnv, b: Record<string, unknown>): Promise<strin
 const NOT_OWNER = { error: "この端末の分身だと確かめられませんでした。分身の画面から開き直してください", code: "not_owner" };
 
 export async function handleEconomyApi(request: Request, url: URL, env: EconomyEnv): Promise<Response | null> {
+  try {
+    return await economyApi(request, url, env);
+  } catch (e) {
+    // 表がまだ無い（migration 0015 を当てる前にデプロイした）ときなど。画面には理由を短く返す
+    console.error("[economy]", e);
+    return json({ error: "いまはお店・財布を開けませんでした。少し待ってからもう一度お試しください", code: "economy_unavailable" }, { status: 503 });
+  }
+}
+
+async function economyApi(request: Request, url: URL, env: EconomyEnv): Promise<Response | null> {
   const p = url.pathname;
   if (p === "/api/meta/economy/info" && request.method === "GET") {
     return json({
