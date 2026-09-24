@@ -133,6 +133,139 @@ export function makeWear(THREE, wear) {
       g.userData.float = true;
       break;
     }
+    // ---- 2026-09-24 追加の形 ----
+    case "cat":
+    case "bunny": {
+      const inner = lambert(THREE, new THREE.Color(wear.shape === "cat" ? "#ffb3c8" : "#ffd0dc"));
+      for (const sx of [-1, 1]) {
+        const ear = new THREE.Group();
+        if (wear.shape === "cat") {
+          const outer = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.2, 4), mat);
+          outer.rotation.y = Math.PI / 4;
+          const pink = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.12, 4), inner);
+          pink.rotation.y = Math.PI / 4;
+          pink.position.set(0, -0.02, 0.035);
+          ear.add(outer, pink);
+          ear.position.set(sx * 0.17, 0.05, 0);
+          ear.rotation.z = -sx * 0.25;
+        } else {
+          const outer = new THREE.Mesh(new THREE.CapsuleGeometry(0.055, 0.28, 4, 10), mat);
+          const pink = new THREE.Mesh(new THREE.CapsuleGeometry(0.028, 0.22, 4, 8), inner);
+          pink.position.z = 0.035;
+          ear.add(outer, pink);
+          ear.position.set(sx * 0.1, 0.18, -0.02);
+          ear.rotation.z = -sx * 0.18;
+        }
+        g.add(ear);
+      }
+      g.position.y = -0.03;
+      break;
+    }
+    case "beret": {
+      const top = new THREE.Mesh(new THREE.SphereGeometry(0.26, 20, 10), mat);
+      top.scale.set(1, 0.32, 1);
+      const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.02, 0.06, 6), mat);
+      stem.position.y = 0.09;
+      g.add(top, stem);
+      g.position.set(0.04, 0.0, 0);
+      g.rotation.z = -0.22;
+      break;
+    }
+    case "cap": {
+      const dome = new THREE.Mesh(new THREE.SphereGeometry(0.22, 20, 10, 0, TAU, 0, Math.PI / 2), mat);
+      const visor = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.02, 20, 1, false, -Math.PI / 2, Math.PI), mat);
+      visor.scale.z = 1.3;
+      visor.position.set(0, 0.0, 0.14);
+      const button = new THREE.Mesh(new THREE.SphereGeometry(0.025, 8, 6), lambert(THREE, 0xffffff));
+      button.position.y = 0.22;
+      g.add(dome, visor, button);
+      g.position.y = -0.06;
+      break;
+    }
+    case "witch": {
+      const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.36, 0.025, 28), mat);
+      const cone = new THREE.Mesh(new THREE.ConeGeometry(0.19, 0.5, 20), mat);
+      cone.position.set(0, 0.25, -0.02);
+      cone.rotation.x = -0.25;
+      const band = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.19, 0.05, 20, 1, true), lambert(THREE, 0xb58cff, { side: THREE.DoubleSide }));
+      band.position.y = 0.03;
+      g.add(brim, cone, band);
+      g.position.y = -0.05;
+      break;
+    }
+    case "santa": {
+      const cone = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.36, 18), mat);
+      cone.position.set(0.04, 0.16, 0);
+      cone.rotation.z = -0.5;
+      const fur = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.05, 8, 24), lambert(THREE, 0xffffff));
+      fur.rotation.x = Math.PI / 2;
+      const pom = new THREE.Mesh(new THREE.SphereGeometry(0.06, 10, 8), lambert(THREE, 0xffffff));
+      pom.position.set(0.2, 0.26, 0);
+      g.add(cone, fur, pom);
+      g.position.y = -0.04;
+      break;
+    }
+    case "oni": {
+      for (const sx of [-1, 1]) {
+        const horn = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.18, 10), mat);
+        horn.position.set(sx * 0.12, 0.06, 0.03);
+        horn.rotation.z = -sx * 0.3;
+        g.add(horn);
+      }
+      break;
+    }
+    case "kanzashi": {
+      const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.32, 6), lambert(THREE, 0x8a5a2b));
+      stick.rotation.z = 1.1;
+      g.add(stick);
+      for (let k = 0; k < 3; k++) {
+        const fl = new THREE.Group();
+        for (let i = 0; i < 5; i++) {
+          const petal = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), mat);
+          const a = (i / 5) * TAU;
+          petal.scale.set(1, 0.7, 0.35);
+          petal.position.set(Math.cos(a) * 0.04, Math.sin(a) * 0.04, 0);
+          fl.add(petal);
+        }
+        const heart = new THREE.Mesh(new THREE.SphereGeometry(0.018, 6, 5), lambert(THREE, 0xffe066));
+        fl.add(heart);
+        fl.position.set(0.1 + k * 0.03, 0.02 - k * 0.07, 0.05);
+        g.add(fl);
+      }
+      g.position.set(0.12, -0.05, 0.02);
+      break;
+    }
+    case "headphones": {
+      const band = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.025, 8, 24, Math.PI), mat);
+      band.position.y = -0.12;
+      g.add(band);
+      for (const sx of [-1, 1]) {
+        const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.06, 16), mat);
+        cup.rotation.z = Math.PI / 2;
+        cup.position.set(sx * 0.25, -0.14, 0);
+        const pad = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.02, 14), lambert(THREE, 0x2a2440));
+        pad.rotation.z = Math.PI / 2;
+        pad.position.set(sx * 0.215, -0.14, 0);
+        g.add(cup, pad);
+      }
+      break;
+    }
+    case "glasses": {
+      const frame = lambert(THREE, c);
+      for (const sx of [-1, 1]) {
+        const rim = new THREE.Mesh(new THREE.TorusGeometry(0.075, 0.012, 8, 24), frame);
+        rim.position.set(sx * 0.1, 0, 0);
+        const lens = new THREE.Mesh(new THREE.CircleGeometry(0.07, 20), new THREE.MeshBasicMaterial({ color: 0xdff4ff, transparent: true, opacity: 0.35 }));
+        lens.position.set(sx * 0.1, 0, 0.002);
+        g.add(rim, lens);
+      }
+      const bridge = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.06, 6), frame);
+      bridge.rotation.z = Math.PI / 2;
+      g.add(bridge);
+      // 目の高さ・顔の前に出す（頭のてっぺんより下）
+      g.userData.face = true;
+      break;
+    }
     default:
       break;
   }
@@ -229,6 +362,53 @@ export function spawnEffect(THREE, scene, pos, kind) {
           m.position.set(ox + Math.sin(t * 2 + i) * 0.2, 3.2 - t * sp * 1.3, oz);
           m.rotation.set(t * spin, t * spin * 0.7, 0);
           m.material.opacity = Math.max(0, 1 - Math.max(0, t - 1.6) / 0.8);
+        },
+      });
+    }
+  } else if (kind === "sakura" || kind === "snow" || kind === "stars") {
+    total = 3;
+    const cols = kind === "sakura" ? [0xffb3cf, 0xffc8dc, 0xff9ec0] : kind === "snow" ? [0xffffff, 0xeaf4ff] : [0xffe14d, 0xfff3a0, 0xffd23f];
+    const geo = kind === "stars" ? new THREE.OctahedronGeometry(0.06, 0) : kind === "snow" ? new THREE.SphereGeometry(0.045, 6, 5) : new THREE.CircleGeometry(0.06, 5);
+    for (let i = 0; i < 60; i++) {
+      const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: cols[i % cols.length], side: THREE.DoubleSide, transparent: true }));
+      const ox = (Math.random() - 0.5) * 3;
+      const oz = (Math.random() - 0.5) * 3;
+      const sp = 0.6 + Math.random() * 0.6;
+      const ph = Math.random() * TAU;
+      const delay = Math.random() * 0.8;
+      root.add(m);
+      parts.push({
+        update(t) {
+          const k = Math.max(0, t - delay);
+          m.visible = t > delay;
+          m.position.set(ox + Math.sin(k * 1.6 + ph) * (kind === "snow" ? 0.15 : 0.35), 3.4 - k * sp * 1.2, oz + Math.cos(k * 1.3 + ph) * 0.2);
+          m.rotation.set(k * 3 + ph, k * 2, 0);
+          m.material.opacity = Math.max(0, 1 - Math.max(0, k - 1.8) / 0.8);
+        },
+      });
+    }
+  } else if (kind === "notes") {
+    const c = document.createElement("canvas");
+    c.width = 64;
+    c.height = 64;
+    const g2 = c.getContext("2d");
+    g2.font = "52px sans-serif";
+    g2.textAlign = "center";
+    g2.textBaseline = "middle";
+    g2.fillStyle = "#7c5cff";
+    g2.fillText("♪", 32, 34);
+    const tex = new THREE.CanvasTexture(c);
+    for (let i = 0; i < 10; i++) {
+      const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, color: new THREE.Color(colors[i % colors.length]) }));
+      const a = (i / 10) * TAU;
+      const delay = (i / 10) * 0.8;
+      spr.scale.setScalar(0.32);
+      root.add(spr);
+      parts.push({
+        update(t) {
+          const k = Math.max(0, t - delay);
+          spr.position.set(Math.cos(a + k) * (0.5 + k * 0.2), 1 + k * 0.9, Math.sin(a + k) * (0.5 + k * 0.2));
+          spr.material.opacity = k <= 0 ? 0 : Math.max(0, 1 - k / 1.7);
         },
       });
     }

@@ -876,7 +876,7 @@ function enterRoom(room, catalog, chosen) {
         f.landmarkPrice != null && (f.sale === "landmark" || f.sale === "both") ? `ランドマーク ${f.landmarkPrice.toLocaleString()}円〜` : "",
       ].filter(Boolean);
       dialog({
-        title: "この区画は販売中です",
+        title: "この区画で、広告・ランドマークを募集しています",
         body: `広告の看板や、デジタルランドマーク（記念の塔・鳥居・像など）を置けます。\n${prices.join("／")}`,
         actions: [
           { label: "申し込みページを開く", primary: true, run: () => window.open(`/land?area=${encodeURIComponent(room.id)}&spot=${encodeURIComponent(f.spot)}`, "_blank", "noopener") },

@@ -490,6 +490,7 @@ export const BUILTIN_ROOMS: RoomConfig[] = [
       { id: "sando", type: "rally", slot: "left", title: "参道めぐり", text: "境内の灯籠をめぐろう", points: 5, clearMessage: "お参り完了！" },
       { id: "members", type: "members", slot: "right", title: "お参り中の子", text: "" },
       { id: "hanetsuki", type: "hanetsuki", slot: "front-left", title: "境内のはねつき", text: "羽根を落とさずに打ち返そう", goal: 10, level: 1, clearMessage: "おみごと！" },
+      { id: "wakomono", type: "shop", slot: "front-right", title: "和小物屋", text: "かんざしや、桜ふぶき", shopId: "wakomono" },
     ],
   },
   {
@@ -595,6 +596,7 @@ export const BUILTIN_ROOMS: RoomConfig[] = [
       { id: "arhunt", type: "arhunt", slot: "right", title: "雪の結晶さがし", text: "カメラで結晶をさがそう", goal: 8, seconds: 45, level: 1, clearMessage: "きらきら！" },
       { id: "members", type: "members", slot: "front-left", title: "雪あそびの子", text: "" },
       { id: "sled", type: "sled", slot: "back-left", title: "そりすべり", text: "旗の門をくぐって、雪山をすべろう", goal: 10, seconds: 60, level: 1, clearMessage: "ひゃっほう！" },
+      { id: "yukimise", type: "shop", slot: "back-right", title: "おみやげ屋", text: "冬の帽子と、雪ふらし", shopId: "yukimise" },
     ],
   },
   {
@@ -835,6 +837,7 @@ export const BUILTIN_ROOMS: RoomConfig[] = [
       { id: "shake", type: "shake", slot: "left", title: "ゴーカート", text: "ふって、ゴールまで走ろう", goal: 40, seconds: 25, level: 2, clearMessage: "一等賞！" },
       { id: "members", type: "members", slot: "right", title: "あそびに来た子", text: "" },
       { id: "hanabi", type: "shop", slot: "front-left", title: "パレードの花火屋", text: "花火を打ち上げて、みんなでお祝い", shopId: "hanabi" },
+      { id: "fancy", type: "shop", slot: "front-right", title: "ファンシーショップ", text: "ねこみみ・うさみみ・ヘッドホン", shopId: "fancy" },
     ],
   },
 ];

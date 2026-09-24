@@ -450,6 +450,8 @@ check("確かめていないことも書いてある", bizHtml.includes("モデ�
   check("メタバースで自動と手動を選べ、交流の記録へ行ける", metaHtml.includes('id="modeBtn"') && metaHtml.includes('id="friendsBtn"'));
   const friendsHtml = await (await fetch(`${BASE}/friends`)).text();
   check("交流の記録（図鑑）で、メタバースとお散歩を絞り込める", friendsHtml.includes('data-f="meta"') && friendsHtml.includes('data-f="walk"'));
+  const lp = await fetch(`${BASE}/admin-land-preview.mjs`);
+  check("管理画面の広告プレビュー（メタバースと同じ部品で描く）が配信される", lp.ok && (await lp.text()).includes("buildPlacements"));
   check("メタバースのHUDからお店を開ける・広告の画像を拡大できる", metaHtml.includes('id="shopBtn"') && metaHtml.includes('id="imgViewer"'));
   check("メタバースに財布・お店・引換券の画面がある", metaHtml.includes('id="walletBtn"') && metaHtml.includes('id="shopSheet"') && metaHtml.includes('id="voucherSheet"'));
   check("メタバースに会話の吹き出しと広告の詳細がある", metaHtml.includes('id="talkBox"') && metaHtml.includes('id="adSheet"') && metaHtml.includes("/vendor/qrcode.js"));

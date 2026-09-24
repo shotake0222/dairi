@@ -207,7 +207,8 @@ export class Actor {
     if (!this.wear || !this.alive) return;
     const g = makeWear(this.THREE, this.wear);
     // 形ごとに決めた位置（makeWear の中）に、頭のてっぺんの高さを足す
-    g.position.y += this.headTop - 0.06;
+    if (g.userData.face) g.position.set(0, this.headTop * 0.58, (this.faceZ || 0.42) + 0.02);
+    else g.position.y += this.headTop - 0.06;
     this.wearMesh = g;
     this.body.add(g);
   }
@@ -224,6 +225,8 @@ export class Actor {
       model.position.y = -box.min.y * s;
       this.body.add(model);
       this.headTop = (box.max.y - box.min.y) * s;
+      // 顔の前の位置（メガネを掛ける所）。くちばしなどの出っぱりを見込んで少し手前
+      this.faceZ = Math.max(0.25, box.max.z * s * 0.92);
     } else {
       const ball = new THREE.Mesh(new THREE.SphereGeometry(0.45, 20, 14), new THREE.MeshLambertMaterial({ color: 0xffb3d0 }));
       ball.position.y = 0.45;

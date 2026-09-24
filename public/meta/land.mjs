@@ -196,7 +196,7 @@ export function buildPlacements(THREE, scene, placements, plotsForSale, catalog)
     );
     ringMesh.rotation.x = -Math.PI / 2;
     ringMesh.position.y = 0.03;
-    const sign = sprite(THREE, ["区画 販売中"], { width: 400, height: 110, fontSize: 54, bg: "rgba(255,210,63,0.95)", color: "#3a3020", radius: 40 }, 1.2);
+    const sign = sprite(THREE, ["広告 募集中"], { width: 400, height: 110, fontSize: 54, bg: "rgba(255,210,63,0.95)", color: "#3a3020", radius: 40 }, 1.2);
     sign.position.y = 1.2;
     root.add(ringMesh, sign);
     const item = { kind: "forsale", plot: f, root, hits: [sign, ringMesh], ring: ringMesh };

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import { env, SELF } from "cloudflare:test";
-import { earn, grant, jstDay, saveEconomySettings } from "../economy";
+import { BUILTIN_ITEMS, BUILTIN_SHOPS, EFFECT_KINDS, WEAR_SHAPES, earn, grant, jstDay, saveEconomySettings, sanitizeItem } from "../economy";
+import { BUILTIN_ROOMS } from "../metaverse";
 import { sanitizeObjects } from "../metaverse";
 
 /**
@@ -250,5 +251,33 @@ describe("提携店の引換券（リアルで使う）", () => {
     const ok = await admin("/api/admin/economy/stats");
     expect(ok.status).toBe(200);
     expect(ok.data.stats).toHaveProperty("circulating");
+  });
+});
+
+describe("最初からある商品とお店", () => {
+  it("商品は42点（あとから足した30点を含む）で、どれも形・演出が定義にあり、管理画面の決まりに通る", () => {
+    expect(BUILTIN_ITEMS.length).toBe(42);
+    const ids = new Set(BUILTIN_ITEMS.map((i) => i.id));
+    expect(ids.size).toBe(BUILTIN_ITEMS.length);
+    for (const item of BUILTIN_ITEMS) {
+      if (item.kind === "wear") expect(WEAR_SHAPES.some((s) => s.id === item.shape), item.id).toBe(true);
+      if (item.kind === "effect") expect(EFFECT_KINDS.some((s) => s.id === item.effect), item.id).toBe(true);
+      const r = sanitizeItem({ ...item });
+      expect(r.ok, item.id).toBe(true);
+      if (r.ok) {
+        expect(r.value.id).toBe(item.id);
+        expect(r.value.price).toBe(item.price);
+        expect(r.value.shape).toBe(item.shape);
+        expect(r.value.effect).toBe(item.effect);
+      }
+    }
+  });
+
+  it("どの商品も、どこかのお店に並び、そのお店はどこかのエリアに置いてある", () => {
+    const sold = new Set(BUILTIN_SHOPS.flatMap((s) => s.itemIds));
+    for (const item of BUILTIN_ITEMS) expect(sold.has(item.id), item.id).toBe(true);
+    for (const s of BUILTIN_SHOPS) for (const id of s.itemIds) expect(BUILTIN_ITEMS.some((i) => i.id === id), `${s.id}:${id}`).toBe(true);
+    const placed = new Set(BUILTIN_ROOMS.flatMap((r) => r.objects.filter((o) => o.type === "shop").map((o) => o.shopId)));
+    for (const s of BUILTIN_SHOPS) expect(placed.has(s.id), s.id).toBe(true);
   });
 });

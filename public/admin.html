@@ -116,6 +116,45 @@
   .gameDefaults select { width: 7.5em; }
   .badge { display: inline-block; min-width: 18px; padding: 0 6px; border-radius: 999px; background: #ff5a5a; color: #fff; font-size: 11px; line-height: 18px; margin-left: 4px; }
   .badge[hidden] { display: none; }
+  /* ---- 広告・ランドマーク ---- */
+  #panel-land [data-kind][hidden] { display: none; }
+  #panel-land section h3 { font-size: 14px; margin: 16px 0 6px; }
+  .landGuide .routes2 { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); margin: 6px 0 10px; }
+  .route2 { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; background: #fcfbff; font-size: 12.5px; }
+  .route2 b { display: block; font-size: 14px; margin-bottom: 2px; }
+  .route2 span { color: var(--muted); }
+  .route2 ol { margin: 6px 0 8px; padding-left: 1.3em; }
+  .landGuide .note { font-size: 12px; color: var(--muted); margin: 0; }
+  .placeGrid { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 18px; align-items: start; }
+  @media (max-width: 1000px) { .placeGrid { grid-template-columns: 1fr; } }
+  .placeForm h3 { font-size: 13.5px; margin: 14px 0 6px; }
+  .placeForm h3:first-child { margin-top: 0; }
+  .placePreview { position: sticky; top: 10px; }
+  .pvHead { font-size: 12px; font-weight: 700; color: var(--muted); margin-bottom: 4px; }
+  .pvNote { font-size: 11.5px; color: var(--muted); margin-top: 4px; }
+  #plPreview3d { width: 100%; height: auto; border-radius: 12px; background: #cfe6ff; display: block; }
+  .adSheetPv { border: 1px solid var(--line); border-radius: 16px; padding: 14px; background: #fff; font-size: 13px; box-shadow: 0 6px 20px rgba(20,16,42,.08); }
+  .adSheetPv .h { display: flex; gap: 8px; align-items: center; }
+  .adSheetPv .h b { font-size: 15px; }
+  .adSheetPv .tag { font-size: 11px; background: #2a2440; color: #fff; border-radius: 999px; padding: 2px 8px; }
+  .adSheetPv .sp { font-size: 12px; color: var(--muted); margin: 2px 0 6px; }
+  .adSheetPv img { width: 100%; max-height: 240px; object-fit: contain; background: #f4f2fb; border-radius: 10px; margin-bottom: 6px; }
+  .adSheetPv .tx { white-space: pre-line; margin: 0 0 8px; }
+  .adSheetPv .cp { border: 2px dashed #ff6f91; border-radius: 12px; padding: 8px 10px; margin-bottom: 8px; background: #fff6f8; }
+  .adSheetPv .cp b { color: #d8456a; }
+  .adSheetPv .qr { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; font-size: 12px; color: var(--muted); }
+  .adSheetPv .qr svg { width: 90px; height: 90px; background: #fff; }
+  .adSheetPv .lk { display: block; text-align: center; background: var(--brand); color: #fff; border-radius: 999px; padding: 8px; font-weight: 700; }
+  .adSheetPv .empty { color: var(--muted); font-size: 12px; }
+  .spotMap { display: flex; gap: 12px; align-items: center; margin: 8px 0 4px; }
+  .spotMap svg { width: 200px; height: 200px; flex: 0 0 auto; }
+  .spotMap .lg { font-size: 11.5px; color: var(--muted); line-height: 1.8; }
+  .spotMap .lg i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+  .orderPv { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 12px; margin: 6px 0; }
+  @media (max-width: 800px) { .orderPv { grid-template-columns: 1fr; } }
+  .inlineForm { display: flex; gap: 6px; flex-wrap: wrap; align-items: end; margin-top: 8px; padding: 8px; background: #f7f5ff; border-radius: 10px; }
+  .inlineForm label { font-size: 11.5px; color: var(--muted); }
+  .inlineForm input { width: auto; }
   .subTabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
   .subTabs button.on { background: var(--brand); color: #fff; border-color: transparent; }
   .cardList { display: grid; gap: 10px; }
@@ -686,68 +725,119 @@
   </div>
 
   <div class="panel" id="panel-land" hidden>
-    <div class="subTabs" id="landTabs">
-      <button type="button" data-sub="orders" class="on">申込</button>
-      <button type="button" data-sub="ads">広告・クーポン</button>
-      <button type="button" data-sub="plots">区画と価格</button>
-      <button type="button" data-sub="place">運営が置く</button>
-      <button type="button" data-sub="settings">受付の設定</button>
-    </div>
-    <section data-subpanel="orders">
-      <h2>広告・ランドマークの申込</h2>
+    <section class="landGuide">
+      <h2>メタバースの広告・ランドマーク</h2>
       <p class="lead">
-        申込は <code>/land</code> から届きます。中身を確かめて<strong>承認</strong>（金額と決済リンク）→ 入金を確かめたら<strong>支払い済み</strong>（その日から掲載）。
-        申込者は状況ページで金額と決済リンクを見られます（メールは自動では送りません。連絡先へお知らせください）。
+        エリアの<strong>外周にある8つの「区画」</strong>に、広告の看板やランドマーク（塔・鳥居・像など）を置けます。
+        置き方は2通りです。どちらも、置いた物をタップすると<strong>詳細（画像の拡大・説明・リンク・QRコード・特別クーポン）</strong>が開きます。
+      </p>
+      <div class="routes2">
+        <div class="route2">
+          <b>A. 運営が自分で置く</b>
+          <span>自社の告知・協賛・記念など。申込も支払いも無し。</span>
+          <ol><li>「② 運営が置く」で区画と中身を入れる</li><li>右のプレビューで見え方を確かめて「置く」</li></ol>
+          <button type="button" data-go="place">② 運営が置く へ</button>
+        </div>
+        <div class="route2">
+          <b>B. 広告主から申し込んでもらう</b>
+          <span>外部の会社・お店が、公開の申込ページ <a href="/land" target="_blank" rel="noopener">/land</a> から申し込む。</span>
+          <ol><li>「④ 申込ページの設定」で区画の価格を決め、受付をオンにする</li><li>届いた申込を「③ 広告主からの申込」で確かめて承認 → 入金を確かめて「支払い済み」（その日から表示）</li></ol>
+          <button type="button" data-go="settings">④ 申込ページの設定 へ</button>
+        </div>
+      </div>
+      <p class="note">
+        エリアの内側（真ん中を囲む7か所）に置く看板は「メタバース管理」の置く物で設定します（「広告として出す」にチェック）。ここは外周の区画です。
+        広告には必ず「広告」、ランドマークには「提供: ○○」が付きます（外せません）。
+      </p>
+    </section>
+
+    <div class="subTabs" id="landTabs">
+      <button type="button" data-sub="ads" class="on">① いま出ている広告</button>
+      <button type="button" data-sub="place">② 運営が置く</button>
+      <button type="button" data-sub="orders">③ 広告主からの申込 <span class="badge" id="badgeOrders2" hidden></span></button>
+      <button type="button" data-sub="settings">④ 申込ページの設定（受付・区画の価格）</button>
+    </div>
+
+    <section data-subpanel="ads">
+      <h2>① いま出ている広告・ランドマーク</h2>
+      <p class="lead">
+        区画に置いた物と、エリアの看板のうち「広告として出す」にした物の一覧です。直近30日の
+        <span class="stat">詳細を開いた</span><span class="stat">リンクを開いた</span><span class="stat">クーポンを表示</span> の回数（誰が見たかは記録しません）。
+        広告主への報告はこの数字を使います。
+      </p>
+      <div class="scroll"><table id="adTable"></table></div>
+    </section>
+
+    <section data-subpanel="place" hidden>
+      <h2>② 運営が置く（申込なし・無料）</h2>
+      <p class="lead">左で入力すると、右に<strong>メタバースでの見え方</strong>と<strong>タップしたときの詳細</strong>がすぐ出ます。「置く」を押すまでは誰にも見えません。</p>
+      <div class="placeGrid">
+        <div class="placeForm">
+          <h3>1. どこに・何を</h3>
+          <div class="formGrid">
+            <label>エリア<select id="plEdArea"></select></label>
+            <label>区画<select id="plEdSpot"></select></label>
+            <label>種類<select id="plEdKind"><option value="ad">広告の看板</option><option value="landmark">ランドマーク（記念の塔・鳥居など）</option></select></label>
+            <label>提供者の表示名（必須。「広告」「提供:」の横に出る）<input id="plEdSponsor" maxlength="30" placeholder="例: カフェわけたま" /></label>
+          </div>
+          <div id="plSpotMap"></div>
+          <h3>2. 見た目</h3>
+          <div class="formGrid">
+            <label data-kind="ad">見出し（看板の上に出る）<input id="plEdTitle" maxlength="24" /></label>
+            <label data-kind="ad">本文（画像が無いときに看板に出る）<input id="plEdText" maxlength="80" /></label>
+            <label data-kind="ad">画像のURL（看板いっぱいに出る。https://）<input id="plEdImage" placeholder="https://…" /></label>
+            <label data-kind="landmark">形<select id="plEdModel"></select></label>
+            <label data-kind="landmark">色<select id="plEdColor"></select></label>
+            <label data-kind="landmark">銘板（ランドマークの札）<input id="plEdPlaque" maxlength="20" /></label>
+          </div>
+          <h3>3. タップしたときの詳細（どれも任意）</h3>
+          <label class="wide">詳しい説明（300文字）<textarea id="plEdDetail" maxlength="300" rows="3"></textarea></label>
+          <div class="formGrid">
+            <label>リンク（ボタンになる。https://）<input id="plEdLink" placeholder="https://…" /></label>
+            <label>QRコードの行き先（空ならリンク）<input id="plEdQr" placeholder="https://…" /></label>
+            <label>特別クーポンのコード<input id="plEdCoupon" maxlength="24" placeholder="例: WAKE10" /></label>
+            <label>クーポンの説明<input id="plEdCouponNote" maxlength="60" placeholder="例: 会計時にこの画面で10%引き" /></label>
+            <label>クーポンの有効期限<input id="plEdCouponUntil" type="date" /></label>
+          </div>
+          <h3>4. 期間</h3>
+          <div class="formGrid">
+            <label>始まり（空なら今から）<input id="plEdStart" type="datetime-local" /></label>
+            <label>終わり（空なら無期限）<input id="plEdEnd" type="datetime-local" /></label>
+          </div>
+          <div class="row"><button type="button" id="plEdSave" style="background:var(--brand);color:#fff;border-color:transparent">置く（保存する）</button><button type="button" id="plEdNew">入力を空にする</button><button type="button" id="plEdOpen">メタバースで確かめる ↗</button><span id="plEdStatus" style="font-size:12px;color:var(--muted)"></span></div>
+        </div>
+        <div class="placePreview">
+          <div class="pvHead">メタバースでの見え方（区画の正面から）</div>
+          <canvas id="plPreview3d" width="560" height="380"></canvas>
+          <div class="pvNote" id="plPreviewNote">プレビューは実際の空間と同じ部品で描いています（画像は、相手のサーバーが外部からの読み込みを許していないと出ません）。</div>
+          <div class="pvHead" style="margin-top:12px">タップしたときの詳細</div>
+          <div id="plPreviewSheet" class="adSheetPv"></div>
+        </div>
+      </div>
+      <h3 style="margin-top:18px">置いてある物</h3>
+      <div class="scroll"><table id="placeTable"></table></div>
+    </section>
+
+    <section data-subpanel="orders" hidden>
+      <h2>③ 広告主からの申込</h2>
+      <p class="lead">
+        公開の申込ページ <a href="/land" target="_blank" rel="noopener">/land</a> から届いた申込です（受付は「④ 申込ページの設定」でオン・オフ）。
+        流れ: <b>確認中</b> → 中身を見て<b>承認</b>（金額と決済リンクを入れる）→ 申込者が支払う → 入金を確かめて<b>支払い済み</b>（その日から表示）。
+        申込者は自分の状況ページで金額と決済リンクを見られます（メールは自動では送りません）。
       </p>
       <div class="row"><select id="orderFilter"><option value="">すべて</option><option value="pending">確認中</option><option value="approved">承認済み・支払い待ち</option><option value="paid">掲載</option><option value="rejected">見送り</option><option value="cancelled">取り消し</option></select></div>
       <div class="cardList" id="orderList" style="margin-top:10px"></div>
     </section>
-    <section data-subpanel="ads" hidden>
-      <h2>広告・クーポン</h2>
-      <p class="lead">
-        エリアに置いた広告の看板（メタバース管理の「看板」）と、区画の広告・ランドマークの一覧です。直近30日の
-        <span class="stat">詳細を開いた</span><span class="stat">リンクを開いた</span><span class="stat">クーポンを表示</span> の回数が出ます（誰が見たかは記録しません）。
-        メタバースで広告をタップすると、詳細（画像・説明・QRコード・リンク・特別クーポン）が開きます。
-      </p>
-      <div class="scroll"><table id="adTable"></table></div>
-    </section>
-    <section data-subpanel="plots" hidden>
-      <h2>区画と価格</h2>
-      <p class="lead">エリアの外周に8つの区画があります。区画ごとに、売る物と価格（1単位あたり。単位の日数は「受付の設定」）を決めます。</p>
-      <div class="formGrid"><label>エリア<select id="plotArea"></select></label></div>
-      <div class="scroll"><table id="plotTable"></table></div>
-      <div class="row" style="margin-top:10px"><button type="button" id="plotSave" style="background:var(--brand);color:#fff;border-color:transparent">保存する</button><span id="plotStatus" style="font-size:12px;color:var(--muted)"></span></div>
-    </section>
-    <section data-subpanel="place" hidden>
-      <h2>運営が置く・設置中の物</h2>
-      <p class="lead">運営の告知・協賛・記念などを、申込を通さずに区画へ置けます（無料）。一覧から直す・いますぐ終える・消すもできます。</p>
-      <div class="formGrid">
-        <label>エリア<select id="plEdArea"></select></label>
-        <label>区画<select id="plEdSpot"></select></label>
-        <label>種類<select id="plEdKind"><option value="ad">広告の看板</option><option value="landmark">ランドマーク</option></select></label>
-        <label>提供者の表示名（必須）<input id="plEdSponsor" maxlength="30" /></label>
-        <label>見出し<input id="plEdTitle" maxlength="24" /></label>
-        <label>本文<input id="plEdText" maxlength="80" /></label>
-        <label>画像のURL<input id="plEdImage" placeholder="https://…" /></label>
-        <label>形（ランドマーク）<select id="plEdModel"></select></label>
-        <label>色（ランドマーク）<select id="plEdColor"></select></label>
-        <label>銘板（ランドマーク）<input id="plEdPlaque" maxlength="20" /></label>
-        <label>リンク<input id="plEdLink" placeholder="https://…" /></label>
-        <label>QRコードの行き先（空ならリンク）<input id="plEdQr" placeholder="https://…" /></label>
-        <label>クーポンのコード<input id="plEdCoupon" maxlength="24" /></label>
-        <label>クーポンの説明<input id="plEdCouponNote" maxlength="60" /></label>
-        <label>クーポンの有効期限<input id="plEdCouponUntil" type="date" /></label>
-        <label>始まり<input id="plEdStart" type="datetime-local" /></label>
-        <label>終わり（空なら無期限）<input id="plEdEnd" type="datetime-local" /></label>
-      </div>
-      <label class="wide">詳しい説明（詳細画面に出る。300文字）<textarea id="plEdDetail" maxlength="300" rows="3"></textarea></label>
-      <div class="row"><button type="button" id="plEdSave" style="background:var(--brand);color:#fff;border-color:transparent">置く・直す</button><button type="button" id="plEdNew">新しく置く（入力を空に）</button><span id="plEdStatus" style="font-size:12px;color:var(--muted)"></span></div>
-      <div class="scroll" style="margin-top:10px"><table id="placeTable"></table></div>
-    </section>
+
     <section data-subpanel="settings" hidden>
-      <h2>受付の設定</h2>
-      <label class="wide" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="lsOpen" style="width:auto;margin:0" /> 申し込みを受け付ける（/land）</label>
-      <label class="wide" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="lsShow" style="width:auto;margin:0" /> メタバースの中に「区画 販売中」の目印を出す</label>
+      <h2>④ 申込ページの設定（外部の広告主からの受付）</h2>
+      <p class="lead">
+        ここでいう「受付」は、<strong>外部の広告主が公開ページ <a href="/land" target="_blank" rel="noopener">/land</a> から区画を申し込めるようにするか</strong>です。
+        運営が自分で置く（②）には関係ありません。
+      </p>
+      <h3>受付</h3>
+      <label class="wide" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="lsOpen" style="width:auto;margin:0" /> /land からの申込を受け付ける（オフのときは、申込ページに「受け付けていません」と出る）</label>
+      <label class="wide" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="lsShow" style="width:auto;margin:0" /> 空いている区画に、メタバースの中で「この区画 募集中」の目印を出す（タップで申込ページへ）</label>
       <div class="formGrid">
         <label>広告の1単位（日）<input id="lsAdDays" type="number" min="1" max="90" /></label>
         <label>ランドマークの1単位（日）<input id="lsLmDays" type="number" min="1" max="365" /></label>
@@ -755,8 +845,15 @@
         <label>決済リンクの既定値（Stripe の Payment Link など）<input id="lsPay" placeholder="https://…" /></label>
       </div>
       <label class="wide">申込者に見せる支払いの案内<textarea id="lsNote" rows="3" maxlength="300"></textarea></label>
-      <div class="row"><button type="button" id="lsSave" style="background:var(--brand);color:#fff;border-color:transparent">保存する</button><span id="lsStatus" style="font-size:12px;color:var(--muted)"></span></div>
+      <div class="row"><button type="button" id="lsSave" style="background:var(--brand);color:#fff;border-color:transparent">受付の設定を保存する</button><a href="/land" target="_blank" rel="noopener" style="font-size:13px">申込ページを開いて確かめる ↗</a><span id="lsStatus" style="font-size:12px;color:var(--muted)"></span></div>
       <p class="lead" style="margin-top:10px">カード番号などの決済情報は、このサービスでは預かりません。決済は外部（決済リンク・請求書）で行い、入金を確かめてから「支払い済み」にします。</p>
+
+      <h3 style="margin-top:22px">区画ごとの価格（申込ページに出る目安）</h3>
+      <p class="lead">エリアを選び、区画ごとに「申込で出す物」と1単位あたりの価格を決めます。「出さない」にした区画は申込ページに並びません（運営が置くことはできます）。</p>
+      <div class="formGrid"><label>エリア<select id="plotArea"></select></label></div>
+      <div id="plotMap"></div>
+      <div class="scroll"><table id="plotTable"></table></div>
+      <div class="row" style="margin-top:10px"><button type="button" id="plotSave" style="background:var(--brand);color:#fff;border-color:transparent">区画の価格を保存する</button><span id="plotStatus" style="font-size:12px;color:var(--muted)"></span></div>
     </section>
   </div>
 
@@ -1830,6 +1927,7 @@
 </script>
 <script src="/admin-meta.js"></script>
 <script src="/admin-extra.js"></script>
+<script type="module" src="/admin-land-preview.mjs"></script>
 <script src="/admin-economy.js"></script>
 </body>
 </html>
